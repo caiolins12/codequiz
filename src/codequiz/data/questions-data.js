@@ -10,7 +10,11 @@ const LANGUAGES = [
   { id: 'java', name: 'Java', icon: '☕', color: '#ed8b00', desc: 'Robusta e orientada a objetos' },
   { id: 'c', name: 'C', icon: '⚙️', color: '#555555', desc: 'Controle total sobre a máquina' },
   { id: 'html_css', name: 'HTML & CSS', icon: '🌐', color: '#e34c26', desc: 'Construa páginas e interfaces' },
-  { id: 'sql', name: 'SQL', icon: '🗄️', color: '#336791', desc: 'Consulte e gerencie dados' }
+  { id: 'sql', name: 'SQL', icon: '🗄️', color: '#336791', desc: 'Consulte e gerencie dados' },
+  { id: 'biblia_at', name: 'Antigo Testamento', icon: '📜', color: '#c0872e', desc: 'Gênesis, profetas, reis e a história de Israel' },
+  { id: 'biblia_nt', name: 'Novo Testamento', icon: '✝️', color: '#8b5cf6', desc: 'Evangelhos, epístolas e a vida de Jesus' },
+  { id: 'doutrinas', name: 'Doutrinas Cristãs', icon: '⛪', color: '#ef4444', desc: 'Fundamentos da fé, credos e teologia sistemática' },
+  { id: 'historia_igreja', name: 'História da Igreja', icon: '🏛️', color: '#0ea5e9', desc: 'Da igreja primitiva à Reforma e além' }
 ];
 
 const TOPICS = {
@@ -95,6 +99,30 @@ const TOPICS = {
     { id: 'aggregate', name: 'Agregação', emoji: '📊', desc: 'COUNT, SUM, AVG, GROUP BY' },
     { id: 'insert_update', name: 'INSERT & UPDATE', emoji: '✏️', desc: 'inserir e atualizar dados' },
     { id: 'create', name: 'CREATE & ALTER', emoji: '🧱', desc: 'tabelas, colunas, tipos' }
+  ],
+  biblia_at: [
+    { id: 'genesis_criacao', name: 'Gênesis e Criação', emoji: '🌍', desc: 'criação, Adão, Eva e os patriarcas' },
+    { id: 'exodo_lei', name: 'Êxodo e a Lei', emoji: '📋', desc: 'Moisés, pragas, mandamentos e aliança' },
+    { id: 'reis_profetas', name: 'Reis e Profetas', emoji: '👑', desc: 'monarquia de Israel e mensageiros de Deus' },
+    { id: 'sabedoria', name: 'Livros de Sabedoria', emoji: '📖', desc: 'Salmos, Provérbios e Eclesiastes' }
+  ],
+  biblia_nt: [
+    { id: 'vida_jesus', name: 'Vida de Jesus', emoji: '⭐', desc: 'nascimento, ministério e ensinamentos' },
+    { id: 'parabolas', name: 'Parábolas', emoji: '🌾', desc: 'histórias que Jesus contou' },
+    { id: 'paixao_ressurreicao', name: 'Paixão e Ressurreição', emoji: '✝️', desc: 'crucificação, morte e ressurreição' },
+    { id: 'atos_epistolas', name: 'Atos e Epístolas', emoji: '✉️', desc: 'igreja primitiva e cartas apostólicas' }
+  ],
+  doutrinas: [
+    { id: 'trindade', name: 'Trindade', emoji: '🔺', desc: 'Pai, Filho e Espírito Santo' },
+    { id: 'salvacao', name: 'Salvação e Graça', emoji: '💝', desc: 'redenção, justificação e santificação' },
+    { id: 'biblia_doutrina', name: 'Autoridade da Bíblia', emoji: '📕', desc: 'inspiração, inerrância e cânon' },
+    { id: 'escatologia', name: 'Escatologia', emoji: '🔮', desc: 'últimos tempos, volta de Cristo e eternidade' }
+  ],
+  historia_igreja: [
+    { id: 'igreja_primitiva', name: 'Igreja Primitiva', emoji: '🕊️', desc: 'primeiros séculos e perseguições' },
+    { id: 'conc_credos', name: 'Concílios e Credos', emoji: '📜', desc: 'Niceia, Calcedônia e definições de fé' },
+    { id: 'reforma', name: 'Reforma Protestante', emoji: '🔨', desc: 'Lutero, Calvino e os reformadores' },
+    { id: 'igreja_moderna', name: 'Igreja Moderna', emoji: '🌎', desc: 'avivamentos, missões e expansão global' }
   ],
   math: [
     { id: 'arithmetic', name: 'Aritmética', emoji: '➕', desc: 'operações fundamentais' },
@@ -1303,6 +1331,383 @@ const QUESTIONS = {
         { q: 'Evolução de linguagens mostra que paradigmas...', opts: ['São imutáveis', 'Coexistem e se combinam conforme o problema', 'Só o imperativo importa', 'Eliminam necessidade de algoritmos'], answer: 1, explain: 'Hoje é comum linguagens suportarem múltiplos paradigmas.' },
         { q: 'Gerenciamento automático de memória (GC) impacta principalmente...', opts: ['Apenas visual do app', 'Produtividade e segurança, com trade-offs de desempenho', 'Formato de URL', 'Versão do navegador'], answer: 1, explain: 'GC reduz erros de memória, mas exige decisões de runtime.' },
         { q: 'Comunidades open source influenciam linguagens ao...', opts: ['Impedir evolução', 'Evoluir bibliotecas, ferramentas e padrões de uso', 'Excluir documentação', 'Remover compatibilidade'], answer: 1, explain: 'Ecossistema comunitário acelera inovação e adoção de boas práticas.' }
+      ]
+    }
+  },
+  biblia_at: {
+    genesis_criacao: {
+      easy: [
+        { q: 'Segundo Gênesis, em quantos dias Deus criou o mundo?', opts: ['5 dias', '6 dias', '7 dias', '10 dias'], answer: 1, explain: 'Deus criou tudo em 6 dias e descansou no 7º dia (Gênesis 1-2).' },
+        { q: 'Quem foi o primeiro homem segundo a Bíblia?', opts: ['Noé', 'Abraão', 'Adão', 'Moisés'], answer: 2, explain: 'Adão foi o primeiro homem, criado por Deus do pó da terra (Gênesis 2:7).' },
+        { q: 'Qual fruto era proibido no Jardim do Éden?', opts: ['Da árvore da vida', 'Da árvore do conhecimento do bem e do mal', 'Da oliveira sagrada', 'Da videira'], answer: 1, explain: 'Era proibido comer da árvore do conhecimento do bem e do mal (Gênesis 2:17).' },
+        { q: 'Quem construiu a arca para sobreviver ao dilúvio?', opts: ['Abraão', 'Moisés', 'Noé', 'Davi'], answer: 2, explain: 'Noé construiu a arca por ordem de Deus (Gênesis 6:14).' },
+        { q: 'Quem foram os filhos de Adão e Eva mencionados em Gênesis?', opts: ['Pedro e Paulo', 'Caim e Abel', 'Isaque e Ismael', 'Jacó e Esaú'], answer: 1, explain: 'Caim e Abel são os primeiros filhos de Adão e Eva mencionados (Gênesis 4:1-2).' },
+        { q: 'O que Deus fez no sétimo dia da criação?', opts: ['Criou o homem', 'Criou os animais', 'Descansou', 'Criou a luz'], answer: 2, explain: 'No sétimo dia, Deus descansou de toda a obra que fizera (Gênesis 2:2).' }
+      ],
+      medium: [
+        { q: 'Quantos de cada animal Noé levou na arca?', opts: ['Um casal de cada', 'Um casal dos impuros e sete casais dos puros', 'Sete de cada', 'Dez de cada'], answer: 1, explain: 'Dos animais puros levou sete casais e dos impuros um casal (Gênesis 7:2-3).' },
+        { q: 'Qual foi o sinal da aliança de Deus com Noé após o dilúvio?', opts: ['Uma estrela', 'O arco-íris', 'Uma pomba', 'Um trovão'], answer: 1, explain: 'O arco-íris foi o sinal da aliança de que Deus não destruiria a terra com dilúvio novamente (Gênesis 9:13).' },
+        { q: 'Por que Deus confundiu as línguas na Torre de Babel?', opts: ['Para punir Noé', 'Para espalhar a humanidade pela terra', 'Para criar novas nações', 'Para testar Abraão'], answer: 1, explain: 'Os homens queriam construir uma torre até o céu; Deus confundiu suas línguas para dispersá-los (Gênesis 11:7-9).' },
+        { q: 'Quem foi Melquisedeque em Gênesis?', opts: ['Um faraó do Egito', 'Rei de Salém e sacerdote do Deus Altíssimo', 'Filho de Abraão', 'Um profeta de Israel'], answer: 1, explain: 'Melquisedeque era rei de Salém e sacerdote que abençoou Abraão (Gênesis 14:18).' },
+        { q: 'Qual era o novo nome que Deus deu a Jacó?', opts: ['Abraão', 'Israel', 'Judá', 'Josué'], answer: 1, explain: 'Deus mudou o nome de Jacó para Israel, que significa "lutou com Deus" (Gênesis 32:28).' }
+      ],
+      hard: [
+        { q: 'Em Gênesis 1, qual foi a primeira coisa que Deus criou?', opts: ['O céu e a terra', 'A luz', 'As águas', 'Os animais'], answer: 1, explain: 'A primeira coisa criada de forma nomeada foi a luz: "Haja luz" (Gênesis 1:3). Céu e terra são o contexto inicial.' },
+        { q: 'Quantos anos Matusalém viveu segundo Gênesis?', opts: ['120 anos', '365 anos', '969 anos', '777 anos'], answer: 2, explain: 'Matusalém viveu 969 anos, sendo a pessoa mais longeva registrada na Bíblia (Gênesis 5:27).' },
+        { q: 'Qual era a idade de Abraão quando Isaque nasceu?', opts: ['75 anos', '90 anos', '100 anos', '120 anos'], answer: 2, explain: 'Abraão tinha 100 anos quando Isaque nasceu (Gênesis 21:5).' },
+        { q: 'Quem foi vendido como escravo pelos próprios irmãos no Egito?', opts: ['Benjamim', 'Judá', 'José', 'Rúben'], answer: 2, explain: 'José foi vendido por seus irmãos e levado ao Egito (Gênesis 37:28).' },
+        { q: 'A aliança de Deus com Abraão prometia que sua descendência seria como...', opts: ['As ondas do mar', 'As estrelas do céu e a areia do mar', 'As árvores da floresta', 'Os rios da terra'], answer: 1, explain: 'Deus prometeu descendência inumerável como as estrelas e a areia (Gênesis 22:17).' }
+      ]
+    },
+    exodo_lei: {
+      easy: [
+        { q: 'Quem liderou os israelitas para fora do Egito?', opts: ['Abraão', 'Josué', 'Moisés', 'Davi'], answer: 2, explain: 'Moisés foi chamado por Deus para libertar o povo de Israel da escravidão no Egito (Êxodo 3).' },
+        { q: 'Quantas pragas Deus enviou sobre o Egito?', opts: ['5', '7', '10', '12'], answer: 2, explain: 'Foram 10 pragas enviadas sobre o Egito antes do faraó libertar os israelitas (Êxodo 7-12).' },
+        { q: 'Qual mar Moisés abriu para o povo passar?', opts: ['Mar Mediterrâneo', 'Mar Morto', 'Mar Vermelho', 'Mar da Galileia'], answer: 2, explain: 'Deus abriu o Mar Vermelho para os israelitas passarem (Êxodo 14:21).' },
+        { q: 'Onde Moisés recebeu os Dez Mandamentos?', opts: ['Monte Carmelo', 'Monte Sinai', 'Monte das Oliveiras', 'Monte Sião'], answer: 1, explain: 'Moisés recebeu as tábuas da Lei no Monte Sinai (Êxodo 19-20).' },
+        { q: 'Qual foi a última das 10 pragas do Egito?', opts: ['Trevas', 'Gafanhotos', 'Morte dos primogênitos', 'Água em sangue'], answer: 2, explain: 'A décima praga foi a morte de todos os primogênitos do Egito (Êxodo 12:29).' }
+      ],
+      medium: [
+        { q: 'Qual é o primeiro dos Dez Mandamentos?', opts: ['Não matarás', 'Não terás outros deuses diante de mim', 'Honra teu pai e tua mãe', 'Não furtarás'], answer: 1, explain: 'O primeiro mandamento é "Não terás outros deuses diante de mim" (Êxodo 20:3).' },
+        { q: 'O que os israelitas fizeram enquanto Moisés estava no monte recebendo a Lei?', opts: ['Oraram e jejuaram', 'Fizeram um bezerro de ouro', 'Construíram um templo', 'Atravessaram o Jordão'], answer: 1, explain: 'O povo fez um bezerro de ouro para adorar (Êxodo 32:4).' },
+        { q: 'O que é a Páscoa judaica originalmente?', opts: ['Festa da colheita', 'Celebração da libertação do Egito', 'Aniversário de Moisés', 'Dia de jejum'], answer: 1, explain: 'A Páscoa celebra a libertação dos israelitas da escravidão no Egito (Êxodo 12).' },
+        { q: 'O que era o maná?', opts: ['Tipo de pão egípcio', 'Alimento que Deus dava ao povo no deserto', 'Uma bebida sagrada', 'Um sacrifício animal'], answer: 1, explain: 'Maná era o alimento miraculoso que Deus providenciava diariamente no deserto (Êxodo 16:14-15).' },
+        { q: 'Qual era o papel de Arão junto a Moisés?', opts: ['General do exército', 'Porta-voz e sacerdote', 'Juiz de Israel', 'Escriba da Lei'], answer: 1, explain: 'Arão era irmão de Moisés, servia como seu porta-voz e foi o primeiro sumo sacerdote (Êxodo 4:14-16).' }
+      ],
+      hard: [
+        { q: 'Quantos anos os israelitas vagaram pelo deserto?', opts: ['10 anos', '20 anos', '40 anos', '70 anos'], answer: 2, explain: 'Os israelitas vagaram 40 anos pelo deserto antes de entrar na Terra Prometida (Números 14:33).' },
+        { q: 'O que era a Arca da Aliança?', opts: ['O barco de Noé', 'Um baú sagrado que guardava as tábuas da Lei', 'O altar do templo', 'Um escudo de guerra'], answer: 1, explain: 'A Arca da Aliança era o baú revestido de ouro que continha as tábuas dos Dez Mandamentos (Êxodo 25:10-22).' },
+        { q: 'Qual o significado do nome "Êxodo"?', opts: ['Lei de Deus', 'Saída', 'Aliança', 'Promessa'], answer: 1, explain: 'Êxodo vem do grego "exodos" e significa "saída", referindo-se à saída do Egito.' },
+        { q: 'O Tabernáculo era...', opts: ['O palácio de Moisés', 'O templo permanente em Jerusalém', 'A tenda portátil de adoração a Deus no deserto', 'A casa de Arão'], answer: 2, explain: 'O Tabernáculo era a tenda portátil onde Deus habitava entre seu povo durante a peregrinação (Êxodo 26).' },
+        { q: 'O que Deus revelou a Moisés na sarça ardente?', opts: ['O nome "EU SOU O QUE SOU"', 'Os Dez Mandamentos', 'O plano do Tabernáculo', 'A profecia do Messias'], answer: 0, explain: 'Na sarça ardente, Deus revelou seu nome "EU SOU O QUE SOU" (YHWH) a Moisés (Êxodo 3:14).' }
+      ]
+    },
+    reis_profetas: {
+      easy: [
+        { q: 'Quem foi o primeiro rei de Israel?', opts: ['Davi', 'Saul', 'Salomão', 'Samuel'], answer: 1, explain: 'Saul foi ungido por Samuel como o primeiro rei de Israel (1 Samuel 10:1).' },
+        { q: 'Qual rei era conhecido por sua grande sabedoria?', opts: ['Davi', 'Saul', 'Salomão', 'Josias'], answer: 2, explain: 'Salomão pediu sabedoria a Deus e ficou conhecido como o rei mais sábio (1 Reis 3:12).' },
+        { q: 'Quem derrotou o gigante Golias?', opts: ['Saul', 'Sansão', 'Davi', 'Josué'], answer: 2, explain: 'Davi, ainda jovem pastor, derrotou o gigante filisteu Golias com uma funda (1 Samuel 17).' },
+        { q: 'O que Davi tocava para acalmar o rei Saul?', opts: ['Flauta', 'Harpa', 'Tambor', 'Trombeta'], answer: 1, explain: 'Davi tocava harpa (lira) para aliviar o espírito perturbado de Saul (1 Samuel 16:23).' },
+        { q: 'Quem construiu o primeiro Templo de Jerusalém?', opts: ['Moisés', 'Davi', 'Salomão', 'Esdras'], answer: 2, explain: 'Salomão construiu o primeiro Templo em Jerusalém (1 Reis 6).' }
+      ],
+      medium: [
+        { q: 'Qual profeta enfrentou os profetas de Baal no Monte Carmelo?', opts: ['Isaías', 'Jeremias', 'Elias', 'Eliseu'], answer: 2, explain: 'Elias desafiou os 450 profetas de Baal no Monte Carmelo e Deus respondeu com fogo (1 Reis 18).' },
+        { q: 'Por que o reino de Israel se dividiu em dois?', opts: ['Invasão estrangeira', 'Porque Roboão impôs impostos pesados', 'Morte de Davi', 'Fome na terra'], answer: 1, explain: 'Após Salomão, seu filho Roboão recusou aliviar os impostos, causando a divisão (1 Reis 12).' },
+        { q: 'Quais eram os dois reinos após a divisão?', opts: ['Israel e Judá', 'Israel e Samaria', 'Judá e Galileia', 'Israel e Jerusalém'], answer: 0, explain: 'O reino se dividiu em Israel (norte, 10 tribos) e Judá (sul, 2 tribos).' },
+        { q: 'Qual profeta escreveu sobre o servo sofredor que viria?', opts: ['Jeremias', 'Ezequiel', 'Isaías', 'Daniel'], answer: 2, explain: 'Isaías escreveu sobre o servo sofredor no capítulo 53, profecia messiânica.' },
+        { q: 'Quem foi lançado na cova dos leões?', opts: ['Elias', 'Jeremias', 'Daniel', 'Jonas'], answer: 2, explain: 'Daniel foi lançado na cova dos leões por orar a Deus, mas foi protegido (Daniel 6).' }
+      ],
+      hard: [
+        { q: 'Qual profeta foi engolido por um grande peixe?', opts: ['Elias', 'Jonas', 'Amós', 'Oseias'], answer: 1, explain: 'Jonas fugiu da missão de pregar em Nínive e foi engolido por um grande peixe (Jonas 1:17).' },
+        { q: 'Qual império destruiu Jerusalém e o Templo em 586 a.C.?', opts: ['Império Romano', 'Império Persa', 'Império Babilônico', 'Império Assírio'], answer: 2, explain: 'Nabucodonosor, rei da Babilônia, destruiu Jerusalém e o Templo em 586 a.C. (2 Reis 25).' },
+        { q: 'Qual profeta teve a visão do vale de ossos secos?', opts: ['Isaías', 'Jeremias', 'Ezequiel', 'Daniel'], answer: 2, explain: 'Ezequiel teve a visão do vale de ossos secos que se tornaram vivos (Ezequiel 37).' },
+        { q: 'O que a profecia de Daniel sobre a "estátua" com vários metais representava?', opts: ['As tribos de Israel', 'Impérios mundiais sucessivos', 'Os reis de Judá', 'Os anjos celestiais'], answer: 1, explain: 'A estátua de Daniel 2 representa impérios sucessivos: Babilônia, Medo-Persa, Grécia e Roma.' },
+        { q: 'Qual profeta se casou com Gômer como símbolo do amor de Deus por Israel?', opts: ['Amós', 'Oseias', 'Miqueias', 'Joel'], answer: 1, explain: 'Oseias se casou com Gômer, simbolizando o amor fiel de Deus por Israel infiel (Oseias 1-3).' }
+      ]
+    },
+    sabedoria: {
+      easy: [
+        { q: 'Quem escreveu a maioria dos Salmos?', opts: ['Moisés', 'Salomão', 'Davi', 'Samuel'], answer: 2, explain: 'Davi é tradicionalmente considerado o principal autor dos Salmos.' },
+        { q: 'Qual livro é famoso por seus provérbios de sabedoria?', opts: ['Gênesis', 'Provérbios', 'Êxodo', 'Levítico'], answer: 1, explain: 'O livro de Provérbios contém ensinamentos de sabedoria, muitos atribuídos a Salomão.' },
+        { q: 'Qual é o Salmo mais conhecido que começa com "O Senhor é meu pastor"?', opts: ['Salmo 1', 'Salmo 23', 'Salmo 91', 'Salmo 119'], answer: 1, explain: 'O Salmo 23 começa com "O Senhor é meu pastor, nada me faltará".' },
+        { q: 'Qual livro fala sobre o sentido da vida e diz "vaidade de vaidades"?', opts: ['Jó', 'Eclesiastes', 'Cantares', 'Provérbios'], answer: 1, explain: 'Eclesiastes explora o sentido da vida e começa com "vaidade de vaidades" (Eclesiastes 1:2).' },
+        { q: 'De que trata o livro de Jó?', opts: ['A criação do mundo', 'O sofrimento do justo', 'A história de Israel', 'As leis de Moisés'], answer: 1, explain: 'Jó aborda o sofrimento de um homem justo e a soberania de Deus.' }
+      ],
+      medium: [
+        { q: '"O temor do Senhor é o princípio da sabedoria" está em qual livro?', opts: ['Salmos', 'Eclesiastes', 'Provérbios', 'Jó'], answer: 2, explain: 'Esta famosa frase está em Provérbios 9:10.' },
+        { q: 'O Salmo 119 é especial porque...', opts: ['É o mais curto da Bíblia', 'É o mais longo capítulo da Bíblia', 'Foi escrito por Moisés', 'Não contém referência a Deus'], answer: 1, explain: 'O Salmo 119 é o mais longo capítulo da Bíblia com 176 versículos, cada seção segue o alfabeto hebraico.' },
+        { q: 'Quem disse "Há tempo para tudo debaixo do céu"?', opts: ['Davi nos Salmos', 'O Pregador em Eclesiastes', 'Salomão em Provérbios', 'Jó'], answer: 1, explain: 'Esta passagem está em Eclesiastes 3:1, atribuída ao Pregador (Qohelet).' },
+        { q: 'Em Provérbios, a sabedoria é personificada como...', opts: ['Um rei', 'Uma mulher', 'Um anjo', 'Uma criança'], answer: 1, explain: 'Em Provérbios 8, a sabedoria é personificada como uma mulher que clama nas ruas.' },
+        { q: 'Qual foi a conclusão final de Eclesiastes?', opts: ['A vida não tem sentido', 'Teme a Deus e guarda seus mandamentos', 'Busque riquezas', 'Seja hedonista'], answer: 1, explain: 'A conclusão é: "Teme a Deus e guarda os seus mandamentos" (Eclesiastes 12:13).' }
+      ],
+      hard: [
+        { q: 'O livro de Cantares de Salomão é interpretado como...', opts: ['Apenas um poema de amor humano', 'Uma alegoria do amor de Deus por seu povo', 'Uma profecia do fim dos tempos', 'Um livro de leis matrimoniais'], answer: 1, explain: 'Cantares é interpretado como alegoria do amor entre Deus e seu povo, além do amor conjugal.' },
+        { q: 'Qual é a resposta final de Deus a Jó sobre seu sofrimento?', opts: ['Explicou cada razão do sofrimento', 'Revelou sua soberania e sabedoria infinita', 'Prometeu que nunca mais sofreria', 'Culpou os amigos de Jó'], answer: 1, explain: 'Deus respondeu a Jó revelando Sua grandeza e soberania sobre a criação (Jó 38-41).' },
+        { q: 'Em Provérbios, "a resposta branda desvia o furor" ensina sobre...', opts: ['Estratégia militar', 'Sabedoria no falar e mansidão', 'Técnica de negociação', 'Obediência à lei'], answer: 1, explain: 'Provérbios 15:1 ensina que palavras brandas acalmam a ira, refletindo sabedoria relacional.' },
+        { q: 'Os Salmos de imprecação (ex: Salmo 109) causam debate porque...', opts: ['São muito curtos', 'Pedem a Deus que julgue os inimigos', 'Negam a existência de Deus', 'Foram escritos por pagãos'], answer: 1, explain: 'Salmos imprecatórios pedem julgamento divino contra os ímpios, gerando debate ético e teológico.' },
+        { q: 'O conceito de "temor do Senhor" nos livros sapienciais significa...', opts: ['Terror e medo de Deus', 'Reverência, respeito e submissão a Deus', 'Ignorância sobre Deus', 'Superstição religiosa'], answer: 1, explain: 'Temor do Senhor é reverência respeitosa e submissão à vontade de Deus, base da verdadeira sabedoria.' }
+      ]
+    }
+  },
+  biblia_nt: {
+    vida_jesus: {
+      easy: [
+        { q: 'Em qual cidade Jesus nasceu?', opts: ['Nazaré', 'Jerusalém', 'Belém', 'Cafarnaum'], answer: 2, explain: 'Jesus nasceu em Belém da Judeia (Mateus 2:1).' },
+        { q: 'Quem era a mãe de Jesus?', opts: ['Marta', 'Maria Madalena', 'Maria', 'Isabel'], answer: 2, explain: 'Maria foi a mãe de Jesus, concebido pelo Espírito Santo (Lucas 1:31).' },
+        { q: 'Quantos apóstolos Jesus escolheu?', opts: ['7', '10', '12', '15'], answer: 2, explain: 'Jesus escolheu 12 apóstolos para segui-lo (Marcos 3:14).' },
+        { q: 'Qual era a profissão de Jesus antes do ministério?', opts: ['Pescador', 'Carpinteiro', 'Pastor de ovelhas', 'Sacerdote'], answer: 1, explain: 'Jesus era carpinteiro, seguindo o ofício de José (Marcos 6:3).' },
+        { q: 'Onde Jesus foi batizado?', opts: ['Mar da Galileia', 'Rio Jordão', 'Mar Morto', 'Tanque de Siloé'], answer: 1, explain: 'Jesus foi batizado por João Batista no Rio Jordão (Mateus 3:13).' }
+      ],
+      medium: [
+        { q: 'Qual foi o primeiro milagre de Jesus registrado em João?', opts: ['Multiplicação dos pães', 'Transformar água em vinho', 'Cura de um cego', 'Andar sobre as águas'], answer: 1, explain: 'O primeiro milagre foi transformar água em vinho nas bodas de Caná (João 2:1-11).' },
+        { q: 'Quantos dias Jesus jejuou no deserto antes das tentações?', opts: ['7 dias', '21 dias', '40 dias', '70 dias'], answer: 2, explain: 'Jesus jejuou 40 dias e 40 noites no deserto (Mateus 4:2).' },
+        { q: 'Jesus disse "Eu sou o caminho, a verdade e a vida" em qual Evangelho?', opts: ['Mateus', 'Marcos', 'Lucas', 'João'], answer: 3, explain: 'Esta declaração está em João 14:6.' },
+        { q: 'Quem era o apóstolo que negou Jesus três vezes?', opts: ['João', 'Judas', 'Pedro', 'Tomé'], answer: 2, explain: 'Pedro negou Jesus três vezes antes do galo cantar (Mateus 26:69-75).' },
+        { q: 'O Sermão da Montanha está registrado em qual Evangelho?', opts: ['Mateus', 'Marcos', 'Lucas', 'João'], answer: 0, explain: 'O Sermão da Montanha está em Mateus capítulos 5 a 7.' }
+      ],
+      hard: [
+        { q: 'Qual a diferença principal entre os Evangelhos sinóticos e João?', opts: ['João foi escrito em grego e os outros em hebraico', 'João foca mais na divindade de Cristo e em discursos teológicos', 'João não menciona milagres', 'Os sinóticos foram escritos por apóstolos e João não'], answer: 1, explain: 'O Evangelho de João tem perspectiva teológica mais profunda, focando na divindade de Cristo.' },
+        { q: 'Jesus disse "Antes que Abraão existisse, EU SOU" conectando-se a...', opts: ['O batismo de João', 'A revelação do nome de Deus a Moisés (Êxodo 3:14)', 'A aliança com Noé', 'A criação de Adão'], answer: 1, explain: 'Jesus usou o nome divino "EU SOU" (ego eimi), o mesmo revelado a Moisés (João 8:58).' },
+        { q: 'O título "Filho do Homem" que Jesus usava vem de...', opts: ['Gênesis', 'Salmos', 'Daniel 7:13', 'Provérbios'], answer: 2, explain: 'O título vem de Daniel 7:13, onde o "Filho do Homem" recebe domínio eterno de Deus.' },
+        { q: 'A "Oração Sacerdotal" de Jesus em João 17 pede principalmente por...', opts: ['A destruição de Roma', 'A unidade dos crentes', 'Riquezas para os apóstolos', 'A reconstrução do Templo'], answer: 1, explain: 'Na oração de João 17, Jesus pede pela unidade e santificação dos que creem nele.' },
+        { q: 'A Transfiguração de Jesus ocorreu diante de quais apóstolos?', opts: ['Todos os doze', 'Pedro, Tiago e João', 'Pedro e André', 'Mateus e Tomé'], answer: 1, explain: 'Pedro, Tiago e João testemunharam a Transfiguração (Mateus 17:1).' }
+      ]
+    },
+    parabolas: {
+      easy: [
+        { q: 'Na parábola do Filho Pródigo, o que o filho mais novo fez?', opts: ['Ficou em casa trabalhando', 'Pediu sua herança e a gastou toda', 'Virou sacerdote', 'Construiu uma casa'], answer: 1, explain: 'O filho pródigo pediu sua herança, foi embora e gastou tudo (Lucas 15:13).' },
+        { q: 'Na parábola do Bom Samaritano, quem ajudou o homem ferido?', opts: ['Um sacerdote', 'Um levita', 'Um samaritano', 'Um fariseu'], answer: 2, explain: 'O samaritano cuidou do homem ferido, enquanto o sacerdote e o levita passaram de largo (Lucas 10:33).' },
+        { q: 'Na parábola do Semeador, o que representam as sementes?', opts: ['Dinheiro', 'A Palavra de Deus', 'Oração', 'Sacrifícios'], answer: 1, explain: 'As sementes representam a Palavra de Deus semeada nos corações (Marcos 4:14).' },
+        { q: 'O que aconteceu com a ovelha perdida na parábola?', opts: ['Foi abandonada', 'O pastor foi buscá-la', 'Voltou sozinha', 'Foi comida pelo lobo'], answer: 1, explain: 'O pastor deixou as 99 e foi buscar a ovelha perdida (Lucas 15:4).' },
+        { q: 'Na parábola dos talentos, o que o senhor deu aos servos?', opts: ['Terras', 'Talentos (dinheiro)', 'Ovelhas', 'Livros'], answer: 1, explain: 'O senhor deu talentos (moedas) aos servos para administrarem (Mateus 25:15).' }
+      ],
+      medium: [
+        { q: 'Na parábola do Semeador, o que representa o solo rochoso?', opts: ['Quem ouve e pratica', 'Quem recebe com alegria mas desiste na tribulação', 'Quem ignora a Palavra', 'Quem é muito rico'], answer: 1, explain: 'O solo rochoso representa quem recebe com alegria mas não tem raiz e desiste (Marcos 4:16-17).' },
+        { q: 'A parábola do Fermento ensina que o Reino de Deus...', opts: ['É violento', 'Cresce de forma gradual e penetrante', 'É apenas para poucos', 'Será destruído'], answer: 1, explain: 'O fermento na massa mostra como o Reino cresce gradualmente até permear tudo (Mateus 13:33).' },
+        { q: 'Na parábola das Dez Virgens, por que cinco foram chamadas de tolas?', opts: ['Chegaram atrasadas', 'Não levaram azeite suficiente', 'Dormiam demais', 'Não conheciam o noivo'], answer: 1, explain: 'As cinco tolas não levaram azeite extra para suas lâmpadas (Mateus 25:3).' },
+        { q: 'O que Jesus ensina na parábola do Fariseu e do Publicano?', opts: ['Que devemos jejuar muito', 'Que a humildade é mais aceita que a arrogância religiosa', 'Que impostos são errados', 'Que fariseus são melhores'], answer: 1, explain: 'O publicano humilde foi justificado, não o fariseu orgulhoso (Lucas 18:14).' },
+        { q: 'A parábola da Pérola de Grande Valor ensina que...', opts: ['Devemos ser comerciantes', 'O Reino de Deus vale tudo que temos', 'Joias são importantes', 'Devemos guardar riquezas'], answer: 1, explain: 'O mercador vendeu tudo para comprar a pérola preciosa, assim vale o Reino (Mateus 13:45-46).' }
+      ],
+      hard: [
+        { q: 'Na parábola dos Trabalhadores da Vinha, por que todos receberam o mesmo?', opts: ['Porque trabalharam igual', 'Para mostrar a generosidade soberana de Deus', 'Porque era obrigação legal', 'Porque os primeiros pediram'], answer: 1, explain: 'A parábola mostra que a graça de Deus não segue mérito humano, mas Sua generosidade (Mateus 20:15).' },
+        { q: 'As parábolas de Jesus em Marcos 4 tinham o propósito de...', opts: ['Entreter as multidões', 'Revelar verdades aos discípulos e ocultar dos incrédulos', 'Substituir a Lei de Moisés', 'Contar histórias verídicas'], answer: 1, explain: 'Jesus explicou que as parábolas revelam mistérios aos discípulos mas ocultam dos de fora (Marcos 4:11-12).' },
+        { q: 'A parábola do Rico e Lázaro ensina sobre...', opts: ['Como ficar rico', 'A realidade da vida após a morte e a reversão de condições', 'A importância do trabalho', 'Que mendigos são preguiçosos'], answer: 1, explain: 'A parábola mostra a reversão após a morte: Lázaro é consolado e o rico sofre (Lucas 16:19-31).' },
+        { q: 'Na parábola dos Lavradores Maus, o filho enviado pelo dono representa...', opts: ['Moisés', 'João Batista', 'Jesus Cristo', 'Elias'], answer: 2, explain: 'O filho é Jesus, rejeitado e morto pelos líderes religiosos (Marcos 12:1-12).' },
+        { q: 'A parábola do Joio e do Trigo ensina que o julgamento final...', opts: ['Deve ser feito imediatamente pela igreja', 'Será feito por Deus no tempo certo, na ceifa', 'Nunca acontecerá', 'Já aconteceu'], answer: 1, explain: 'Jesus ensinou que joio e trigo crescem juntos até a ceifa (julgamento final) — Mateus 13:30.' }
+      ]
+    },
+    paixao_ressurreicao: {
+      easy: [
+        { q: 'Em que dia da semana Jesus ressuscitou?', opts: ['Sexta-feira', 'Sábado', 'Domingo', 'Segunda-feira'], answer: 2, explain: 'Jesus ressuscitou no primeiro dia da semana, domingo (Marcos 16:9).' },
+        { q: 'Quem traiu Jesus?', opts: ['Pedro', 'Tomé', 'Judas Iscariotes', 'André'], answer: 2, explain: 'Judas Iscariotes traiu Jesus por 30 moedas de prata (Mateus 26:15).' },
+        { q: 'Onde Jesus foi crucificado?', opts: ['Monte Sinai', 'Gólgota (Calvário)', 'Monte das Oliveiras', 'Betânia'], answer: 1, explain: 'Jesus foi crucificado no Gólgota, que significa "lugar da caveira" (Mateus 27:33).' },
+        { q: 'O que Jesus celebrou com os discípulos antes de ser preso?', opts: ['A Festa de Purim', 'A Última Ceia (Páscoa)', 'O Pentecostes', 'O Yom Kippur'], answer: 1, explain: 'Jesus celebrou a Última Ceia, uma refeição pascal, com seus discípulos (Mateus 26:17-30).' },
+        { q: 'Quantos dias após a ressurreição Jesus ascendeu ao céu?', opts: ['3 dias', '7 dias', '40 dias', '50 dias'], answer: 2, explain: 'Jesus ascendeu ao céu 40 dias após a ressurreição (Atos 1:3,9).' }
+      ],
+      medium: [
+        { q: 'Qual foi o grito de Jesus na cruz registrado em Mateus?', opts: ['"Está consumado"', '"Deus meu, Deus meu, por que me desamparaste?"', '"Pai, perdoa-lhes"', '"Em tuas mãos entrego meu espírito"'], answer: 1, explain: 'Jesus clamou "Eli, Eli, lama sabactâni" — "Deus meu, por que me desamparaste?" (Mateus 27:46).' },
+        { q: 'O véu do Templo se rasgou quando Jesus morreu. O que isso simbolizou?', opts: ['A destruição do Templo', 'O acesso direto a Deus para todos', 'O fim da lei judaica', 'A ira de Deus'], answer: 1, explain: 'O véu rasgado simboliza que o caminho a Deus foi aberto pela morte de Cristo (Hebreus 10:19-20).' },
+        { q: 'Quem pediu a Pilatos o corpo de Jesus para sepultá-lo?', opts: ['Pedro', 'José de Arimateia', 'Nicodemos', 'João'], answer: 1, explain: 'José de Arimateia, discípulo secreto, pediu o corpo de Jesus (Mateus 27:57-58).' },
+        { q: 'Quem foram as primeiras testemunhas da ressurreição?', opts: ['Os 12 apóstolos', 'Mulheres que foram ao túmulo', 'Os soldados romanos', 'Os sacerdotes'], answer: 1, explain: 'As mulheres, incluindo Maria Madalena, foram as primeiras no túmulo vazio (Marcos 16:1-6).' },
+        { q: 'Qual apóstolo duvidou da ressurreição até ver Jesus?', opts: ['Pedro', 'João', 'Tomé', 'André'], answer: 2, explain: 'Tomé disse que só acreditaria se tocasse as feridas de Jesus (João 20:25).' }
+      ],
+      hard: [
+        { q: 'Em qual jardim Jesus orou antes de ser preso?', opts: ['Jardim do Éden', 'Getsêmani', 'Jardim do Rei', 'Jardim de Betânia'], answer: 1, explain: 'Jesus orou no Getsêmani, pedindo que o cálice passasse dele (Mateus 26:36).' },
+        { q: 'Paulo afirma em 1 Coríntios 15 que se Cristo não ressuscitou...', opts: ['A lei ainda vale', 'Nossa fé é vã', 'Devemos seguir Moisés', 'O Templo será reconstruído'], answer: 1, explain: '"Se Cristo não ressuscitou, é vã a nossa fé" — a ressurreição é central ao cristianismo (1 Co 15:14).' },
+        { q: 'Isaías 53 profetiza sobre o servo sofredor. Qual verso diz "pelas suas pisaduras fomos sarados"?', opts: ['Isaías 53:3', 'Isaías 53:5', 'Isaías 53:7', 'Isaías 53:12'], answer: 1, explain: 'Isaías 53:5 diz: "ele foi ferido pelas nossas transgressões... pelas suas pisaduras fomos sarados".' },
+        { q: 'A "descida ao Hades" mencionada no Credo Apostólico refere-se a...', opts: ['Jesus foi ao inferno sofrer', 'Jesus proclamou vitória sobre a morte entre os mortos', 'Jesus dormiu três dias', 'Uma metáfora sem significado'], answer: 1, explain: 'A tradição entende que Cristo proclamou sua vitória no reino dos mortos (1 Pedro 3:19).' },
+        { q: 'Quantas aparições de Jesus ressurreto Paulo lista em 1 Coríntios 15?', opts: ['3', '5', '6', '8'], answer: 2, explain: 'Paulo lista 6 aparições: a Pedro, aos doze, a 500 irmãos, a Tiago, a todos os apóstolos e a ele mesmo (1 Co 15:5-8).' }
+      ]
+    },
+    atos_epistolas: {
+      easy: [
+        { q: 'Quem escreveu a maioria das epístolas do Novo Testamento?', opts: ['Pedro', 'João', 'Paulo', 'Tiago'], answer: 2, explain: 'O apóstolo Paulo escreveu 13 das 21 epístolas do Novo Testamento.' },
+        { q: 'O que aconteceu no dia de Pentecostes?', opts: ['Jesus nasceu', 'O Espírito Santo desceu sobre os discípulos', 'O Templo foi destruído', 'Paulo se converteu'], answer: 1, explain: 'No Pentecostes, o Espírito Santo desceu e os discípulos falaram em outras línguas (Atos 2).' },
+        { q: 'Qual era o nome de Paulo antes da conversão?', opts: ['Silas', 'Barnabé', 'Saulo', 'Timóteo'], answer: 2, explain: 'Paulo se chamava Saulo antes de sua conversão no caminho de Damasco (Atos 9:1-4).' },
+        { q: 'Qual livro narra a história da igreja primitiva?', opts: ['Romanos', 'Atos dos Apóstolos', 'Apocalipse', 'Hebreus'], answer: 1, explain: 'Atos dos Apóstolos, escrito por Lucas, narra o início e expansão da igreja.' },
+        { q: 'Quem era o companheiro de viagem missionária de Paulo?', opts: ['Pedro', 'Barnabé', 'Tiago', 'Mateus'], answer: 1, explain: 'Barnabé acompanhou Paulo na primeira viagem missionária (Atos 13:2).' }
+      ],
+      medium: [
+        { q: 'Em Romanos, Paulo ensina que a justificação vem pela...', opts: ['Obediência à Lei', 'Fé em Jesus Cristo', 'Circuncisão', 'Oferta de sacrifícios'], answer: 1, explain: 'Paulo ensina que somos justificados pela fé, não pelas obras da Lei (Romanos 3:28).' },
+        { q: 'Qual é o "fruto do Espírito" listado em Gálatas 5?', opts: ['Poder, riqueza e fama', 'Amor, alegria, paz, paciência, bondade...', 'Sabedoria e conhecimento apenas', 'Fé e esperança apenas'], answer: 1, explain: 'O fruto do Espírito inclui amor, alegria, paz, paciência, bondade, fidelidade, mansidão e domínio próprio (Gl 5:22-23).' },
+        { q: 'A quem Paulo escreveu sobre a "armadura de Deus"?', opts: ['Aos romanos', 'Aos coríntios', 'Aos efésios', 'Aos filipenses'], answer: 2, explain: 'A armadura de Deus é descrita em Efésios 6:10-18.' },
+        { q: 'O que Pedro afirmou no primeiro sermão da igreja em Atos 2?', opts: ['Que Jesus era apenas um profeta', 'Que Jesus é Senhor e Cristo, ressuscitado por Deus', 'Que a Lei deve ser abolida', 'Que o Templo seria reconstruído'], answer: 1, explain: 'Pedro proclamou que Deus fez Jesus Senhor e Cristo (Atos 2:36).' },
+        { q: 'A carta de Tiago ensina que a fé sem obras é...', opts: ['Suficiente', 'Morta', 'Superior', 'Opcional'], answer: 1, explain: 'Tiago 2:26 diz: "a fé sem obras é morta".' }
+      ],
+      hard: [
+        { q: 'O "espinho na carne" de Paulo (2 Co 12:7) é interpretado como...', opts: ['Uma doença física', 'Algo debatido: pode ser doença, oposição ou tentação', 'Judas Iscariotes', 'Sua consciência pesada'], answer: 1, explain: 'O espinho na carne é debatido: pode ser problema visual, oposição ou outra aflição — Paulo não especifica.' },
+        { q: 'O Concílio de Jerusalém (Atos 15) decidiu que os gentios convertidos...', opts: ['Deviam seguir toda a Lei judaica', 'Não precisavam ser circuncidados para serem salvos', 'Deviam adorar no Templo', 'Não podiam participar da igreja'], answer: 1, explain: 'O Concílio decidiu que os gentios não precisavam da circuncisão, apenas se abster de certas práticas (Atos 15:28-29).' },
+        { q: 'Hebreus 11 é chamado de "galeria da fé" porque...', opts: ['Lista pinturas de santos', 'Apresenta exemplos de fé de personagens do AT', 'Descreve o Templo', 'Fala sobre os anjos'], answer: 1, explain: 'Hebreus 11 lista heróis da fé: Abel, Noé, Abraão, Moisés e muitos outros.' },
+        { q: 'A doutrina da "justificação pela fé" de Paulo e as "obras" de Tiago são...', opts: ['Contraditórias e irreconciliáveis', 'Complementares: Paulo fala da base da salvação, Tiago da evidência', 'De autores diferentes que não se conheciam', 'Sobre assuntos completamente diferentes'], answer: 1, explain: 'Paulo enfatiza a fé como meio da salvação; Tiago enfatiza que a fé verdadeira produz obras — são complementares.' },
+        { q: 'O Apocalipse foi escrito por João durante seu exílio em...', opts: ['Roma', 'Jerusalém', 'Patmos', 'Éfeso'], answer: 2, explain: 'João escreveu o Apocalipse na ilha de Patmos, exilado por causa do evangelho (Apocalipse 1:9).' }
+      ]
+    }
+  },
+  doutrinas: {
+    trindade: {
+      easy: [
+        { q: 'A Trindade é a doutrina de que Deus é...', opts: ['Três deuses separados', 'Um Deus em três Pessoas', 'Apenas o Pai', 'Um Deus que muda de forma'], answer: 1, explain: 'A Trindade afirma que há um só Deus em três Pessoas: Pai, Filho e Espírito Santo.' },
+        { q: 'Quais são as três Pessoas da Trindade?', opts: ['Deus, Jesus e Maria', 'Pai, Filho e Espírito Santo', 'Abraão, Moisés e Davi', 'Criador, Salvador e Profeta'], answer: 1, explain: 'As três Pessoas da Trindade são o Pai, o Filho (Jesus) e o Espírito Santo.' },
+        { q: 'No batismo de Jesus, as três Pessoas da Trindade estão presentes?', opts: ['Não, apenas Jesus', 'Sim: o Filho é batizado, o Espírito desce e o Pai fala', 'Apenas Jesus e o Espírito', 'Não se sabe'], answer: 1, explain: 'No batismo: Jesus (Filho) é batizado, o Espírito desce como pomba e o Pai fala do céu (Mateus 3:16-17).' },
+        { q: 'A palavra "Trindade" aparece na Bíblia?', opts: ['Sim, em Gênesis', 'Sim, em João', 'Não, mas o conceito está nas Escrituras', 'Sim, no Apocalipse'], answer: 2, explain: 'A palavra "Trindade" não aparece na Bíblia, mas o conceito é encontrado em diversas passagens.' },
+        { q: 'Jesus Cristo é considerado...', opts: ['Apenas um profeta', 'Apenas um anjo', 'Verdadeiro Deus e verdadeiro homem', 'Apenas um homem sábio'], answer: 2, explain: 'A doutrina cristã afirma que Jesus é plenamente Deus e plenamente homem (duas naturezas, uma pessoa).' }
+      ],
+      medium: [
+        { q: 'O Credo Niceno foi criado para combater qual heresia?', opts: ['Pelagianismo', 'Arianismo (que negava a divindade plena de Cristo)', 'Gnosticismo', 'Docetismo'], answer: 1, explain: 'O Credo Niceno (325 d.C.) combateu o arianismo de Ário, que dizia que Jesus era criatura, não Deus.' },
+        { q: 'O que significa dizer que o Filho é "consubstancial" ao Pai?', opts: ['São a mesma Pessoa', 'Têm a mesma essência/natureza divina', 'São semelhantes mas não iguais', 'O Filho é inferior ao Pai'], answer: 1, explain: 'Consubstancial (homoousios) significa que Pai e Filho compartilham a mesma substância divina.' },
+        { q: 'O Espírito Santo é...', opts: ['Uma força impessoal', 'A terceira Pessoa da Trindade, plenamente Deus', 'Um anjo poderoso', 'A energia de Deus'], answer: 1, explain: 'O Espírito Santo é a terceira Pessoa da Trindade, pessoal e plenamente Deus.' },
+        { q: 'João 1:1 diz "o Verbo era Deus". O Verbo refere-se a...', opts: ['A Bíblia', 'O Espírito Santo', 'Jesus Cristo', 'A criação'], answer: 2, explain: 'O "Verbo" (Logos) em João 1:1 é Jesus Cristo: "No princípio era o Verbo, e o Verbo era Deus".' },
+        { q: 'A doutrina trinitária NÃO afirma que...', opts: ['Deus é um em essência', 'Existem três Pessoas distintas', 'Existem três deuses separados', 'Cada Pessoa é plenamente Deus'], answer: 2, explain: 'A Trindade não é triteísmo (três deuses). É um Deus em três Pessoas distintas.' }
+      ],
+      hard: [
+        { q: 'A controvérsia do "Filioque" divide católicos e ortodoxos sobre...', opts: ['A natureza de Cristo', 'Se o Espírito procede do Pai e do Filho ou só do Pai', 'A autoridade do Papa', 'O batismo infantil'], answer: 1, explain: 'Filioque ("e do Filho") foi adicionado ao Credo. Ocidentais dizem que o Espírito procede do Pai e do Filho; orientais, apenas do Pai.' },
+        { q: 'O modalismo é a heresia que afirma que...', opts: ['Jesus não é Deus', 'Deus é uma só Pessoa que se manifesta em três modos', 'Existem três deuses', 'O Espírito Santo não existe'], answer: 1, explain: 'O modalismo (sabelianismo) diz que Pai, Filho e Espírito são modos de um só Deus, negando distinção de Pessoas.' },
+        { q: 'A "pericórese" trinitária significa...', opts: ['Hierarquia entre as Pessoas', 'Mútua interpenetração e comunhão entre as Pessoas', 'Separação das funções divinas', 'O Filho ser inferior ao Pai'], answer: 1, explain: 'Pericórese descreve a mútua habitação e comunhão eterna entre Pai, Filho e Espírito Santo.' },
+        { q: 'A fórmula batismal trinitária "em nome do Pai, do Filho e do Espírito Santo" está em...', opts: ['Marcos 16:15', 'Mateus 28:19', 'João 3:16', 'Atos 2:38'], answer: 1, explain: 'A Grande Comissão em Mateus 28:19 contém a fórmula batismal trinitária.' },
+        { q: 'O subordinacionismo ontológico é rejeitado porque...', opts: ['Nega a existência do Espírito', 'Torna o Filho inferior em essência ao Pai', 'Diz que Jesus nunca existiu', 'Nega a ressurreição'], answer: 1, explain: 'O subordinacionismo ontológico é heresia pois faz o Filho ser de natureza inferior ao Pai, contradizendo homoousios.' }
+      ]
+    },
+    salvacao: {
+      easy: [
+        { q: 'O que significa "graça" no contexto cristão?', opts: ['Merecimento por boas obras', 'Favor imerecido de Deus', 'Uma oração especial', 'Um ritual religioso'], answer: 1, explain: 'Graça é o favor imerecido de Deus dado aos seres humanos por amor.' },
+        { q: 'Segundo João 3:16, Deus amou o mundo de tal maneira que...', opts: ['Criou as leis', 'Deu seu Filho unigênito', 'Enviou anjos', 'Construiu o Templo'], answer: 1, explain: '"Deus amou o mundo de tal maneira que deu seu Filho unigênito" (João 3:16).' },
+        { q: 'O que é arrependimento?', opts: ['Sentir pena de si mesmo', 'Mudar de mente e direção, voltando-se para Deus', 'Fazer sacrifícios no templo', 'Ir à igreja todo domingo'], answer: 1, explain: 'Arrependimento (metanoia) é uma mudança de mente que leva a mudança de vida, voltando-se para Deus.' },
+        { q: 'Quem pode ser salvo segundo a Bíblia?', opts: ['Apenas judeus', 'Apenas pessoas boas', 'Todo aquele que crê em Jesus', 'Apenas os apóstolos'], answer: 2, explain: '"Todo aquele que invocar o nome do Senhor será salvo" (Romanos 10:13).' },
+        { q: 'O que Jesus disse ser necessário para entrar no Reino de Deus?', opts: ['Ser rico', 'Nascer de novo', 'Ser sacerdote', 'Nunca pecar'], answer: 1, explain: 'Jesus disse a Nicodemos: "Necessário vos é nascer de novo" (João 3:7).' }
+      ],
+      medium: [
+        { q: 'Efésios 2:8-9 ensina que a salvação é por...', opts: ['Obras e fé juntas', 'Graça mediante a fé, não por obras', 'Guardar a Lei de Moisés', 'Batismo somente'], answer: 1, explain: '"Pela graça sois salvos, mediante a fé; e isto não vem de vós, é dom de Deus" (Efésios 2:8-9).' },
+        { q: 'O que é "justificação" na teologia paulina?', opts: ['Tornar-se moralmente perfeito', 'Ser declarado justo por Deus com base na fé', 'Ganhar o perdão por boas obras', 'Seguir todos os mandamentos'], answer: 1, explain: 'Justificação é o ato de Deus declarar o pecador justo pela fé em Cristo (Romanos 5:1).' },
+        { q: 'O que é "santificação"?', opts: ['O mesmo que justificação', 'O processo de ser tornado santo pelo Espírito', 'Tornar-se anjo', 'Ser batizado'], answer: 1, explain: 'Santificação é o processo contínuo de crescimento em santidade pela obra do Espírito Santo.' },
+        { q: 'A "expiação" refere-se a...', opts: ['Oração diária', 'A obra de Cristo que remove o pecado e reconcilia com Deus', 'Leitura da Bíblia', 'Participar da Ceia'], answer: 1, explain: 'Expiação é a obra de Cristo na cruz que paga pelo pecado e restaura a relação com Deus.' },
+        { q: 'Romanos 6:23 diz que "o salário do pecado é a morte, mas o dom de Deus é..."', opts: ['Sabedoria', 'Riqueza', 'A vida eterna em Cristo Jesus', 'Saúde'], answer: 2, explain: '"O dom gratuito de Deus é a vida eterna em Cristo Jesus nosso Senhor" (Romanos 6:23).' }
+      ],
+      hard: [
+        { q: 'A doutrina da "substituição penal" afirma que...', opts: ['Jesus nos deu um exemplo moral', 'Cristo sofreu a penalidade do pecado em nosso lugar', 'Deus simplesmente ignora o pecado', 'A salvação vem por meditação'], answer: 1, explain: 'A substituição penal ensina que Cristo tomou sobre si a punição que nossos pecados mereciam.' },
+        { q: 'A "ordo salutis" (ordem da salvação) na teologia reformada inclui...', opts: ['Apenas fé e arrependimento', 'Chamado, regeneração, fé, justificação, santificação e glorificação', 'Batismo, crisma e comunhão', 'Apenas obras e rituais'], answer: 1, explain: 'A ordo salutis descreve os passos lógicos da salvação: do chamado eficaz até a glorificação final.' },
+        { q: 'A diferença entre monergismo e sinergismo na salvação é que...', opts: ['Monergismo diz que Deus age sozinho na regeneração; sinergismo requer cooperação humana', 'São a mesma coisa', 'Monergismo nega a graça', 'Sinergismo nega a fé'], answer: 0, explain: 'Monergismo: Deus regenera sozinho. Sinergismo: salvação requer cooperação entre Deus e o homem.' },
+        { q: 'A "perseverança dos santos" ensina que...', opts: ['Cristãos nunca pecam', 'Quem é verdadeiramente salvo permanecerá na fé até o fim', 'A salvação pode ser perdida facilmente', 'Somente santos especiais são salvos'], answer: 1, explain: 'A perseverança dos santos afirma que Deus preserva os verdadeiramente regenerados na fé (João 10:28-29).' },
+        { q: 'A "imputação da justiça de Cristo" significa que...', opts: ['Nos tornamos moralmente perfeitos', 'A justiça de Cristo é creditada a nós pela fé', 'Devemos imitar Cristo perfeitamente', 'A justiça é conquistada por obras'], answer: 1, explain: 'Imputação significa que a justiça perfeita de Cristo é contada como nossa por meio da fé (2 Coríntios 5:21).' }
+      ]
+    },
+    biblia_doutrina: {
+      easy: [
+        { q: 'Quantos livros tem a Bíblia protestante?', opts: ['39', '66', '73', '81'], answer: 1, explain: 'A Bíblia protestante tem 66 livros: 39 no Antigo Testamento e 27 no Novo Testamento.' },
+        { q: 'A Bíblia foi escrita originalmente em quais idiomas?', opts: ['Latim e grego', 'Hebraico, aramaico e grego', 'Apenas hebraico', 'Apenas grego'], answer: 1, explain: 'O AT foi escrito em hebraico e aramaico; o NT em grego koiné.' },
+        { q: 'O que significa dizer que a Bíblia é "inspirada"?', opts: ['Foi escrita por anjos', 'Os autores humanos foram guiados pelo Espírito Santo', 'Foi ditada palavra por palavra', 'É apenas literatura humana'], answer: 1, explain: '"Toda Escritura é inspirada por Deus" (2 Timóteo 3:16) — os autores foram guiados pelo Espírito.' },
+        { q: 'Os quatro Evangelhos foram escritos por...', opts: ['Paulo, Pedro, Tiago e João', 'Mateus, Marcos, Lucas e João', 'Moisés, Davi, Salomão e Daniel', 'Pedro, André, Tiago e João'], answer: 1, explain: 'Os Evangelhos são atribuídos a Mateus, Marcos, Lucas e João.' },
+        { q: 'O Antigo Testamento e o Novo Testamento são conectados por...', opts: ['Nenhuma relação', 'Profecias cumpridas em Jesus Cristo', 'Apenas história', 'Foram escritos ao mesmo tempo'], answer: 1, explain: 'O AT contém profecias e promessas que encontram cumprimento em Jesus no NT.' }
+      ],
+      medium: [
+        { q: 'O que é o "cânon" bíblico?', opts: ['Um tipo de oração', 'A lista oficial de livros reconhecidos como Escritura', 'O primeiro livro da Bíblia', 'Uma tradução da Bíblia'], answer: 1, explain: 'Cânon é a lista de livros aceitos como Escritura Sagrada inspirada por Deus.' },
+        { q: 'O que são os "livros deuterocanônicos"?', opts: ['Livros do Novo Testamento', 'Livros aceitos pelos católicos mas não pelos protestantes no AT', 'Livros escritos por Paulo', 'Livros do Apocalipse'], answer: 1, explain: 'Os deuterocanônicos (ex: Tobias, Macabeus) são aceitos no cânon católico mas não no protestante.' },
+        { q: 'A Septuaginta é...', opts: ['A tradução do AT para o latim', 'A tradução do AT do hebraico para o grego', 'O Novo Testamento original', 'Uma versão moderna da Bíblia'], answer: 1, explain: 'A Septuaginta (LXX) é a tradução grega do Antigo Testamento, feita no século III a.C.' },
+        { q: '2 Timóteo 3:16-17 é importante porque...', opts: ['Narra a criação do mundo', 'Afirma que toda Escritura é inspirada e útil para ensino', 'Lista os livros da Bíblia', 'Descreve o Apocalipse'], answer: 1, explain: '"Toda Escritura é inspirada por Deus e útil para ensino, repreensão, correção e instrução na justiça".' },
+        { q: 'O que significa "hermenêutica bíblica"?', opts: ['Tradução da Bíblia', 'A ciência da interpretação das Escrituras', 'Decorar versículos', 'Leitura em voz alta'], answer: 1, explain: 'Hermenêutica é a disciplina que estuda os princípios e métodos de interpretação da Bíblia.' }
+      ],
+      hard: [
+        { q: 'A doutrina da "inerrância" bíblica afirma que...', opts: ['A Bíblia nunca foi traduzida', 'As Escrituras originais são sem erro em tudo que afirmam', 'Toda tradução é perfeita', 'Os copistas nunca cometeram erros'], answer: 1, explain: 'Inerrância afirma que os manuscritos originais (autógrafos) são sem erro naquilo que afirmam.' },
+        { q: 'A "crítica textual" do NT busca...', opts: ['Criticar a Bíblia', 'Reconstruir o texto original comparando milhares de manuscritos', 'Reescrever a Bíblia', 'Eliminar livros do cânon'], answer: 1, explain: 'A crítica textual compara manuscritos para determinar a leitura mais próxima do texto original.' },
+        { q: 'A diferença entre "revelação geral" e "revelação especial" é que...', opts: ['São a mesma coisa', 'Geral é pela natureza e consciência; especial é pela Escritura e Cristo', 'Geral é o NT; especial é o AT', 'Geral é para judeus; especial para gentios'], answer: 1, explain: 'Revelação geral vem da criação e consciência; especial vem da Bíblia e da pessoa de Cristo.' },
+        { q: 'O princípio "Sola Scriptura" da Reforma significa...', opts: ['A Bíblia é o único livro que existe', 'A Escritura é a única autoridade final e infalível em matéria de fé', 'Só se pode ler a Bíblia', 'A tradição é igualmente autoritativa'], answer: 1, explain: 'Sola Scriptura afirma que a Bíblia é a autoridade suprema e suficiente para fé e prática.' },
+        { q: 'O "sensus plenior" na hermenêutica refere-se a...', opts: ['O sentido literal apenas', 'Um sentido mais profundo pretendido por Deus além da intenção do autor humano', 'Tradução literal', 'Leitura devocional'], answer: 1, explain: 'Sensus plenior é o sentido mais pleno que Deus intencionava, além do que o autor humano compreendia.' }
+      ]
+    },
+    escatologia: {
+      easy: [
+        { q: 'O que significa "escatologia"?', opts: ['Estudo dos anjos', 'Estudo das últimas coisas (fim dos tempos)', 'Estudo da criação', 'Estudo dos profetas'], answer: 1, explain: 'Escatologia vem do grego "eschatos" (último) e "logos" (estudo): estudo dos eventos finais.' },
+        { q: 'Jesus prometeu que voltaria?', opts: ['Não', 'Sim, Ele prometeu voltar', 'Apenas simbolicamente', 'Apenas no AT'], answer: 1, explain: 'Jesus prometeu: "Virei outra vez e vos levarei para mim mesmo" (João 14:3).' },
+        { q: 'O que é o "céu" na esperança cristã?', opts: ['Um lugar nas nuvens', 'A presença eterna de Deus com os salvos', 'Apenas um estado mental', 'Um planeta distante'], answer: 1, explain: 'O céu é a presença eterna e gloriosa de Deus onde os salvos viverão para sempre.' },
+        { q: 'O último livro da Bíblia é...', opts: ['Malaquias', 'Judas', 'Apocalipse', 'Atos'], answer: 2, explain: 'O Apocalipse (Revelação) é o último livro da Bíblia, escrito pelo apóstolo João.' },
+        { q: 'O que os cristãos chamam de "Segunda Vinda"?', opts: ['O nascimento de Jesus', 'O retorno glorioso de Cristo à terra', 'O Pentecostes', 'A Reforma'], answer: 1, explain: 'A Segunda Vinda é o retorno prometido de Jesus Cristo em glória (Atos 1:11).' }
+      ],
+      medium: [
+        { q: 'O que é o "arrebatamento" segundo 1 Tessalonicenses 4?', opts: ['A morte de Jesus', 'Crentes sendo levados ao encontro do Senhor nos ares', 'A destruição do Templo', 'A criação do mundo'], answer: 1, explain: 'Paulo descreve crentes sendo "arrebatados nas nuvens para o encontro do Senhor" (1 Ts 4:17).' },
+        { q: 'O "milênio" em Apocalipse 20 refere-se a...', opts: ['1000 dias', 'Um período de 1000 anos do reinado de Cristo', 'A eternidade', 'O ministério terreno de Jesus'], answer: 1, explain: 'O milênio é um período de 1000 anos mencionado em Apocalipse 20 associado ao reinado de Cristo.' },
+        { q: 'As três principais visões sobre o milênio são...', opts: ['Judaísmo, islamismo e cristianismo', 'Pré-milenismo, pós-milenismo e amilenismo', 'Calvinismo, arminianismo e luteranismo', 'Trinitarismo, unitarismo e deísmo'], answer: 1, explain: 'As três visões escatológicas principais são pré-milenismo, pós-milenismo e amilenismo.' },
+        { q: 'O "Juízo Final" é o evento em que...', opts: ['Os judeus voltam a Israel', 'Todos serão julgados por Deus segundo suas obras e fé', 'O Templo é reconstruído', 'Os anjos são julgados'], answer: 1, explain: 'No Juízo Final, todos comparecerão diante de Deus (Apocalipse 20:12).' },
+        { q: 'A "Nova Jerusalém" em Apocalipse 21 representa...', opts: ['A cidade terrena reconstruída', 'A morada eterna de Deus com seu povo', 'O Templo de Salomão', 'Roma convertida'], answer: 1, explain: 'A Nova Jerusalém desce do céu como a habitação eterna de Deus com os redimidos (Ap 21:2-3).' }
+      ],
+      hard: [
+        { q: 'O "amilenismo" interpreta os 1000 anos de Apocalipse 20 como...', opts: ['Literal, no futuro', 'Simbólico, representando a era presente da igreja', 'Referindo-se ao passado de Israel', 'Sem nenhum significado'], answer: 1, explain: 'O amilenismo vê os 1000 anos como simbólicos do período entre as duas vindas de Cristo.' },
+        { q: 'O "preterismo" interpreta as profecias do Apocalipse como...', opts: ['Futuro distante', 'Já cumpridas no século I (destruição de Jerusalém em 70 d.C.)', 'Puramente simbólicas sem referência histórica', 'Relativas à Reforma'], answer: 1, explain: 'O preterismo entende que muitas profecias do Apocalipse se cumpriram na destruição de Jerusalém em 70 d.C.' },
+        { q: 'A doutrina do "estado intermediário" trata de...', opts: ['O que acontece entre a morte e a ressurreição final', 'O período entre AT e NT', 'A vida na Terra', 'O tempo entre Páscoa e Pentecostes'], answer: 0, explain: 'O estado intermediário é o que acontece com a pessoa entre a morte física e a ressurreição corporal futura.' },
+        { q: 'A "ressurreição corporal" cristã afirma que...', opts: ['A alma é imortal mas o corpo não', 'Os mortos em Cristo serão ressuscitados com corpos transformados e glorificados', 'Apenas a alma importa', 'Não haverá corpo na eternidade'], answer: 1, explain: 'A fé cristã afirma a ressurreição corporal: corpos transformados como o de Cristo ressurreto (1 Co 15:42-44).' },
+        { q: 'O conceito de "já e ainda não" na escatologia significa que...', opts: ['O Reino de Deus já chegou em Cristo mas ainda aguarda sua plenitude futura', 'A salvação já acabou', 'O fim dos tempos já passou', 'Jesus ainda não veio a primeira vez'], answer: 0, explain: 'O "já e ainda não" ensina que o Reino foi inaugurado por Cristo, mas será consumado em sua volta.' }
+      ]
+    }
+  },
+  historia_igreja: {
+    igreja_primitiva: {
+      easy: [
+        { q: 'A igreja cristã começou em qual cidade?', opts: ['Roma', 'Atenas', 'Jerusalém', 'Alexandria'], answer: 2, explain: 'A igreja nasceu em Jerusalém no dia de Pentecostes (Atos 2).' },
+        { q: 'Os primeiros cristãos eram perseguidos por...', opts: ['Apenas gregos', 'O Império Romano e líderes judaicos', 'Apenas egípcios', 'Ninguém, eram bem aceitos'], answer: 1, explain: 'Os primeiros cristãos sofreram perseguição tanto de autoridades judaicas quanto do Império Romano.' },
+        { q: 'Quem foi o primeiro mártir cristão?', opts: ['Pedro', 'Paulo', 'Estêvão', 'Tiago'], answer: 2, explain: 'Estêvão foi o primeiro mártir cristão, apedrejado por seu testemunho de fé (Atos 7:59-60).' },
+        { q: 'O que os primeiros cristãos faziam juntos?', opts: ['Apenas oravam', 'Partiam o pão, oravam, ensinavam e compartilhavam bens', 'Construíam templos', 'Faziam guerra'], answer: 1, explain: 'Os primeiros cristãos perseveravam no ensino, comunhão, partir do pão e orações (Atos 2:42).' },
+        { q: 'Qual imperador romano legalizou o cristianismo?', opts: ['Nero', 'Constantino', 'Augusto', 'Trajano'], answer: 1, explain: 'Constantino promulgou o Édito de Milão em 313 d.C., legalizando o cristianismo.' }
+      ],
+      medium: [
+        { q: 'O que eram as catacumbas para os primeiros cristãos?', opts: ['Igrejas grandiosas', 'Túneis subterrâneos usados para culto e sepultamento', 'Bibliotecas', 'Palácios secretos'], answer: 1, explain: 'As catacumbas eram galerias subterrâneas onde cristãos se reuniam e sepultavam seus mortos durante perseguições.' },
+        { q: 'Qual imperador foi responsável pela grande perseguição de 303-311 d.C.?', opts: ['Constantino', 'Nero', 'Diocleciano', 'Augusto'], answer: 2, explain: 'Diocleciano lançou a última e mais severa perseguição sistemática contra os cristãos.' },
+        { q: 'Os "Pais da Igreja" são...', opts: ['Os apóstolos', 'Líderes e teólogos dos primeiros séculos que definiram a doutrina', 'Os profetas do AT', 'Os papas medievais'], answer: 1, explain: 'Pais da Igreja são teólogos como Agostinho, Atanásio e Irineu que moldaram a teologia cristã primitiva.' },
+        { q: 'O Édito de Milão (313 d.C.) fez o quê?', opts: ['Proibiu o cristianismo', 'Deu liberdade religiosa aos cristãos', 'Destruiu o Templo', 'Criou o papado'], answer: 1, explain: 'O Édito de Milão, de Constantino, concedeu tolerância religiosa e liberdade aos cristãos.' },
+        { q: 'O que Policarpo disse quando pediram que negasse Cristo?', opts: ['"Eu nunca o conheci"', '"86 anos o sirvo e nunca me fez mal. Como posso blasfemar meu Rei?"', '"Eu renuncio"', '"Preciso pensar"'], answer: 1, explain: 'Policarpo de Esmirna, discípulo de João, declarou fidelidade a Cristo ao ser martirizado (~155 d.C.).' }
+      ],
+      hard: [
+        { q: 'O gnosticismo ameaçou a igreja primitiva porque...', opts: ['Negava a encarnação real de Cristo e misturava filosofia grega', 'Seguia os ensinamentos de Paulo', 'Apoiava o Império Romano', 'Era igual ao judaísmo'], answer: 0, explain: 'O gnosticismo negava a matéria como boa, a encarnação real de Cristo e oferecia salvação pelo conhecimento secreto.' },
+        { q: 'Irineu de Lyon combateu o gnosticismo com qual argumento central?', opts: ['A filosofia grega', 'A sucessão apostólica e a regra de fé', 'A força militar', 'O isolamento dos hereges'], answer: 1, explain: 'Irineu usou a sucessão apostólica e a regra de fé transmitida desde os apóstolos para refutar os gnósticos.' },
+        { q: 'O que era o "montanismo"?', opts: ['Uma filosofia grega', 'Movimento profético rigorista que alegava novas revelações do Espírito', 'Uma escola teológica', 'Uma ordem monástica'], answer: 1, explain: 'Montano e suas profetisas alegavam novas revelações do Espírito, promovendo rigorismo moral e profecia contínua.' },
+        { q: 'Tertuliano é famoso pela frase...', opts: ['"Deus é amor"', '"Credo quia absurdum" (creio porque é absurdo)', '"Sola fide"', '"Ora et labora"'], answer: 1, explain: 'Tertuliano (embora a citação exata seja debatida) defendeu que a fé cristã transcende a razão humana.' },
+        { q: 'O Édito de Tessalônica (380 d.C.) fez o cristianismo...', opts: ['Ilegal novamente', 'A religião oficial do Império Romano', 'Opcional para soldados', 'Limitado à Palestina'], answer: 1, explain: 'O Édito de Tessalônica, de Teodósio I, tornou o cristianismo niceno a religião oficial do Império Romano.' }
+      ]
+    },
+    conc_credos: {
+      easy: [
+        { q: 'O que é um "concílio" na história da igreja?', opts: ['Uma guerra santa', 'Uma reunião de líderes cristãos para definir doutrina', 'Uma tradução da Bíblia', 'Uma festa religiosa'], answer: 1, explain: 'Concílios são assembleias de bispos e líderes para resolver questões doutrinárias e práticas.' },
+        { q: 'O Credo Apostólico resume...', opts: ['A história de Israel', 'As crenças fundamentais do cristianismo', 'As leis de Moisés', 'Os milagres de Jesus'], answer: 1, explain: 'O Credo Apostólico é um resumo das crenças centrais da fé cristã.' },
+        { q: 'O Concílio de Niceia aconteceu em que ano?', opts: ['100 d.C.', '325 d.C.', '500 d.C.', '1054 d.C.'], answer: 1, explain: 'O Concílio de Niceia foi convocado em 325 d.C. pelo imperador Constantino.' },
+        { q: 'Qual era a questão principal do Concílio de Niceia?', opts: ['O formato do culto', 'A divindade de Cristo', 'A data da Páscoa apenas', 'A construção de igrejas'], answer: 1, explain: 'Niceia definiu que Cristo é "da mesma substância do Pai", combatendo o arianismo.' },
+        { q: 'Um "credo" é...', opts: ['Um livro da Bíblia', 'Uma declaração de fé que resume crenças essenciais', 'Uma oração de pedido', 'Um hino de louvor'], answer: 1, explain: 'Credo (do latim "creio") é uma declaração concisa das crenças essenciais da fé cristã.' }
+      ],
+      medium: [
+        { q: 'O Concílio de Calcedônia (451 d.C.) definiu que Cristo tem...', opts: ['Apenas natureza divina', 'Apenas natureza humana', 'Duas naturezas (divina e humana) em uma pessoa', 'Natureza mista'], answer: 2, explain: 'Calcedônia definiu que Cristo é uma pessoa com duas naturezas: plenamente Deus e plenamente homem, sem confusão.' },
+        { q: 'O "monofisismo" é a heresia que afirma que Cristo tem...', opts: ['Duas naturezas', 'Apenas uma natureza (fusão de divina e humana)', 'Três naturezas', 'Nenhuma natureza'], answer: 1, explain: 'O monofisismo diz que Cristo tem apenas uma natureza, fundindo a divina e humana — rejeitado em Calcedônia.' },
+        { q: 'O Credo Niceno-Constantinopolitano foi completado em...', opts: ['Niceia (325)', 'Constantinopla (381)', 'Calcedônia (451)', 'Éfeso (431)'], answer: 1, explain: 'O Credo Niceno foi expandido no Concílio de Constantinopla em 381 d.C., incluindo a doutrina do Espírito Santo.' },
+        { q: 'O Concílio de Éfeso (431 d.C.) afirmou que Maria é "Theotokos", que significa...', opts: ['Mãe de Deus (portadora de Deus)', 'Rainha do céu', 'Santa perfeita', 'Mediadora'], answer: 0, explain: 'Theotokos ("portadora de Deus") afirma que Maria deu à luz a pessoa divina de Cristo, não apenas sua natureza humana.' },
+        { q: 'Atanásio lutou contra o arianismo defendendo que...', opts: ['Cristo é uma criatura superior', 'Cristo é da mesma essência (homoousios) que o Pai', 'Cristo é semelhante ao Pai', 'Cristo é apenas um profeta'], answer: 1, explain: 'Atanásio defendeu firmemente que Cristo é homoousios (da mesma essência) com o Pai.' }
+      ],
+      hard: [
+        { q: 'A "Definição de Calcedônia" usa quatro advérbios negativos para descrever a união das naturezas. Quais?', opts: ['Perfeitamente, eternamente, gloriosamente, fielmente', 'Sem confusão, sem mudança, sem divisão, sem separação', 'Sem pecado, sem erro, sem mal, sem morte', 'Sem início, sem fim, sem limite, sem medida'], answer: 1, explain: 'As duas naturezas estão unidas "sem confusão, sem mudança, sem divisão, sem separação".' },
+        { q: 'O nestorianismo, condenado em Éfeso (431), ensinava que...', opts: ['Cristo é apenas Deus', 'Cristo é duas pessoas (uma divina e uma humana)', 'Cristo é uma criatura', 'Cristo não existiu'], answer: 1, explain: 'O nestorianismo separava as naturezas a ponto de sugerir duas pessoas em Cristo — condenado em Éfeso.' },
+        { q: 'O "Grande Cisma" de 1054 dividiu...', opts: ['Protestantes e católicos', 'Igreja Católica Romana e Igreja Ortodoxa Oriental', 'Judeus e cristãos', 'Anglicanos e presbiterianos'], answer: 1, explain: 'O Grande Cisma de 1054 separou a Igreja Ocidental (Roma) da Oriental (Constantinopla).' },
+        { q: 'O apolinarismo, condenado em Constantinopla (381), errava ao dizer que...', opts: ['Cristo não tinha corpo', 'Cristo tinha mente divina substituindo a mente humana', 'Cristo era dois seres', 'Cristo não era divino'], answer: 1, explain: 'Apolinário ensinou que o Logos divino substituiu a mente humana de Cristo, negando sua humanidade completa.' },
+        { q: 'O Credo de Atanásio difere dos outros credos por...', opts: ['Ser mais curto', 'Conter cláusulas anatematizantes e definições trinitárias detalhadas', 'Ser escrito em hebraico', 'Negar a Trindade'], answer: 1, explain: 'O Credo Atanasiano é mais detalhado teologicamente e inclui advertências contra heresias trinitárias.' }
+      ]
+    },
+    reforma: {
+      easy: [
+        { q: 'Quem iniciou a Reforma Protestante em 1517?', opts: ['João Calvino', 'Martinho Lutero', 'João Wesley', 'Ulrico Zuínglio'], answer: 1, explain: 'Martinho Lutero iniciou a Reforma ao fixar as 95 Teses em Wittenberg em 1517.' },
+        { q: 'O que eram as "indulgências" que Lutero criticou?', opts: ['Orações especiais', 'Pagamentos para reduzir o tempo no purgatório', 'Doações voluntárias', 'Livros religiosos'], answer: 1, explain: 'Indulgências eram pagamentos à Igreja que supostamente reduziam penalidades pelo pecado.' },
+        { q: 'As "95 Teses" de Lutero foram fixadas na porta de qual igreja?', opts: ['Catedral de Roma', 'Igreja de Wittenberg', 'Catedral de Genebra', 'Igreja de Canterbury'], answer: 1, explain: 'Lutero fixou suas 95 Teses na porta da Igreja do Castelo de Wittenberg, Alemanha.' },
+        { q: 'Qual foi o lema central da Reforma sobre a salvação?', opts: ['Sola Ecclesia (só a Igreja)', 'Sola Fide (só a fé)', 'Solo amor', 'Sola Traditio (só a tradição)'], answer: 1, explain: 'Sola Fide (somente a fé) é um dos cinco "Solas" da Reforma: salvação pela fé, não por obras.' },
+        { q: 'Em que país a Reforma começou?', opts: ['Inglaterra', 'França', 'Alemanha', 'Suíça'], answer: 2, explain: 'A Reforma começou na Alemanha com Martinho Lutero em 1517.' }
+      ],
+      medium: [
+        { q: 'Quais são os "Cinco Solas" da Reforma?', opts: ['Sola Fide, Sola Gratia, Solus Christus, Sola Scriptura, Soli Deo Gloria', 'Sola Ecclesia, Sola Traditio, Sola Maria, Sola Papa, Sola Roma', 'Apenas três solas existem', 'São dez mandamentos reformados'], answer: 0, explain: 'Os Cinco Solas: Somente a Fé, a Graça, Cristo, a Escritura e a Deus a Glória.' },
+        { q: 'João Calvino é mais associado a qual cidade?', opts: ['Wittenberg', 'Zurique', 'Genebra', 'Roma'], answer: 2, explain: 'Calvino estabeleceu seu ministério em Genebra, Suíça, transformando-a em centro da Reforma.' },
+        { q: 'A Dieta de Worms (1521) foi o evento em que Lutero...', opts: ['Aceitou voltar ao catolicismo', 'Recusou retratar-se diante do imperador', 'Foi coroado rei', 'Escreveu a Bíblia em alemão'], answer: 1, explain: 'Em Worms, Lutero declarou: "Aqui estou, não posso fazer diferente" e recusou retratar-se.' },
+        { q: 'A "Confissão de Augsburgo" (1530) é importante porque...', opts: ['Criou a Igreja Católica', 'É a principal confissão de fé luterana', 'Uniu protestantes e católicos', 'Foi escrita por Calvino'], answer: 1, explain: 'A Confissão de Augsburgo, escrita por Melanchthon, é o documento fundacional da fé luterana.' },
+        { q: 'Ulrico Zuínglio liderou a Reforma em...', opts: ['Alemanha', 'França', 'Suíça (Zurique)', 'Escócia'], answer: 2, explain: 'Zuínglio iniciou a Reforma em Zurique, Suíça, de forma independente de Lutero.' }
+      ],
+      hard: [
+        { q: 'A doutrina calvinista dos "Cinco Pontos" (TULIP) inclui...', opts: ['Depravação total, eleição incondicional, expiação limitada, graça irresistível, perseverança dos santos', 'Trindade, unidade, lei, intercessão, profecia', 'Apenas três pontos existem', 'Livre arbítrio, universalismo, legalismo, inovação, pluralismo'], answer: 0, explain: 'TULIP: Total depravity, Unconditional election, Limited atonement, Irresistible grace, Perseverance of the saints.' },
+        { q: 'A Contra-Reforma católica foi formalizada no...', opts: ['Concílio de Niceia', 'Concílio de Trento (1545-1563)', 'Concílio Vaticano I', 'Concílio de Éfeso'], answer: 1, explain: 'O Concílio de Trento foi a resposta católica à Reforma, reafirmando doutrinas e implementando reformas internas.' },
+        { q: 'John Knox levou a Reforma para qual país?', opts: ['Inglaterra', 'Irlanda', 'Escócia', 'País de Gales'], answer: 2, explain: 'John Knox, influenciado por Calvino, liderou a Reforma na Escócia e fundou o presbiterianismo escocês.' },
+        { q: 'Os anabatistas se diferenciavam dos outros reformadores por...', opts: ['Rejeitarem a Bíblia', 'Defenderem o batismo apenas de crentes adultos e separação igreja-estado', 'Apoiarem o papado', 'Serem católicos secretos'], answer: 1, explain: 'Os anabatistas rejeitavam o batismo infantil e defendiam a separação completa entre igreja e estado.' },
+        { q: 'A "Paz de Augsburgo" (1555) estabeleceu o princípio...', opts: ['"Uma só fé para todos"', '"Cuius regio, eius religio" (a religião do príncipe determina a da região)', '"Liberdade religiosa individual"', '"Todos devem ser católicos"'], answer: 1, explain: 'A Paz de Augsburgo permitiu que cada príncipe escolhesse entre luteranismo e catolicismo para seu território.' }
+      ]
+    },
+    igreja_moderna: {
+      easy: [
+        { q: 'O "Grande Avivamento" nos EUA aconteceu no século...', opts: ['XV', 'XVI', 'XVIII', 'XX'], answer: 2, explain: 'O Primeiro Grande Avivamento ocorreu na década de 1730-1740 nos EUA e Inglaterra.' },
+        { q: 'Quem fundou o movimento metodista?', opts: ['Martinho Lutero', 'João Wesley', 'João Calvino', 'Charles Spurgeon'], answer: 1, explain: 'João Wesley fundou o movimento metodista no século XVIII na Inglaterra.' },
+        { q: 'O movimento missionário moderno é frequentemente associado a...', opts: ['Constantino', 'William Carey', 'Martinho Lutero', 'Agostinho'], answer: 1, explain: 'William Carey (1761-1834) é chamado de "pai das missões modernas" por seu trabalho na Índia.' },
+        { q: 'O que é o "ecumenismo"?', opts: ['Uma doutrina específica', 'Movimento que busca unidade entre diferentes denominações cristãs', 'Uma seita', 'Um tipo de culto'], answer: 1, explain: 'O ecumenismo é o movimento pela unidade e diálogo entre as diversas denominações cristãs.' },
+        { q: 'O movimento pentecostal moderno teve início em...', opts: ['1517', '1700', 'Início do século XX (1906)', '1990'], answer: 2, explain: 'O pentecostalismo moderno é frequentemente associado ao Avivamento da Rua Azusa em Los Angeles (1906).' }
+      ],
+      medium: [
+        { q: 'O que foi o "Avivamento da Rua Azusa" (1906)?', opts: ['Uma reforma política', 'Um marco do pentecostalismo com ênfase nos dons do Espírito', 'Uma conferência acadêmica', 'Uma publicação teológica'], answer: 1, explain: 'A Rua Azusa em Los Angeles foi o epicentro do avivamento pentecostal com manifestações dos dons do Espírito.' },
+        { q: 'O Concílio Vaticano II (1962-1965) trouxe mudanças como...', opts: ['Rejeição do cristianismo', 'Missa em língua vernácula e diálogo com outras religiões', 'Proibição do ecumenismo', 'Retorno ao latim obrigatório'], answer: 1, explain: 'O Vaticano II modernizou a liturgia católica, permitiu a missa em língua local e abriu diálogo ecumênico.' },
+        { q: 'A "teologia da libertação" surgiu na...', opts: ['Europa medieval', 'América Latina no século XX', 'Grécia antiga', 'Reforma do século XVI'], answer: 1, explain: 'A teologia da libertação surgiu na América Latina nos anos 1960-70, enfatizando justiça social e os pobres.' },
+        { q: 'Charles Spurgeon ficou conhecido como...', opts: ['O Papa protestante', 'O Príncipe dos Pregadores', 'O Pai da Reforma', 'O Apóstolo dos gentios'], answer: 1, explain: 'Charles Spurgeon (1834-1892) foi chamado de "Príncipe dos Pregadores" por seu ministério em Londres.' },
+        { q: 'O cristianismo hoje é mais numeroso em qual continente?', opts: ['Europa', 'América do Norte', 'África e América Latina', 'Ásia'], answer: 2, explain: 'O centro de gravidade do cristianismo mudou para o Sul Global, especialmente África e América Latina.' }
+      ],
+      hard: [
+        { q: 'A "Declaração de Lausanne" (1974) é significativa porque...', opts: ['Uniu católicos e protestantes', 'Renovou o compromisso evangélico com evangelização mundial e responsabilidade social', 'Rejeitou missões', 'Fundou uma nova denominação'], answer: 1, explain: 'A Declaração de Lausanne, liderada por Billy Graham e John Stott, reafirmou o compromisso evangélico global.' },
+        { q: 'Dietrich Bonhoeffer é lembrado por...', opts: ['Fundar o pentecostalismo', 'Resistir ao nazismo e morrer por sua fé', 'Ser o primeiro papa protestante', 'Traduzir a Bíblia para o inglês'], answer: 1, explain: 'Bonhoeffer foi teólogo luterano que resistiu ao regime nazista e foi executado em 1945.' },
+        { q: 'O "Documento de Chicago sobre Inerrância" (1978) afirmou que...', opts: ['A Bíblia contém erros aceitáveis', 'A Escritura é sem erro nos manuscritos originais em tudo que afirma', 'Apenas o NT é confiável', 'A tradição supera a Bíblia'], answer: 1, explain: 'O Documento de Chicago reafirmou a inerrância bíblica como posição evangélica.' },
+        { q: 'O crescimento do cristianismo na China é notável porque...', opts: ['O governo sempre apoiou', 'Cresceu massivamente apesar de décadas de perseguição comunista', 'Foi introduzido recentemente', 'Já era religião majoritária'], answer: 1, explain: 'O cristianismo na China cresceu de forma impressionante apesar de perseguição, especialmente via igrejas domésticas.' },
+        { q: 'Karl Barth influenciou a teologia do século XX ao...', opts: ['Defender o liberalismo teológico', 'Reagir contra o liberalismo com a neo-ortodoxia centrada na revelação de Deus', 'Negar a existência de Deus', 'Fundar o pentecostalismo'], answer: 1, explain: 'Barth liderou a neo-ortodoxia, enfatizando a transcendência de Deus e a centralidade de Cristo contra o liberalismo.' }
       ]
     }
   }

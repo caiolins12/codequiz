@@ -11,6 +11,7 @@ import {
 } from './constants';
 import { QUESTIONS } from '../data/questions-data';
 import { buildMatchId, getPvpPointsDeltaAdvanced, PVP_ROUNDS_PER_MATCH } from './pvp';
+import { getRoundQuestionCapacity } from './quizEngine';
 import { getItemsByType } from './shop';
 import {
   calculateStars,
@@ -213,12 +214,30 @@ const BOT_RANDOM_EMOJI_IDS = getItemsByType('emoji')
 const BOT_RANDOM_AVATAR_ICONS = getItemsByType('emoji')
   .map((item) => String(item?.icon || '').trim())
   .filter((icon) => !!icon);
+const BOT_LEGENDARY_FRAME_IDS = getItemsByType('frame')
+  .filter((item) => String(item?.rarity || '').trim().toLowerCase() === 'legendary')
+  .map((item) => String(item?.id || '').trim())
+  .filter((itemId) => itemId && itemId !== BOT_DEFAULT_FRAME_ID);
+const BOT_LEGENDARY_BACKGROUND_IDS = getItemsByType('background')
+  .filter((item) => String(item?.rarity || '').trim().toLowerCase() === 'legendary')
+  .map((item) => String(item?.id || '').trim())
+  .filter((itemId) => itemId && itemId !== BOT_DEFAULT_BACKGROUND_ID);
+const BOT_LEGENDARY_EMOJI_IDS = getItemsByType('emoji')
+  .filter((item) => String(item?.rarity || '').trim().toLowerCase() === 'legendary')
+  .map((item) => String(item?.id || '').trim())
+  .filter((itemId) => itemId && itemId !== BOT_DEFAULT_EMOJI_ID);
+const BOT_LEGENDARY_AVATAR_ICONS = getItemsByType('emoji')
+  .filter((item) => String(item?.rarity || '').trim().toLowerCase() === 'legendary')
+  .map((item) => String(item?.icon || '').trim())
+  .filter((icon) => !!icon);
 const BOT_VALID_FRAME_ID_SET = new Set([BOT_DEFAULT_FRAME_ID, ...BOT_RANDOM_FRAME_IDS]);
 const BOT_VALID_BACKGROUND_ID_SET = new Set([BOT_DEFAULT_BACKGROUND_ID, ...BOT_RANDOM_BACKGROUND_IDS]);
 const BOT_VALID_EMOJI_ID_SET = new Set([BOT_DEFAULT_EMOJI_ID, ...BOT_RANDOM_EMOJI_IDS]);
 
 const NICKNAME_MIN_LENGTH = 3;
 const NICKNAME_MAX_LENGTH = 12;
+const FULL_NAME_MIN_LENGTH = 3;
+const FULL_NAME_MAX_LENGTH = 40;
 const BOT_USER_QUEUE_PATH = 'pvp_bots_state/user_queue';
 const BOT_ARENA_QUEUE_PATH = 'pvp_bots_state/arena_queue';
 const BOT_BUSY_PATH = 'pvp_bots_state/busy';
@@ -227,6 +246,11 @@ const BOT_AUTOMATION_LOCK_PATH = 'pvp_bots_state/automation_lock';
 const BOT_DAEMON_CONTROL_PATH = 'pvp_bots_state/daemon_control';
 const BOT_DAEMON_STATUS_PATH = 'pvp_bots_state/daemon_status';
 const BOT_ARENA_QUIZ_STATE_PATH = 'pvp_bots_state/arena_quiz_state';
+const BOT_QUIZ_HISTORY_PURGE_STATE_PATH = 'pvp_bots_state/quiz_history_purge_state';
+const BOT_QUIZ_HISTORY_PURGE_VERSION = 2;
+const BOT_QUIZ_HISTORY_PURGE_RETRY_MS = 60000;
+const BOT_QUIZ_HISTORY_PURGE_MATCH_BATCH = 240;
+const BOT_QUIZ_HISTORY_PURGE_RESULT_BATCH = 720;
 const BOT_BATTLE_DURATION_MS_MIN = 20000;
 const BOT_BATTLE_DURATION_MS_MAX = 32000;
 const BOT_ARENA_BASE_ROUNDS = PVP_ROUNDS_PER_MATCH;
@@ -271,13 +295,19 @@ function buildBotQuizCatalogByDifficulty(questionsMap = {}) {
       if (!topicPack || typeof topicPack !== 'object') return;
 
       BOT_QUIZ_DIFFICULTY_SEQUENCE.forEach((difficulty) => {
-        const pool = Array.isArray(topicPack[difficulty]) ? topicPack[difficulty] : [];
-        if (!pool.length) return;
+        const totalQuestions = getRoundQuestionCapacity(
+          safeQuestions,
+          languageId,
+          topicId,
+          difficulty,
+          QUESTIONS_PER_ROUND
+        );
+        if (totalQuestions <= 0) return;
         catalog[difficulty].push({
           language: String(languageId),
           topic: String(topicId),
           difficulty,
-          total_questions: Math.max(1, Math.min(QUESTIONS_PER_ROUND, pool.length))
+          total_questions: totalQuestions
         });
       });
     });
@@ -303,6 +333,8 @@ let botLocalCacheLoaded = false;
 let botLocalCacheState = null;
 let ensureBotQueuesCached = null;
 let ensureBotQueuesCachedAtMs = 0;
+let botQuizHistoryPurgeAttemptAtMs = 0;
+let botQuizHistoryPurgeCompleted = false;
 
 function updatePvpMatchRowsCacheRow(matchId, row) {
   const safeMatchId = String(matchId || '').trim();
@@ -489,9 +521,9 @@ function canUseBrowserLocalStorage() {
 
 function getDefaultBotPvpPointsByStrength(strength) {
   const safeStrength = normalizeSystemBotStrength(strength);
-  if (safeStrength === 'forte') return 220;
-  if (safeStrength === 'medio') return 130;
-  return 70;
+  if (safeStrength === 'forte') return 420;
+  if (safeStrength === 'medio') return 260;
+  return 80;
 }
 
 function buildSeedBotSnapshot(botId = SYSTEM_BOT_ID, nowIso = new Date().toISOString()) {
@@ -856,7 +888,17 @@ function normalizeBotQuizAssignment(raw) {
   const botStrength = normalizeBotStrength(safe.bot_strength || SYSTEM_BOT_STRENGTH_DEFAULT);
   const language = String(safe.language || '').trim();
   const topic = String(safe.topic || '').trim();
-  const totalQuestions = Math.max(1, Math.trunc(Number(safe.total_questions || QUESTIONS_PER_ROUND)));
+  const maxQuestionsByCatalog = getRoundQuestionCapacity(
+    QUESTIONS,
+    language,
+    topic,
+    difficulty,
+    QUESTIONS_PER_ROUND
+  );
+  const rawTotalQuestions = Math.max(1, Math.trunc(Number(safe.total_questions || QUESTIONS_PER_ROUND)));
+  const totalQuestions = maxQuestionsByCatalog > 0
+    ? Math.max(1, Math.min(rawTotalQuestions, maxQuestionsByCatalog))
+    : rawTotalQuestions;
   const correctCount = Math.max(0, Math.min(totalQuestions, Math.trunc(Number(safe.correct_count || 0))));
   return {
     bot_id: isSystemBotUserId(botId) ? botId : '',
@@ -967,9 +1009,16 @@ function getBotQuizAccuracyTarget(config = {}, _difficulty = 'easy') {
 }
 
 function simulateBotQuizOutcome(botConfig = {}, quizEntry = {}, options = {}) {
+  const maxQuestionsByCatalog = getRoundQuestionCapacity(
+    QUESTIONS,
+    String(quizEntry.language || '').trim(),
+    String(quizEntry.topic || '').trim(),
+    normalizeDifficulty(quizEntry.difficulty || 'easy'),
+    QUESTIONS_PER_ROUND
+  );
   const totalQuestions = Math.max(
     1,
-    Math.trunc(Number(quizEntry.total_questions || QUESTIONS_PER_ROUND))
+    maxQuestionsByCatalog || Math.trunc(Number(quizEntry.total_questions || QUESTIONS_PER_ROUND))
   );
   const safeDifficulty = normalizeDifficulty(quizEntry.difficulty || 'easy');
   const strength = normalizeBotStrength(botConfig?.strength || SYSTEM_BOT_STRENGTH_DEFAULT);
@@ -988,20 +1037,20 @@ function simulateBotQuizOutcome(botConfig = {}, quizEntry = {}, options = {}) {
 
 function resolveDifficultyByPvpPoints(pointsValue) {
   const points = Math.max(0, Number(pointsValue || 0));
-  if (points > 180) return 'hard';
-  if (points > 90) return 'medium';
+  if (points >= 400) return 'hard';
+  if (points >= 200) return 'medium';
   return 'easy';
 }
 
 function getPvpPointsBoundsForDifficulty(difficulty) {
   const safeDifficulty = normalizeDifficulty(difficulty || 'easy');
   if (safeDifficulty === 'hard') {
-    return { min: 181, max: Number.POSITIVE_INFINITY };
+    return { min: 400, max: Number.POSITIVE_INFINITY };
   }
   if (safeDifficulty === 'medium') {
-    return { min: 91, max: 180 };
+    return { min: 200, max: 399 };
   }
-  return { min: 0, max: 90 };
+  return { min: 0, max: 199 };
 }
 
 function getPvpXpRewardByDifficulty(difficulty, resultKey) {
@@ -1073,34 +1122,48 @@ function pickDeterministicBotCosmeticId(candidates, seedKey, fallbackId) {
   return String(pool[index] || fallbackId || '');
 }
 
-function getDefaultSystemBotCosmetics(botId, personality = 'provocador') {
+function getDefaultSystemBotCosmetics(botId, personality = 'provocador', strength = SYSTEM_BOT_STRENGTH_DEFAULT) {
   const safeBotId = String(botId || SYSTEM_BOT_ID).trim() || SYSTEM_BOT_ID;
   const safePersonality = normalizeBotPersonality(personality);
+  const safeStrength = normalizeSystemBotStrength(strength);
   const personalityEmoji = getBotProfileEmojiByPersonality(safePersonality);
+  const preferLegendary = safeStrength === 'forte';
+  const framePool = preferLegendary && BOT_LEGENDARY_FRAME_IDS.length ? BOT_LEGENDARY_FRAME_IDS : BOT_RANDOM_FRAME_IDS;
+  const backgroundPool = preferLegendary && BOT_LEGENDARY_BACKGROUND_IDS.length ? BOT_LEGENDARY_BACKGROUND_IDS : BOT_RANDOM_BACKGROUND_IDS;
+  const emojiPool = preferLegendary && BOT_LEGENDARY_EMOJI_IDS.length ? BOT_LEGENDARY_EMOJI_IDS : BOT_RANDOM_EMOJI_IDS;
   return {
     frame: pickDeterministicBotCosmeticId(
-      BOT_RANDOM_FRAME_IDS,
+      framePool,
       `bot_cosmetic:frame:${safeBotId}`,
       BOT_DEFAULT_FRAME_ID
     ),
     background: pickDeterministicBotCosmeticId(
-      BOT_RANDOM_BACKGROUND_IDS,
+      backgroundPool,
       `bot_cosmetic:bg:${safeBotId}`,
       BOT_DEFAULT_BACKGROUND_ID
     ),
     emoji: pickDeterministicBotCosmeticId(
-      BOT_RANDOM_EMOJI_IDS,
+      emojiPool,
       `bot_cosmetic:emoji:${safeBotId}:${safePersonality}`,
       personalityEmoji
     )
   };
 }
 
-function getDefaultSystemBotAvatar(botId, personality = 'provocador', fallbackAvatar = SYSTEM_BOT_DEFAULT_AVATAR) {
+function getDefaultSystemBotAvatar(
+  botId,
+  personality = 'provocador',
+  strength = SYSTEM_BOT_STRENGTH_DEFAULT,
+  fallbackAvatar = SYSTEM_BOT_DEFAULT_AVATAR
+) {
   const safeBotId = String(botId || SYSTEM_BOT_ID).trim() || SYSTEM_BOT_ID;
   const safePersonality = normalizeBotPersonality(personality);
+  const safeStrength = normalizeSystemBotStrength(strength);
+  const avatarPool = safeStrength === 'forte' && BOT_LEGENDARY_AVATAR_ICONS.length
+    ? BOT_LEGENDARY_AVATAR_ICONS
+    : BOT_RANDOM_AVATAR_ICONS;
   return pickDeterministicBotCosmeticId(
-    BOT_RANDOM_AVATAR_ICONS,
+    avatarPool,
     `bot_avatar:${safeBotId}:${safePersonality}`,
     fallbackAvatar
   );
@@ -1132,6 +1195,12 @@ function normalizeNicknameChars(value) {
 function sanitizeNickname(value) {
   const cleaned = normalizeNicknameChars(value).replace(/[^A-Za-z0-9]/g, '');
   return cleaned.slice(0, NICKNAME_MAX_LENGTH) || 'Jogador';
+}
+
+function normalizeFullNameChars(value) {
+  return String(value || '')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 function isReservedBotNickname(value) {
@@ -1197,41 +1266,75 @@ export function validateNicknameInput(value) {
   };
 }
 
+export function validateFullNameInput(value, options = {}) {
+  const required = options?.required !== false;
+  const raw = normalizeFullNameChars(value);
+  if (!raw) {
+    if (!required) {
+      return {
+        ok: true,
+        full_name: '',
+        errorCode: '',
+        errorMessage: ''
+      };
+    }
+    return {
+      ok: false,
+      full_name: '',
+      errorCode: 'full_name/required',
+      errorMessage: 'Informe seu nome.'
+    };
+  }
+  if (raw.length < FULL_NAME_MIN_LENGTH) {
+    return {
+      ok: false,
+      full_name: '',
+      errorCode: 'full_name/too-short',
+      errorMessage: `Nome deve ter no minimo ${FULL_NAME_MIN_LENGTH} caracteres.`
+    };
+  }
+  if (raw.length > FULL_NAME_MAX_LENGTH) {
+    return {
+      ok: false,
+      full_name: '',
+      errorCode: 'full_name/too-long',
+      errorMessage: `Nome deve ter no maximo ${FULL_NAME_MAX_LENGTH} caracteres.`
+    };
+  }
+  if (!/^[\p{L}][\p{L}\s.'-]*$/u.test(raw)) {
+    return {
+      ok: false,
+      full_name: '',
+      errorCode: 'full_name/invalid-format',
+      errorMessage: 'Use apenas letras e espacos no nome.'
+    };
+  }
+  return {
+    ok: true,
+    full_name: raw,
+    errorCode: '',
+    errorMessage: ''
+  };
+}
+
 function buildSystemBotUserPayload(botDef, current, nowIso, personality = 'provocador', strength = SYSTEM_BOT_STRENGTH_DEFAULT) {
   const base = current && typeof current === 'object' ? current : {};
   const def = botDef && typeof botDef === 'object' ? botDef : getSystemBotDefinition();
   const safePersonality = normalizeSystemBotPersonality(personality, def.default_personality || 'provocador');
   const safeStrength = normalizeSystemBotStrength(strength ?? def.default_strength ?? base.bot_strength);
-  const fallbackCosmetics = getDefaultSystemBotCosmetics(def.id, safePersonality);
+  const fallbackCosmetics = getDefaultSystemBotCosmetics(def.id, safePersonality, safeStrength);
   const fallbackAvatar = getDefaultSystemBotAvatar(
     def.id,
     safePersonality,
+    safeStrength,
     String(def.avatar || SYSTEM_BOT_DEFAULT_AVATAR)
   );
-  const currentFrame = String(base.equipped_frame || '').trim();
-  const currentBackground = String(base.equipped_background || '').trim();
-  const currentEmoji = String(base.equipped_emoji || '').trim();
-  const equippedFrame = (
-    currentFrame
-    && currentFrame !== BOT_DEFAULT_FRAME_ID
-    && BOT_VALID_FRAME_ID_SET.has(currentFrame)
-  )
-    ? currentFrame
-    : String(fallbackCosmetics.frame || BOT_DEFAULT_FRAME_ID);
-  const equippedBackground = (
-    currentBackground
-    && currentBackground !== BOT_DEFAULT_BACKGROUND_ID
-    && BOT_VALID_BACKGROUND_ID_SET.has(currentBackground)
-  )
-    ? currentBackground
-    : String(fallbackCosmetics.background || BOT_DEFAULT_BACKGROUND_ID);
-  const equippedEmoji = (
-    currentEmoji
-    && currentEmoji !== BOT_DEFAULT_EMOJI_ID
-    && BOT_VALID_EMOJI_ID_SET.has(currentEmoji)
-  )
-    ? currentEmoji
-    : String(fallbackCosmetics.emoji || getBotProfileEmojiByPersonality(safePersonality));
+  const seededFrame = String(fallbackCosmetics.frame || BOT_DEFAULT_FRAME_ID);
+  const seededBackground = String(fallbackCosmetics.background || BOT_DEFAULT_BACKGROUND_ID);
+  const seededEmoji = String(fallbackCosmetics.emoji || getBotProfileEmojiByPersonality(safePersonality));
+  const equippedFrame = BOT_VALID_FRAME_ID_SET.has(seededFrame) ? seededFrame : BOT_DEFAULT_FRAME_ID;
+  const equippedBackground = BOT_VALID_BACKGROUND_ID_SET.has(seededBackground) ? seededBackground : BOT_DEFAULT_BACKGROUND_ID;
+  const equippedEmoji = BOT_VALID_EMOJI_ID_SET.has(seededEmoji) ? seededEmoji : BOT_DEFAULT_EMOJI_ID;
   return {
     id: def.id,
     auth_id: def.id,
@@ -1281,12 +1384,20 @@ function normalizeQuizRewardedMap(value) {
 function buildSystemBotStatsPayload(botDef, current, nowIso) {
   const base = current && typeof current === 'object' ? current : {};
   const def = botDef && typeof botDef === 'object' ? botDef : getSystemBotDefinition();
+  const hasPersistedRow = current && typeof current === 'object';
+  const safeStrength = normalizeSystemBotStrength(def.default_strength ?? base.bot_strength);
+  const seededPvpPoints = getDefaultBotPvpPointsByStrength(safeStrength);
+  const basePvpPointsRaw = Number(base.pvp_points);
+  const hasBasePvpPoints = Number.isFinite(basePvpPointsRaw);
+  const preservedPvpPoints = hasBasePvpPoints ? Math.max(0, basePvpPointsRaw) : 0;
   return {
     user_id: def.id,
     total_xp: Math.max(0, Number(base.total_xp || 0)),
     level: Math.max(1, Number(base.level || 1)),
     ranking_points: Math.max(0, Number(base.ranking_points || 0)),
-    pvp_points: Math.max(0, Number(base.pvp_points || 0)),
+    pvp_points: hasPersistedRow
+      ? preservedPvpPoints
+      : seededPvpPoints,
     coins: Math.max(0, Number(base.coins || 20)),
     pvp_battles: Math.max(0, Number(base.pvp_battles || 0)),
     pvp_wins: Math.max(0, Number(base.pvp_wins || 0)),
@@ -1332,6 +1443,7 @@ let ensureSystemBotsCachedSnapshots = null;
 let ensureSystemBotsLastSuccessAtMs = 0;
 
 export async function ensureSystemBots(options = {}) {
+  void purgeLegacySystemBotQuizHistoryOnce().catch(() => null);
   const forceRefresh = options?.force === true;
   const nowMs = Date.now();
   const cacheIsFresh = (
@@ -1364,12 +1476,31 @@ export async function ensureSystemBots(options = {}) {
 
     for (const botDef of SYSTEM_BOT_ROSTER) {
       const botConfig = configsByBotId[botDef.id] || buildSystemBotConfigPayload(botDef, {}, nowIso);
-      await runTransaction(ref(firebaseDb, `users/${botDef.id}`), (current) => (
+      const userTx = await runTransaction(ref(firebaseDb, `users/${botDef.id}`), (current) => (
         buildSystemBotUserPayload(botDef, current, nowIso, botConfig.personality, botConfig.strength)
       )).catch(() => null);
       await runTransaction(ref(firebaseDb, `user_stats/${botDef.id}`), (current) => (
         buildSystemBotStatsPayload(botDef, current, nowIso)
       )).catch(() => null);
+      const userRow = userTx?.snapshot?.val();
+      const equippedFrame = String(userRow?.equipped_frame || BOT_DEFAULT_FRAME_ID);
+      const equippedBackground = String(userRow?.equipped_background || BOT_DEFAULT_BACKGROUND_ID);
+      const equippedEmoji = String(userRow?.equipped_emoji || BOT_DEFAULT_EMOJI_ID);
+      await saveUserShop(botDef.id, {
+        owned: [
+          BOT_DEFAULT_FRAME_ID,
+          BOT_DEFAULT_BACKGROUND_ID,
+          BOT_DEFAULT_EMOJI_ID,
+          equippedFrame,
+          equippedBackground,
+          equippedEmoji
+        ],
+        equipped: {
+          frame: equippedFrame,
+          background: equippedBackground,
+          emoji: equippedEmoji
+        }
+      }).catch(() => null);
     }
 
     const snapshots = [];
@@ -3046,6 +3177,119 @@ export async function cleanupZeroScoreFinishedMatches(maxBatch = 80) {
   return { marked };
 }
 
+async function purgeLegacySystemBotQuizHistoryOnce() {
+  const nowMs = Date.now();
+  if (botQuizHistoryPurgeCompleted) {
+    return { ok: true, skipped: 'already_done_local' };
+  }
+  if ((nowMs - botQuizHistoryPurgeAttemptAtMs) < BOT_QUIZ_HISTORY_PURGE_RETRY_MS) {
+    return { ok: true, skipped: 'cooldown' };
+  }
+  botQuizHistoryPurgeAttemptAtMs = nowMs;
+
+  const nowIso = new Date(nowMs).toISOString();
+  const purgeState = await getNode(BOT_QUIZ_HISTORY_PURGE_STATE_PATH).catch(() => null);
+  const purgeVersion = Math.max(0, Math.trunc(Number(purgeState?.version || 0)));
+  if (purgeVersion >= BOT_QUIZ_HISTORY_PURGE_VERSION) {
+    botQuizHistoryPurgeCompleted = true;
+    return { ok: true, skipped: 'already_done_remote' };
+  }
+
+  const [matchesMap, quizResultsMap, statsMap] = await Promise.all([
+    getNode('pvp_matches').catch(() => null),
+    getNode('quiz_results').catch(() => null),
+    getNode('user_stats').catch(() => null)
+  ]);
+
+  const updates = {};
+  const matchBatch = [];
+  let hasMoreMatches = false;
+  const resultBatch = [];
+  let hasMoreResults = false;
+
+  if (matchesMap && typeof matchesMap === 'object') {
+    Object.entries(matchesMap).forEach(([matchId, row]) => {
+      if (!matchId || !row || typeof row !== 'object') return;
+      const endedReason = String(row.ended_reason || '').trim().toLowerCase();
+      const hasBatchId = !!String(row.bot_quiz_batch_id || '').trim();
+      const isBotQuiz = row.is_bot_quiz === true || hasBatchId || endedReason.startsWith('bot_quiz_');
+      if (!isBotQuiz) return;
+      if (matchBatch.length >= BOT_QUIZ_HISTORY_PURGE_MATCH_BATCH) {
+        hasMoreMatches = true;
+        return;
+      }
+      matchBatch.push(matchId);
+    });
+  }
+
+  if (quizResultsMap && typeof quizResultsMap === 'object') {
+    Object.entries(quizResultsMap).forEach(([quizKey, rows]) => {
+      if (!quizKey || !rows || typeof rows !== 'object') return;
+      SYSTEM_BOT_IDS.forEach((botId) => {
+        if (!Object.prototype.hasOwnProperty.call(rows, botId)) return;
+        if (resultBatch.length >= BOT_QUIZ_HISTORY_PURGE_RESULT_BATCH) {
+          hasMoreResults = true;
+          return;
+        }
+        resultBatch.push({ quizKey, botId });
+      });
+    });
+  }
+
+  matchBatch.forEach((matchId) => {
+    updates[`pvp_matches/${matchId}`] = null;
+  });
+  resultBatch.forEach(({ quizKey, botId }) => {
+    updates[`quiz_results/${quizKey}/${botId}`] = null;
+  });
+
+  SYSTEM_BOT_IDS.forEach((botId) => {
+    const prev = statsMap && typeof statsMap === 'object' && statsMap[botId] && typeof statsMap[botId] === 'object'
+      ? statsMap[botId]
+      : {};
+    updates[`user_stats/${botId}`] = stripUndefinedDeep({
+      ...prev,
+      user_id: botId,
+      pvp_points: Math.max(0, Number(prev.pvp_points || 0)),
+      ranking_points: 0,
+      best_streak: 0,
+      total_correct: 0,
+      total_answered: 0,
+      quizzes_completed: 0,
+      topic_progress: {},
+      quiz_best_scores: {},
+      quiz_best_stars: {},
+      quiz_rewarded: {},
+      progress_updated_at_ms: Math.max(nowMs, Number(prev.progress_updated_at_ms || 0)),
+      updated_at: nowIso
+    });
+  });
+
+  const hasPending = hasMoreMatches || hasMoreResults;
+  updates[BOT_QUIZ_HISTORY_PURGE_STATE_PATH] = {
+    version: hasPending ? 0 : BOT_QUIZ_HISTORY_PURGE_VERSION,
+    in_progress: hasPending,
+    updated_at: nowIso,
+    updated_at_ms: nowMs,
+    deleted_matches: matchBatch.length,
+    deleted_quiz_results: resultBatch.length,
+    reset_bots: SYSTEM_BOT_IDS.length
+  };
+
+  await update(ref(firebaseDb), updates);
+
+  if (!hasPending) {
+    botQuizHistoryPurgeCompleted = true;
+  }
+
+  return {
+    ok: true,
+    completed: !hasPending,
+    deleted_matches: matchBatch.length,
+    deleted_quiz_results: resultBatch.length
+  };
+}
+
 async function applyBotQuizOutcomeToStats(botId, assignment = {}) {
   const safeBotId = String(botId || '').trim();
   if (!isSystemBotUserId(safeBotId)) return null;
@@ -3055,7 +3299,17 @@ async function applyBotQuizOutcomeToStats(botId, assignment = {}) {
   const difficulty = normalizeDifficulty(assignment.difficulty || 'easy');
   if (!language || !topic) return null;
 
-  const totalQuestions = Math.max(1, Math.trunc(Number(assignment.total_questions || QUESTIONS_PER_ROUND)));
+  const maxQuestionsByCatalog = getRoundQuestionCapacity(
+    QUESTIONS,
+    language,
+    topic,
+    difficulty,
+    QUESTIONS_PER_ROUND
+  );
+  const rawTotalQuestions = Math.max(1, Math.trunc(Number(assignment.total_questions || QUESTIONS_PER_ROUND)));
+  const totalQuestions = maxQuestionsByCatalog > 0
+    ? Math.max(1, Math.min(rawTotalQuestions, maxQuestionsByCatalog))
+    : rawTotalQuestions;
   const correctCount = Math.max(0, Math.min(totalQuestions, Math.trunc(Number(assignment.correct_count || 0))));
   const bestStreak = Math.max(0, Math.min(correctCount, Math.trunc(Number(assignment.best_streak || 0))));
   const quizKey = getQuizKey(language, topic, difficulty);
@@ -3479,6 +3733,7 @@ export async function runBotArenaAutomationTick(ownerId) {
   if (!lock) return { ok: false, reason: 'lock_not_acquired' };
 
   await ensureSystemBots().catch(() => null);
+  await purgeLegacySystemBotQuizHistoryOnce().catch(() => null);
   await ensureBotQueues().catch(() => null);
 
   const nowMs = Date.now();
@@ -3599,22 +3854,51 @@ export async function runBotArenaAutomationTick(ownerId) {
     return withQuizState({ ok: true, state: 'idle_duel_already_active' });
   }
 
-  const [botAId, botBId] = freeBots;
-  if (!botAId || !botBId) {
+  const userStatsMap = await getNode('user_stats').catch(() => null);
+  const freeBotsWithCategory = await Promise.all(
+    freeBots.map(async (botId) => {
+      const category = await getBotDifficultyById(botId, userStatsMap).catch(() => 'easy');
+      return {
+        bot_id: botId,
+        category: normalizeDifficulty(category || 'easy')
+      };
+    })
+  );
+  const categoryPair = (() => {
+    for (let firstIndex = 0; firstIndex < freeBotsWithCategory.length; firstIndex += 1) {
+      const first = freeBotsWithCategory[firstIndex];
+      for (let secondIndex = firstIndex + 1; secondIndex < freeBotsWithCategory.length; secondIndex += 1) {
+        const second = freeBotsWithCategory[secondIndex];
+        if (first.category !== second.category) continue;
+        return {
+          firstIndex,
+          secondIndex,
+          botAId: first.bot_id,
+          botBId: second.bot_id,
+          category: first.category
+        };
+      }
+    }
+    return null;
+  })();
+
+  if (!categoryPair?.botAId || !categoryPair?.botBId) {
+    const headBotId = freeBotsWithCategory[0]?.bot_id || freeBots[0] || '';
+    if (headBotId) {
+      await rotateGlobalBotQueue([headBotId], { count_for_arena_cycle: false }).catch(() => null);
+    }
     return withQuizState({ ok: true, state: 'idle_no_pair' });
   }
 
-  const userStatsMap = await getNode('user_stats').catch(() => null);
-  const botACategory = await getBotDifficultyById(botAId, userStatsMap).catch(() => 'easy');
-  const botBCategory = await getBotDifficultyById(botBId, userStatsMap).catch(() => 'easy');
-  if (normalizeDifficulty(botACategory) !== normalizeDifficulty(botBCategory)) {
-    await rotateGlobalBotQueue([botAId], { count_for_arena_cycle: false }).catch(() => null);
-    return withQuizState({ ok: true, state: 'idle_category_mismatch', bot_id: botAId });
+  // Keep queue moving when the pair is found deeper in the queue.
+  const queueHeadBotId = freeBotsWithCategory[0]?.bot_id || '';
+  if (queueHeadBotId && queueHeadBotId !== categoryPair.botAId) {
+    await rotateGlobalBotQueue([queueHeadBotId], { count_for_arena_cycle: false }).catch(() => null);
   }
 
   const created = await createBotArenaMatch({
-    botAId,
-    botBId,
+    botAId: categoryPair.botAId,
+    botBId: categoryPair.botBId,
     nowIso,
     nowMs
   });
@@ -3673,15 +3957,21 @@ export async function getUserProfile(userId) {
   if (!userId) return null;
   const row = await getNode(`users/${userId}`);
   if (!row || typeof row !== 'object') return null;
+  const onboardingRequired = row.onboarding_required === true;
+  const onboardingCompleted = row.onboarding_completed === true || !onboardingRequired;
+  const rawNickname = String(row.nickname || '').trim();
+  const rawFullName = String(row.full_name || row.name || '').trim();
   return {
     id: userId,
     auth_id: userId,
-    full_name: String(row.full_name || row.name || ''),
-    nickname: String(row.nickname || 'Jogador'),
+    full_name: rawFullName || (onboardingRequired ? '' : ''),
+    nickname: rawNickname || (onboardingRequired ? '' : 'Jogador'),
     avatar: String(row.avatar || '🙂'),
     equipped_frame: row.equipped_frame || 'frame_default',
     equipped_background: row.equipped_background || 'bg_default',
     equipped_emoji: row.equipped_emoji || 'emoji_profile',
+    onboarding_required: onboardingRequired,
+    onboarding_completed: onboardingCompleted,
     created_at: row.created_at || null,
     updated_at: row.updated_at || null
   };
@@ -3760,20 +4050,20 @@ export async function ensureUserProfile(authUser) {
     return existing;
   }
 
-  const displayName = String(authUser.displayName || 'Jogador').trim();
-  const firstName = displayName ? displayName.split(' ')[0] : 'Jogador';
-  const nickname = await ensureUniqueNickname(firstName, userId);
+  const displayName = String(authUser.displayName || '').trim();
   const avatar = String((authUser.photoURL && authUser.photoURL.trim()) || '🙂');
 
   await set(ref(firebaseDb, `users/${userId}`), {
     id: userId,
     auth_id: userId,
-    full_name: displayName || null,
-    nickname,
+    full_name: '',
+    nickname: '',
     avatar,
     equipped_frame: 'frame_default',
     equipped_background: 'bg_default',
     equipped_emoji: 'emoji_profile',
+    onboarding_required: true,
+    onboarding_completed: false,
     reset_ack_version: 0,
     created_at: nowIso,
     updated_at: nowIso
@@ -3832,13 +4122,30 @@ export async function updateUserProfile(userId, updates) {
     }
     nextNickname = validation.nickname;
   }
+  const requiresOnboarding = current?.onboarding_required === true;
+  const nextFullNameRaw = updates.full_name !== undefined
+    ? updates.full_name
+    : (current?.full_name || '');
+  const fullNameValidation = validateFullNameInput(nextFullNameRaw, {
+    required: requiresOnboarding || updates.full_name !== undefined
+  });
+  if (!fullNameValidation.ok) {
+    const error = new Error(fullNameValidation.errorMessage);
+    error.code = fullNameValidation.errorCode;
+    throw error;
+  }
+  const shouldCompleteOnboarding = Boolean(
+    requiresOnboarding
+    && updates.nickname !== undefined
+    && updates.full_name !== undefined
+    && fullNameValidation.full_name
+    && nextNickname
+  );
 
   const payload = {
     id: userId,
     auth_id: userId,
-    full_name: updates.full_name !== undefined
-      ? String(updates.full_name || '').trim() || null
-      : (current?.full_name || null),
+    full_name: fullNameValidation.full_name || null,
     nickname: nextNickname,
     avatar: updates.avatar !== undefined
       ? String(updates.avatar || '🙂')
@@ -3846,6 +4153,8 @@ export async function updateUserProfile(userId, updates) {
     equipped_frame: updates.equipped_frame || current?.equipped_frame || 'frame_default',
     equipped_background: updates.equipped_background || current?.equipped_background || 'bg_default',
     equipped_emoji: updates.equipped_emoji || current?.equipped_emoji || 'emoji_profile',
+    onboarding_required: shouldCompleteOnboarding ? false : requiresOnboarding,
+    onboarding_completed: shouldCompleteOnboarding || current?.onboarding_completed === true || !requiresOnboarding,
     reset_ack_version: Number(current?.reset_ack_version || 0),
     created_at: current?.created_at || nowIso,
     updated_at: nowIso
@@ -4282,6 +4591,7 @@ export async function upsertQueueEntry(payload) {
   const nowIso = new Date().toISOString();
   const difficulty = normalizeDifficulty(payload?.difficulty || 'easy');
   const category = normalizePvpCategory(payload?.category || payload?.difficulty || 'easy', difficulty);
+  const knowledgeArea = String(payload?.knowledge_area || '').trim();
   const queueRef = ref(firebaseDb, `pvp_queue/${userId}`);
   const tx = await runTransaction(queueRef, (current) => {
     const base = current && typeof current === 'object' ? current : {};
@@ -4297,6 +4607,7 @@ export async function upsertQueueEntry(payload) {
       equipped_emoji: String(payload?.equipped_emoji || base.equipped_emoji || 'emoji_profile'),
       language: String(payload?.language || base.language || ''),
       topic: String(payload?.topic || base.topic || ''),
+      knowledge_area: knowledgeArea || String(base.knowledge_area || ''),
       difficulty,
       category,
       status: 'waiting',
@@ -4401,11 +4712,12 @@ export async function clearQueueMatch(userId) {
   return { id: userId, ...tx.snapshot.val() };
 }
 
-export async function findQueueOpponent(myUserId, difficulty, category = '', staleSeconds = 25) {
+export async function findQueueOpponent(myUserId, difficulty, category = '', staleSeconds = 25, preferredLanguage = '') {
   const safeMyUserId = String(myUserId || '').trim();
   if (!safeMyUserId) return [];
   const safeDifficulty = normalizeDifficulty(difficulty || 'easy');
   const safeCategory = normalizePvpCategory(category || safeDifficulty, safeDifficulty);
+  const safePreferredLanguage = String(preferredLanguage || '').trim();
   const nowMs = Date.now();
   const cutoffMs = nowMs - Math.max(5, Number(staleSeconds || 25)) * 1000;
 
@@ -4417,6 +4729,7 @@ export async function findQueueOpponent(myUserId, difficulty, category = '', sta
       if (!row || typeof row !== 'object') return false;
       if (String(userId) === safeMyUserId) return false;
       if (String(row.status || '') !== 'waiting') return false;
+      if (safePreferredLanguage && String(row.language || '').trim() !== safePreferredLanguage) return false;
       if (normalizeDifficulty(row.difficulty || 'easy') !== safeDifficulty) return false;
       if (normalizePvpCategory(row.category || row.difficulty || 'easy', row.difficulty || 'easy') !== safeCategory) return false;
       const updatedAt = toMillis(row.updated_at || row.created_at);

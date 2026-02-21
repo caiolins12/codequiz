@@ -8,6 +8,53 @@ const SEMANTIC_STOPWORDS = new Set([
   'the', 'a', 'an', 'of', 'in', 'on', 'to', 'for', 'and', 'or', 'is', 'are', 'be', 'what', 'which'
 ]);
 
+const EASY_HINT_PATTERNS = [
+  /^o que e\b/,
+  /^o que eh\b/,
+  /^qual e\b/,
+  /^qual eh\b/,
+  /^qual opcao\b/,
+  /^verdadeiro ou falso\b/,
+  /^marque a alternativa\b/
+];
+
+const MEDIUM_HINT_KEYWORDS = [
+  'comparacao',
+  'diferenca',
+  'cenario',
+  'aplicacao',
+  'validacao',
+  'teste',
+  'fluxo',
+  'estrutura',
+  'relacao',
+  'analise'
+];
+
+const HARD_HINT_KEYWORDS = [
+  'complexidade',
+  'big o',
+  'assintot',
+  'otimiz',
+  'concorr',
+  'thread',
+  'deadlock',
+  'recurs',
+  'ponteiro',
+  'memoria',
+  'endianness',
+  'normalizacao',
+  'subconsulta',
+  'transacao',
+  'polimorf',
+  'heranca',
+  'virtualizacao',
+  'assincr',
+  'closure',
+  'lambda',
+  'cache'
+];
+
 export function getTopicsByLanguage(topicsMap, languageId) {
   const safeMap = topicsMap && typeof topicsMap === 'object' ? topicsMap : {};
   return Array.isArray(safeMap[languageId]) ? safeMap[languageId] : [];
@@ -203,18 +250,78 @@ function breakLongAnswerStreaks(questions) {
   return next;
 }
 
-export function pickRoundQuestions(
-  questionsMap,
-  languageId,
-  topicId,
-  difficulty,
-  count = QUESTIONS_PER_ROUND,
-  excludeQuestions = []
-) {
-  const pool = getQuestionPool(questionsMap, languageId, topicId, difficulty);
-  if (!pool.length) return [];
+function scoreQuestionDifficulty(question) {
+  const normalized = normalizeQuestionShape(question);
+  const questionText = normalizeText(normalized.q);
+  const explainText = normalizeText(normalized.explain);
+  const codeText = normalizeText(normalized.code || '');
+  const combined = `${questionText} ${explainText} ${codeText}`.trim();
 
+  const qTokenCount = tokenize(normalized.q).length;
+  const explainTokenCount = tokenize(normalized.explain).length;
+  const optionAvgLength = Array.isArray(normalized.opts) && normalized.opts.length
+    ? normalized.opts.reduce((sum, opt) => sum + normalizeText(opt).length, 0) / normalized.opts.length
+    : 0;
+
+  let score = 0;
+  score += qTokenCount * 0.42;
+  score += explainTokenCount * 0.18;
+  score += Math.min(4, optionAvgLength / 24);
+  if (String(normalized.code || '').trim()) score += 2.4;
+
+  MEDIUM_HINT_KEYWORDS.forEach((keyword) => {
+    if (combined.includes(keyword)) score += 0.8;
+  });
+  HARD_HINT_KEYWORDS.forEach((keyword) => {
+    if (combined.includes(keyword)) score += 1.7;
+  });
+  EASY_HINT_PATTERNS.forEach((pattern) => {
+    if (pattern.test(questionText)) score -= 1.25;
+  });
+
+  return score;
+}
+
+function pickQuestionsByDifficultyBand(pool, difficulty, limit) {
+  const safePool = Array.isArray(pool) ? pool : [];
+  const safeLimit = Math.max(1, Math.min(Number(limit || 1), safePool.length));
+  if (!safePool.length) return [];
+
+  const scored = safePool.map((question, index) => ({
+    question,
+    score: scoreQuestionDifficulty(question) + (Math.random() * 0.0001) + index * 0.000001
+  }));
+  scored.sort((a, b) => a.score - b.score);
+  const safeDifficulty = normalizeDifficulty(difficulty || 'easy');
+  const total = scored.length;
+
+  let bandStart = 0;
+  let bandEnd = total;
+  if (safeDifficulty === 'easy') {
+    bandStart = 0;
+    bandEnd = Math.max(safeLimit, Math.ceil(total * 0.72));
+  } else if (safeDifficulty === 'medium') {
+    const padding = Math.max(2, Math.floor(total * 0.12));
+    bandStart = Math.max(0, Math.floor(total * 0.5) - padding);
+    bandEnd = Math.min(total, Math.floor(total * 0.5) + padding);
+    if ((bandEnd - bandStart) < safeLimit) {
+      bandStart = Math.max(0, Math.floor(total * 0.22));
+      bandEnd = Math.min(total, Math.ceil(total * 0.82));
+    }
+  } else {
+    bandStart = Math.max(0, Math.floor(total * 0.28));
+    bandEnd = total;
+  }
+
+  const band = scored.slice(bandStart, bandEnd);
+  const source = band.length >= safeLimit ? band : scored;
+  return shuffle(source).slice(0, safeLimit).map((entry) => entry.question);
+}
+
+function buildSemanticUniqueQuestionPool(pool, excludeQuestions = []) {
+  const sourcePool = Array.isArray(pool) ? pool : [];
   const excludedList = Array.isArray(excludeQuestions) ? excludeQuestions : [];
+
   const excludedStrictKeys = new Set();
   const excludedSemanticSignatures = [];
   excludedList.forEach((question) => {
@@ -226,7 +333,7 @@ export function pickRoundQuestions(
 
   const strictUniquePool = [];
   const seenStrictKeys = new Set();
-  shuffle(pool).forEach((question) => {
+  sourcePool.forEach((question) => {
     const normalized = normalizeQuestionShape(question);
     const strictKey = getQuestionUniqKey(normalized);
     if (!strictKey || seenStrictKeys.has(strictKey)) return;
@@ -244,13 +351,42 @@ export function pickRoundQuestions(
     semanticSignatures.push(signature);
     semanticUniquePool.push(signature.raw);
   });
+
+  return semanticUniquePool;
+}
+
+export function getRoundQuestionCapacity(
+  questionsMap,
+  languageId,
+  topicId,
+  difficulty,
+  count = QUESTIONS_PER_ROUND,
+  excludeQuestions = []
+) {
+  const pool = getQuestionPool(questionsMap, languageId, topicId, difficulty);
+  if (!pool.length) return 0;
+  const semanticUniquePool = buildSemanticUniqueQuestionPool(pool, excludeQuestions);
+  if (!semanticUniquePool.length) return 0;
+  const requestedCount = Math.max(1, Number(count || QUESTIONS_PER_ROUND));
+  return Math.max(0, Math.min(requestedCount, semanticUniquePool.length));
+}
+
+export function pickRoundQuestions(
+  questionsMap,
+  languageId,
+  topicId,
+  difficulty,
+  count = QUESTIONS_PER_ROUND,
+  excludeQuestions = []
+) {
+  const pool = getQuestionPool(questionsMap, languageId, topicId, difficulty);
+  if (!pool.length) return [];
+  const semanticUniquePool = buildSemanticUniqueQuestionPool(pool, excludeQuestions);
   if (!semanticUniquePool.length) return [];
 
   const requestedCount = Math.max(1, Number(count || QUESTIONS_PER_ROUND));
   const limit = Math.max(1, Math.min(requestedCount, semanticUniquePool.length));
-  const pickedPool = [...semanticUniquePool];
-
-  const selected = shuffle(pickedPool).slice(0, limit);
+  const selected = pickQuestionsByDifficultyBand(semanticUniquePool, difficulty, limit);
   const maxOptions = selected.reduce((max, question) => Math.max(max, Number(question?.opts?.length || 0)), 2);
   const preferredSlots = buildPreferredAnswerSlots(selected.length, maxOptions);
   const remapped = selected.map((question, index) => {

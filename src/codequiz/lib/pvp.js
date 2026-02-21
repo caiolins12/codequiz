@@ -142,13 +142,13 @@ export function getPvpPointsDeltaAdvanced(resultKey, context = {}) {
 
 export function getCategoryByPoints(pointsValue) {
   const points = Math.max(0, Number(pointsValue || 0));
-  if (points > 180) {
+  if (points >= 400) {
     return {
       key: 'hard',
       label: 'Avancado'
     };
   }
-  if (points > 90) {
+  if (points >= 200) {
     return {
       key: 'medium',
       label: 'Intermediario'

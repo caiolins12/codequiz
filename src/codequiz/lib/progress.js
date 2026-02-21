@@ -49,6 +49,11 @@ export function getProgressStorageKey(userId) {
 export function normalizeProgress(progress) {
   const base = defaultProgress();
   const safe = progress && typeof progress === 'object' ? progress : {};
+  const achievementIds = [...new Set(
+    (Array.isArray(safe.achievements) ? safe.achievements : [])
+      .map((id) => String(id || '').trim())
+      .filter(Boolean)
+  )];
 
   return {
     ...base,
@@ -64,13 +69,56 @@ export function normalizeProgress(progress) {
     pvpPoints: Math.max(0, Math.floor(Number(safe.pvpPoints || 0))),
     pvpWins: Math.max(0, Math.floor(Number(safe.pvpWins || 0))),
     pvpBattles: Math.max(0, Math.floor(Number(safe.pvpBattles || 0))),
-    pvpProcessedMatches: safe.pvpProcessedMatches && typeof safe.pvpProcessedMatches === 'object' ? safe.pvpProcessedMatches : {},
-    topicProgress: safe.topicProgress && typeof safe.topicProgress === 'object' ? safe.topicProgress : {},
-    achievements: Array.isArray(safe.achievements) ? safe.achievements : [],
-    quizBestScores: safe.quizBestScores && typeof safe.quizBestScores === 'object' ? safe.quizBestScores : {},
-    quizBestStars: safe.quizBestStars && typeof safe.quizBestStars === 'object' ? safe.quizBestStars : {},
-    quizRewarded: safe.quizRewarded && typeof safe.quizRewarded === 'object' ? safe.quizRewarded : {},
+    pvpProcessedMatches: safe.pvpProcessedMatches && typeof safe.pvpProcessedMatches === 'object'
+      ? { ...safe.pvpProcessedMatches }
+      : {},
+    topicProgress: safe.topicProgress && typeof safe.topicProgress === 'object'
+      ? { ...safe.topicProgress }
+      : {},
+    achievements: achievementIds,
+    quizBestScores: safe.quizBestScores && typeof safe.quizBestScores === 'object'
+      ? { ...safe.quizBestScores }
+      : {},
+    quizBestStars: safe.quizBestStars && typeof safe.quizBestStars === 'object'
+      ? { ...safe.quizBestStars }
+      : {},
+    quizRewarded: safe.quizRewarded && typeof safe.quizRewarded === 'object'
+      ? { ...safe.quizRewarded }
+      : {},
     updatedAt: Math.max(0, Number(safe.updatedAt || 0))
+  };
+}
+
+export function applyEvolutionPassRewards(currentProgress) {
+  const next = normalizeProgress(currentProgress);
+  const achievementResult = evaluateAchievements(next);
+  const rewardXp = achievementResult.unlocked.reduce((acc, item) => (
+    acc + Math.max(0, Math.floor(Number(item?.rewardXp || 0)))
+  ), 0);
+  const rewardCoins = achievementResult.unlocked.reduce((acc, item) => (
+    acc + Math.max(0, Math.floor(Number(item?.rewardCoins || 0)))
+  ), 0);
+
+  next.achievements = achievementResult.achievementIds;
+  next.coins = Math.max(0, Number(next.coins || 0)) + rewardCoins;
+  next.xp = Math.max(0, Number(next.xp || 0)) + rewardXp;
+
+  let leveledUp = false;
+  while (next.xp >= getXPForLevel(next.level)) {
+    next.xp -= getXPForLevel(next.level);
+    next.level += 1;
+    leveledUp = true;
+  }
+
+  next.updatedAt = Date.now();
+
+  return {
+    progress: normalizeProgress(next),
+    unlockedAchievements: achievementResult.unlocked,
+    rewardXp,
+    rewardCoins,
+    leveledUp,
+    newLevel: next.level
   };
 }
 
@@ -185,12 +233,7 @@ export function mergeProgressWithRemoteStats(localProgress, remoteStats) {
     achievements: mergedAchievements,
     updatedAt: Date.now()
   });
-  const achievementResult = evaluateAchievements(merged);
-  return normalizeProgress({
-    ...merged,
-    achievements: achievementResult.achievementIds,
-    updatedAt: Date.now()
-  });
+  return applyEvolutionPassRewards(merged).progress;
 }
 
 export function applyQuizOutcome(currentProgress, payload) {
@@ -254,25 +297,29 @@ export function applyQuizOutcome(currentProgress, payload) {
     leveledUp = true;
   }
 
-  const achievementResult = evaluateAchievements(next);
-  next.achievements = achievementResult.achievementIds;
-  next.updatedAt = Date.now();
+  const passResult = applyEvolutionPassRewards(next);
+  const withPassProgress = passResult.progress;
+  const totalRewardXp = awardedXp + completionBonusXp + passResult.rewardXp;
+  const totalRewardCoins = awardedCoins + completionBonusCoins + passResult.rewardCoins;
+  const leveledUpWithPass = leveledUp || passResult.leveledUp;
 
   return {
-    progress: normalizeProgress(next),
+    progress: withPassProgress,
     summary: {
       scorePct,
       starsThisRun,
       bestStars,
-      awardedXp: awardedXp + completionBonusXp,
-      awardedCoins: awardedCoins + completionBonusCoins,
+      awardedXp: totalRewardXp,
+      awardedCoins: totalRewardCoins,
       completionBonusXp,
       completionBonusCoins,
       rankingGain,
-      leveledUp,
-      newLevel: next.level,
+      passRewardXp: passResult.rewardXp,
+      passRewardCoins: passResult.rewardCoins,
+      leveledUp: leveledUpWithPass,
+      newLevel: withPassProgress.level,
       quizKey
     },
-    unlockedAchievements: achievementResult.unlocked
+    unlockedAchievements: passResult.unlockedAchievements
   };
 }

@@ -11,7 +11,7 @@ import {
 } from 'firebase/auth';
 import { onValue, ref } from 'firebase/database';
 import { LANGUAGES, QUESTIONS, TOPICS } from './data/questions-data';
-import { ACHIEVEMENTS } from './lib/achievements';
+import { buildEvolutionPassSnapshot } from './lib/achievements';
 import {
   DIFFICULTY_LABELS,
   PVP_COINS_REWARD,
@@ -81,6 +81,7 @@ import {
   applyPvpOutcomeToUserStats,
   tryAcquireRoundFinalizeLock,
   updatePvpMatch,
+  validateFullNameInput,
   validateNicknameInput,
   updateUserProfile,
   upsertPvpAnswer,
@@ -88,6 +89,7 @@ import {
   upsertStatsFromProgress
 } from './lib/repository';
 import {
+  applyEvolutionPassRewards,
   applyQuizOutcome,
   defaultProgress,
   loadProgress,
@@ -95,7 +97,7 @@ import {
   normalizeProgress,
   saveProgress
 } from './lib/progress';
-import { getTopicsByLanguage, pickRoundQuestions } from './lib/quizEngine';
+import { getRoundQuestionCapacity, getTopicsByLanguage, pickRoundQuestions } from './lib/quizEngine';
 import {
   canPurchaseItem,
   defaultShopData,
@@ -125,23 +127,6 @@ import {
   resolveRoundOutcome
 } from './lib/pvp';
 import { getProgressTotalXp, getQuizKey, getXPForLevel, normalizeDifficulty } from './lib/utils';
-
-function parseTopicProgressKey(key, languageIds = []) {
-  const safeKey = String(key || '').trim();
-  if (!safeKey) return { language: '', topic: '', difficulty: '' };
-
-  const languageMatch = languageIds.find((languageId) => safeKey.startsWith(`${languageId}_`));
-  if (!languageMatch) return { language: '', topic: '', difficulty: '' };
-
-  const rawRest = safeKey.slice(languageMatch.length + 1);
-  const difficulty = ['easy', 'medium', 'hard'].find((diff) => rawRest.endsWith(`_${diff}`)) || '';
-  const topic = difficulty ? rawRest.slice(0, -(difficulty.length + 1)) : rawRest;
-  return {
-    language: languageMatch,
-    topic: String(topic || ''),
-    difficulty
-  };
-}
 
 function isImageAvatarValue(value) {
   const safe = String(value || '').trim().toLowerCase();
@@ -984,10 +969,20 @@ function getAdminQuizCardData(matchRow) {
     || row.difficulty
     || 'easy'
   );
-  const totalQuestions = Math.max(
+  const baseTotalQuestions = Math.max(
     1,
     Math.trunc(Number(firstAssignment.total_questions || row.total_rounds || QUESTIONS_PER_ROUND))
   );
+  const catalogTotalQuestions = getRoundQuestionCapacity(
+    QUESTIONS,
+    languageId,
+    topicId,
+    difficulty,
+    QUESTIONS_PER_ROUND
+  );
+  const totalQuestions = catalogTotalQuestions > 0
+    ? Math.max(1, Math.min(baseTotalQuestions, catalogTotalQuestions))
+    : baseTotalQuestions;
   const scoreSource = firstAssignment.correct_count !== undefined
     ? firstAssignment.correct_count
     : row.player1_score;
@@ -1135,6 +1130,38 @@ function getAdminMatchTypeLabel(matchRow) {
   return 'Partida';
 }
 
+function isAdminQuizHistoryRow(matchRow) {
+  const row = matchRow && typeof matchRow === 'object' ? matchRow : {};
+  if (!row || typeof row !== 'object') return false;
+  if (row.is_bot_quiz === true) return true;
+  const endedReason = String(row.ended_reason || '').trim().toLowerCase();
+  if (endedReason.includes('quiz')) return true;
+  const modeKey = String(row.mode || row.match_mode || row.game_mode || '').trim().toLowerCase();
+  return modeKey === 'quiz';
+}
+
+function isAdminUserQuizHistoryRow(matchRow) {
+  const row = matchRow && typeof matchRow === 'object' ? matchRow : {};
+  if (!isAdminQuizHistoryRow(row)) return false;
+  if (row.is_bot_quiz === true) return false;
+  const player1Id = String(row.player1_user_id || '').trim();
+  const player2Id = String(row.player2_user_id || '').trim();
+  const hasBot = (player1Id && isSystemBotUserId(player1Id)) || (player2Id && isSystemBotUserId(player2Id));
+  return !hasBot;
+}
+
+function doesAdminHistoryRowMatchFilter(matchRow, filterKey = 'all') {
+  const key = String(filterKey || 'all').trim().toLowerCase();
+  if (key === 'all') return true;
+  const type = getAdminMatchTypeKey(matchRow);
+  const isQuiz = isAdminQuizHistoryRow(matchRow);
+  if (key === 'pvp') return !isQuiz;
+  if (key === 'users') return !isQuiz && (type === 'user_vs_user' || type === 'user_vs_bot');
+  if (key === 'quiz') return isQuiz;
+  if (key === 'user_quiz') return isAdminUserQuizHistoryRow(matchRow);
+  return true;
+}
+
 function isAdminLiveMatchRow(matchRow, nowMs = Date.now()) {
   const row = matchRow && typeof matchRow === 'object' ? matchRow : {};
   if (!row || typeof row !== 'object') return false;
@@ -1188,20 +1215,57 @@ function hasQuestionsForDifficulty(languageId, topicId, difficulty) {
 
 function ensureValidPvpConfig(config) {
   const fallback = buildFallbackPvpConfig();
-  const requestedLanguage = String(config?.language || fallback.language);
-  const safeLanguage = getTopicsByLanguage(TOPICS, requestedLanguage).length
-    ? requestedLanguage
-    : fallback.language;
+  const requestedLanguage = String(config?.language || fallback.language).trim();
+  const requestedTopic = String(config?.topic || '').trim();
   const safeDifficulty = normalizeDifficulty(config?.difficulty || fallback.difficulty);
-  const topics = getTopicsByLanguage(TOPICS, safeLanguage);
-  const candidateTopic = topics.some((topic) => topic.id === config?.topic)
-    ? config.topic
-    : (topics[0]?.id || fallback.topic);
-  let safeTopic = candidateTopic;
-  if (!hasQuestionsForDifficulty(safeLanguage, safeTopic, safeDifficulty)) {
-    const compatibleTopic = topics.find((topic) => hasQuestionsForDifficulty(safeLanguage, topic.id, safeDifficulty));
-    if (compatibleTopic?.id) safeTopic = compatibleTopic.id;
+  const preferredArea = String(
+    config?.area
+    || config?.knowledge_area
+    || resolveKnowledgeAreaByLanguageId(requestedLanguage || fallback.language)
+    || ''
+  ).trim();
+
+  const candidateLanguages = [];
+  const pushCandidateLanguage = (value) => {
+    const safeValue = String(value || '').trim();
+    if (!safeValue) return;
+    if (candidateLanguages.includes(safeValue)) return;
+    if (!getTopicsByLanguage(TOPICS, safeValue).length) return;
+    candidateLanguages.push(safeValue);
+  };
+
+  pushCandidateLanguage(requestedLanguage);
+  getLanguageIdsByKnowledgeArea(preferredArea).forEach((languageId) => pushCandidateLanguage(languageId));
+  pushCandidateLanguage(fallback.language);
+  LANGUAGES.forEach((language) => pushCandidateLanguage(language?.id));
+
+  let safeLanguage = candidateLanguages[0] || fallback.language;
+  let safeTopic = '';
+
+  for (const languageId of candidateLanguages) {
+    const topics = getTopicsByLanguage(TOPICS, languageId);
+    if (!topics.length) continue;
+
+    const requestedTopicValid = (
+      !!requestedTopic
+      && topics.some((topic) => topic.id === requestedTopic)
+      && hasQuestionsForDifficulty(languageId, requestedTopic, safeDifficulty)
+    );
+    const compatibleTopic = requestedTopicValid
+      ? requestedTopic
+      : (topics.find((topic) => hasQuestionsForDifficulty(languageId, topic.id, safeDifficulty))?.id || '');
+    if (compatibleTopic) {
+      safeLanguage = languageId;
+      safeTopic = compatibleTopic;
+      break;
+    }
   }
+
+  if (!safeTopic) {
+    const fallbackTopics = getTopicsByLanguage(TOPICS, safeLanguage);
+    safeTopic = fallbackTopics[0]?.id || fallback.topic;
+  }
+
   return {
     language: safeLanguage,
     topic: safeTopic,
@@ -1212,27 +1276,60 @@ function ensureValidPvpConfig(config) {
 const PVP_MIXED_LANGUAGE_ID = '__pvp__';
 const PVP_MIXED_TOPIC_ID = '__all__';
 
-function collectPvpQuestionPoolByDifficulty(questionsMap, difficulty) {
+function collectPvpQuestionPoolByDifficulty(questionsMap, difficulty, scope = {}) {
   const safeDifficulty = normalizeDifficulty(difficulty || 'easy');
   const safeQuestions = questionsMap && typeof questionsMap === 'object' ? questionsMap : {};
+  const safeLanguage = String(scope?.languageId || '').trim();
+  const safeTopic = String(scope?.topicId || '').trim();
+  const safeArea = String(scope?.areaId || '').trim();
   const merged = [];
+  const pushTopicPack = (topicPack) => {
+    if (!topicPack || typeof topicPack !== 'object') return;
+    const pool = Array.isArray(topicPack[safeDifficulty]) ? topicPack[safeDifficulty] : [];
+    pool.forEach((question) => merged.push(question));
+  };
+
+  if (safeLanguage && safeTopic) {
+    const topicPack = safeQuestions?.[safeLanguage]?.[safeTopic];
+    pushTopicPack(topicPack);
+    return merged;
+  }
+
+  if (safeLanguage) {
+    const languagePack = safeQuestions?.[safeLanguage];
+    if (!languagePack || typeof languagePack !== 'object') return merged;
+    Object.values(languagePack).forEach((topicPack) => {
+      pushTopicPack(topicPack);
+    });
+    return merged;
+  }
+
+  if (safeArea) {
+    const areaLanguageIds = getLanguageIdsByKnowledgeArea(safeArea);
+    areaLanguageIds.forEach((languageId) => {
+      const languagePack = safeQuestions?.[languageId];
+      if (!languagePack || typeof languagePack !== 'object') return;
+      Object.values(languagePack).forEach((topicPack) => {
+        pushTopicPack(topicPack);
+      });
+    });
+    return merged;
+  }
 
   Object.values(safeQuestions).forEach((languagePack) => {
     if (!languagePack || typeof languagePack !== 'object') return;
     Object.values(languagePack).forEach((topicPack) => {
-      if (!topicPack || typeof topicPack !== 'object') return;
-      const pool = Array.isArray(topicPack[safeDifficulty]) ? topicPack[safeDifficulty] : [];
-      pool.forEach((question) => merged.push(question));
+      pushTopicPack(topicPack);
     });
   });
 
   return merged;
 }
 
-function pickPvpRoundQuestionsByDifficulty(questionsMap, difficulty, count, excludeQuestions = []) {
+function pickPvpRoundQuestionsFromPool(mergedPool, difficulty, count, excludeQuestions = []) {
   const safeDifficulty = normalizeDifficulty(difficulty || 'easy');
-  const mergedPool = collectPvpQuestionPoolByDifficulty(questionsMap, safeDifficulty);
-  if (!mergedPool.length) return [];
+  const safeCount = Math.max(1, Number(count || 1));
+  if (!Array.isArray(mergedPool) || !mergedPool.length) return [];
 
   const virtualQuestionsMap = {
     [PVP_MIXED_LANGUAGE_ID]: {
@@ -1247,6 +1344,52 @@ function pickPvpRoundQuestionsByDifficulty(questionsMap, difficulty, count, excl
     PVP_MIXED_LANGUAGE_ID,
     PVP_MIXED_TOPIC_ID,
     safeDifficulty,
+    safeCount,
+    excludeQuestions
+  );
+}
+
+function pickPvpRoundQuestionsByConfig(questionsMap, config, count, excludeQuestions = []) {
+  const safeDifficulty = normalizeDifficulty(config?.difficulty || 'easy');
+  const safeCount = Math.max(1, Number(count || 1));
+  const safeLanguage = String(config?.language || '').trim();
+  const safeTopic = String(config?.topic || '').trim();
+  const safeArea = String(
+    config?.area
+    || config?.knowledge_area
+    || resolveKnowledgeAreaByLanguageId(safeLanguage)
+    || ''
+  ).trim();
+  const selected = [];
+  const scopes = [];
+
+  if (safeLanguage && safeTopic) scopes.push({ languageId: safeLanguage, topicId: safeTopic });
+  if (safeLanguage) scopes.push({ languageId: safeLanguage });
+  if (safeArea) scopes.push({ areaId: safeArea });
+  scopes.push({});
+
+  scopes.forEach((scope) => {
+    if (selected.length >= safeCount) return;
+    const pool = collectPvpQuestionPoolByDifficulty(questionsMap, safeDifficulty, scope);
+    if (!pool.length) return;
+    const missing = Math.max(0, safeCount - selected.length);
+    if (!missing) return;
+    const picked = pickPvpRoundQuestionsFromPool(
+      pool,
+      safeDifficulty,
+      missing,
+      [...excludeQuestions, ...selected]
+    );
+    if (picked.length) selected.push(...picked);
+  });
+
+  return selected.slice(0, safeCount);
+}
+
+function pickPvpRoundQuestionsByDifficulty(questionsMap, difficulty, count, excludeQuestions = []) {
+  return pickPvpRoundQuestionsByConfig(
+    questionsMap,
+    { difficulty: normalizeDifficulty(difficulty || 'easy') },
     count,
     excludeQuestions
   );
@@ -1260,11 +1403,32 @@ function extendPvpQuestionSetIfNeeded(matchRow, nextRoundNo) {
   if (targetRoundNo <= currentSet.length) return currentSet;
 
   const difficulty = normalizeDifficulty(matchRow?.difficulty || 'easy');
+  const safeConfig = ensureValidPvpConfig({
+    language: matchRow?.language || '',
+    topic: matchRow?.topic || '',
+    difficulty,
+    area: matchRow?.knowledge_area || resolveKnowledgeAreaByLanguageId(matchRow?.language || '')
+  });
+  const safeArea = String(
+    matchRow?.knowledge_area
+    || resolveKnowledgeAreaByLanguageId(safeConfig.language || matchRow?.language || '')
+    || ''
+  ).trim();
   const nextSet = [...currentSet];
   const missingCount = targetRoundNo - nextSet.length;
 
   for (let index = 0; index < missingCount; index += 1) {
-    const picked = pickPvpRoundQuestionsByDifficulty(QUESTIONS, difficulty, 1, nextSet);
+    const picked = pickPvpRoundQuestionsByConfig(
+      QUESTIONS,
+      {
+        language: safeConfig.language,
+        topic: safeConfig.topic,
+        difficulty,
+        area: safeArea
+      },
+      1,
+      nextSet
+    );
     if (!picked.length) break;
     nextSet.push(picked[0]);
   }
@@ -1279,6 +1443,10 @@ const AUDIO_DEFAULTS = {
   sfxEnabled: true,
   sfxVolume: 0.72
 };
+const MUSIC_AUTO_SKIP_INTERVAL_MS = 15000;
+const MUSIC_SKIP_FADE_OUT_MS = 360;
+const MUSIC_SKIP_FADE_IN_MS = 520;
+const MUSIC_SKIP_SWITCH_DELAY_MS = MUSIC_SKIP_FADE_OUT_MS + 44;
 const VERSION_CHECK_MS = 9000;
 const QUICK_BOOT_CHECKS_MS = [900, 1900, 3400, 5600];
 const COOKIE_CONSENT_STORAGE_KEY = 'codequiz_cookie_consent_v1';
@@ -1294,6 +1462,7 @@ const PRELOAD_RUNTIME_MIN_INTERVAL_MS = 12000;
 const PRELOAD_RUNTIME_CHALLENGE_INTERVAL_MS = 18000;
 const PROGRESS_RECOVERY_RETRY_MS = 6000;
 const NICKNAME_RULE_COPY = 'Use 3 a 12 caracteres: apenas letras e numeros.';
+const FULL_NAME_RULE_COPY = 'Use 3 a 40 caracteres: apenas letras e espacos.';
 const ADMIN_PANEL_PASSWORD = 'admin';
 const PVP_EMOJI_STORAGE_PREFIX = 'codequiz_pvp_battle_emojis_v1';
 const SHOP_UI_STATE_STORAGE_PREFIX = 'codequiz_shop_ui_state_v1';
@@ -1349,32 +1518,108 @@ function isShopCategoryOpenStateEqual(currentState, nextState) {
   return true;
 }
 
+const KNOWLEDGE_AREAS = [
+  { id: 'programming', name: 'Programação', icon: '💻', color: '#3b82f6', desc: 'Linguagens, lógica e fundamentos da computação.' },
+  { id: 'theology', name: 'Teologia', icon: '✝️', color: '#a855f7', desc: 'Estudos bíblicos, história cristã e doutrinas.' },
+];
+
 const LANGUAGE_THEME_GROUPS = [
   {
-    id: 'start',
-    label: 'Comeco recomendado',
-    desc: 'Base para iniciantes, logica e fundamentos.',
+    id: 'foundations',
+    area: 'programming',
+    label: 'Fundamentos e Logica',
+    desc: 'Base de raciocinio, logica e matematica para programacao.',
     languages: [
       'zero_to_code',
       'logic_prog',
       'fundamentos_programacao',
-      'fundamentos_computacao',
-      'historia_computacao',
       'math'
     ]
   },
   {
+    id: 'computing_core',
+    area: 'programming',
+    label: 'Computacao e Historia',
+    desc: 'Fundamentos de computacao, sistemas e evolucao da tecnologia.',
+    languages: [
+      'fundamentos_computacao',
+      'historia_computacao'
+    ]
+  },
+  {
     id: 'web',
+    area: 'programming',
     label: 'Desenvolvimento Web',
     desc: 'Trilhas para criar interfaces e apps na web.',
     languages: ['javascript', 'html_css', 'sql']
   },
   {
     id: 'backend',
+    area: 'programming',
     label: 'Linguagens de Programacao',
     desc: 'Aprofunde em linguagens usadas no mercado.',
     languages: ['python', 'java', 'c']
+  },
+  {
+    id: 'bible',
+    area: 'theology',
+    label: 'Estudos Biblicos',
+    desc: 'Antigo e Novo Testamento, parabolas e historia sagrada.',
+    languages: ['biblia_at', 'biblia_nt']
+  },
+  {
+    id: 'doctrine_history',
+    area: 'theology',
+    label: 'Doutrinas e Historia',
+    desc: 'Fundamentos da fe crista e a historia da Igreja.',
+    languages: ['doutrinas', 'historia_igreja']
   }
+];
+
+function getKnowledgeAreaIndex(areaId = '') {
+  const safeAreaId = String(areaId || '').trim();
+  const idx = KNOWLEDGE_AREAS.findIndex((area) => area.id === safeAreaId);
+  return idx >= 0 ? idx : 0;
+}
+
+function getLanguageIdsByKnowledgeArea(areaId = '') {
+  const safeAreaId = String(areaId || '').trim();
+  const unique = new Set();
+  LANGUAGE_THEME_GROUPS.forEach((group) => {
+    if (String(group?.area || '').trim() !== safeAreaId) return;
+    const ids = Array.isArray(group?.languages) ? group.languages : [];
+    ids.forEach((id) => {
+      const safeId = String(id || '').trim();
+      if (safeId) unique.add(safeId);
+    });
+  });
+  return Array.from(unique);
+}
+
+function resolveKnowledgeAreaByLanguageId(languageId = '') {
+  const safeLanguageId = String(languageId || '').trim();
+  if (!safeLanguageId) return KNOWLEDGE_AREAS[0]?.id || 'programming';
+  const group = LANGUAGE_THEME_GROUPS.find((row) => (
+    Array.isArray(row?.languages) && row.languages.includes(safeLanguageId)
+  ));
+  const resolved = String(group?.area || '').trim();
+  if (KNOWLEDGE_AREAS.some((area) => area.id === resolved)) return resolved;
+  return KNOWLEDGE_AREAS[0]?.id || 'programming';
+}
+
+function getPreferredLanguageByKnowledgeArea(areaId = '', fallbackLanguageId = '') {
+  const areaLanguageIds = getLanguageIdsByKnowledgeArea(areaId);
+  const fallbackId = String(fallbackLanguageId || '').trim();
+  if (fallbackId && areaLanguageIds.includes(fallbackId)) return fallbackId;
+  return areaLanguageIds[0] || fallbackId || LANGUAGES[0]?.id || '';
+}
+
+const ADMIN_HISTORY_FILTER_OPTIONS = [
+  { id: 'all', label: 'Todos' },
+  { id: 'pvp', label: 'Somente PVP' },
+  { id: 'users', label: 'Partidas de usuarios' },
+  { id: 'quiz', label: 'Somente quiz' },
+  { id: 'user_quiz', label: 'Quiz de usuarios' }
 ];
 
 const QUEUE_DEBUG_LOG_MAX_ENTRIES = 1000;
@@ -1531,59 +1776,229 @@ function queueFlowLog(step, meta = {}) {
 
 const MENU_MUSIC_TRACKS = [
   {
-    id: 'sunset_port',
-    name: 'Sunset Port',
-    tempoMs: 1240,
-    notes: [
-      [261.63, 329.63, 392.0, 523.25],
-      [246.94, 311.13, 392.0, 493.88],
-      [220.0, 293.66, 369.99, 440.0],
-      [246.94, 329.63, 392.0, 493.88],
-      [293.66, 369.99, 440.0, 587.33],
-      [261.63, 349.23, 415.3, 523.25],
-      [233.08, 311.13, 392.0, 466.16],
-      [246.94, 329.63, 392.0, 493.88]
-    ]
+    id: 'skyline_arcade',
+    name: 'Skyline Arcade',
+    engine: 'menu_balanced',
+    tempoMs: 320,
+    melody: [
+      261.63, 293.66, 329.63, 392.0, 329.63, 293.66, 261.63, null,
+      293.66, 329.63, 369.99, 440.0, 392.0, 329.63, 293.66, null,
+      329.63, 369.99, 415.3, 493.88, 440.0, 392.0, 369.99, null,
+      293.66, 329.63, 349.23, 392.0, 349.23, 329.63, 293.66, null
+    ],
+    bass: [
+      98.0, 98.0, 110.0, 123.47, 92.5, 92.5, 98.0, 110.0
+    ],
+    chords: [146.83, 164.81, 185.0, 220.0, 138.59, 146.83, 164.81, 196.0]
   },
   {
-    id: 'pixel_garden',
-    name: 'Pixel Garden',
-    tempoMs: 1120,
-    notes: [
-      [293.66, 369.99, 440.0, 587.33],
-      [329.63, 415.3, 493.88, 659.25],
-      [349.23, 440.0, 523.25, 698.46],
-      [392.0, 493.88, 587.33, 783.99],
-      [349.23, 440.0, 523.25, 698.46],
-      [329.63, 415.3, 493.88, 659.25],
-      [293.66, 369.99, 440.0, 587.33],
-      [261.63, 329.63, 392.0, 523.25]
-    ]
+    id: 'ode_to_joy_arcade',
+    name: 'Ode to Joy Arcade',
+    engine: 'menu_balanced',
+    tempoMs: 330,
+    melody: [
+      329.63, 329.63, 349.23, 392.0, 392.0, 349.23, 329.63, 293.66,
+      261.63, 261.63, 293.66, 329.63, 329.63, 293.66, 293.66, null,
+      329.63, 329.63, 349.23, 392.0, 392.0, 349.23, 329.63, 293.66,
+      261.63, 261.63, 293.66, 329.63, 293.66, 261.63, 261.63, null
+    ],
+    bass: [
+      130.81, 130.81, 146.83, 164.81, 174.61, 164.81, 146.83, 130.81
+    ],
+    chords: [196.0, 220.0, 246.94, 261.63, 220.0, 196.0, 174.61, 196.0]
+  },
+  {
+    id: 'greensleeves_reverie',
+    name: 'Greensleeves Reverie',
+    engine: 'menu_balanced',
+    tempoMs: 350,
+    melody: [
+      440.0, 523.25, 587.33, 659.25, 698.46, 659.25, 587.33, 493.88,
+      392.0, 440.0, 493.88, 523.25, 587.33, 493.88, 392.0, 440.0,
+      440.0, 523.25, 587.33, 659.25, 698.46, 659.25, 587.33, 493.88,
+      392.0, 440.0, 493.88, 523.25, 493.88, 440.0, 392.0, null
+    ],
+    bass: [
+      220.0, 196.0, 174.61, 164.81, 146.83, 164.81, 174.61, 196.0
+    ],
+    chords: [329.63, 349.23, 392.0, 440.0, 349.23, 329.63, 293.66, 329.63]
+  },
+  {
+    id: 'alla_turca_arcade',
+    name: 'Alla Turca Arcade',
+    engine: 'menu_balanced',
+    tempoMs: 310,
+    melody: [
+      659.25, 698.46, 783.99, 880.0, 783.99, 698.46, 659.25, 587.33,
+      523.25, 587.33, 659.25, 698.46, 659.25, 587.33, 523.25, null,
+      659.25, 698.46, 783.99, 880.0, 987.77, 880.0, 783.99, 698.46,
+      659.25, 783.99, 880.0, 987.77, 880.0, 783.99, 698.46, null
+    ],
+    bass: [
+      164.81, 164.81, 174.61, 196.0, 220.0, 196.0, 174.61, 164.81
+    ],
+    chords: [246.94, 261.63, 293.66, 329.63, 349.23, 329.63, 293.66, 261.63]
+  },
+  {
+    id: 'blue_danube_lounge',
+    name: 'Blue Danube Lounge',
+    engine: 'menu_balanced',
+    tempoMs: 338,
+    melody: [
+      392.0, 493.88, 587.33, 698.46, 587.33, 493.88, 392.0, null,
+      440.0, 523.25, 659.25, 783.99, 659.25, 523.25, 440.0, null,
+      493.88, 587.33, 698.46, 880.0, 698.46, 587.33, 493.88, null,
+      440.0, 523.25, 659.25, 783.99, 698.46, 587.33, 523.25, null
+    ],
+    bass: [
+      130.81, 146.83, 164.81, 174.61, 196.0, 174.61, 164.81, 146.83
+    ],
+    chords: [196.0, 220.0, 246.94, 293.66, 261.63, 246.94, 220.0, 196.0]
+  },
+  {
+    id: 'menuet_grid_drive',
+    name: 'Menuet Grid Drive',
+    engine: 'menu_balanced',
+    tempoMs: 326,
+    melody: [
+      493.88, 554.37, 587.33, 493.88, 440.0, 392.0, 369.99, 440.0,
+      493.88, 554.37, 587.33, 659.25, 622.25, 587.33, 554.37, 493.88,
+      440.0, 493.88, 554.37, 440.0, 369.99, 329.63, 293.66, 369.99,
+      440.0, 493.88, 554.37, 587.33, 554.37, 493.88, 440.0, null
+    ],
+    bass: [
+      123.47, 92.5, 110.0, 123.47, 92.5, 98.0, 110.0, 123.47
+    ],
+    chords: [246.94, 277.18, 293.66, 329.63, 311.13, 293.66, 277.18, 246.94]
+  },
+  {
+    id: 'kalinka_sunset_run',
+    name: 'Kalinka Sunset Run',
+    engine: 'menu_balanced',
+    tempoMs: 334,
+    melody: [
+      440.0, 440.0, 493.88, 523.25, 493.88, 440.0, 392.0, 329.63,
+      440.0, 440.0, 493.88, 523.25, 587.33, 523.25, 493.88, 440.0,
+      392.0, 392.0, 440.0, 493.88, 440.0, 392.0, 349.23, 329.63,
+      392.0, 440.0, 493.88, 523.25, 493.88, 440.0, 392.0, null
+    ],
+    bass: [
+      146.83, 146.83, 164.81, 174.61, 196.0, 174.61, 164.81, 146.83
+    ],
+    chords: [220.0, 246.94, 261.63, 293.66, 329.63, 293.66, 261.63, 220.0]
   }
 ];
 
 const BATTLE_MUSIC_TRACKS = [
   {
-    id: 'mode7_rush',
-    name: 'Mode7 Rush',
-    tempoMs: 360,
-    notes: [
-      174.61, 207.65, 233.08, 261.63,
-      233.08, 207.65, 196.0, 233.08,
-      261.63, 293.66, 261.63, 233.08,
-      220.0, 196.0, 174.61, 164.81
-    ]
+    id: 'assault_convoy',
+    name: 'Assault Convoy',
+    engine: 'battle_chase',
+    tempoMs: 220,
+    melody: [
+      293.66, 329.63, 349.23, 392.0, 349.23, 329.63, 293.66, 261.63,
+      293.66, 329.63, 349.23, 440.0, 392.0, 349.23, 329.63, 293.66
+    ],
+    bass: [
+      82.41, 82.41, 82.41, 98.0, 82.41, 82.41, 73.42, 73.42
+    ],
+    kick: [52, null, 52, null, 58, null, 52, null]
   },
   {
-    id: 'iron_dungeon',
-    name: 'Iron Dungeon',
-    tempoMs: 392,
-    notes: [
-      146.83, 146.83, 174.61, 146.83,
-      196.0, 174.61, 164.81, 130.81,
-      146.83, 164.81, 196.0, 220.0,
-      196.0, 174.61, 164.81, 146.83
-    ]
+    id: 'infernal_cancan_rush',
+    name: 'Infernal Can-Can Rush',
+    engine: 'battle_chase',
+    tempoMs: 198,
+    melody: [
+      392.0, 329.63, 329.63, 349.23, 293.66, 293.66, 261.63, 293.66,
+      329.63, 349.23, 392.0, 440.0, 392.0, 349.23, 329.63, 293.66,
+      261.63, 329.63, 392.0, 440.0, 392.0, 329.63, 261.63, 293.66,
+      329.63, 349.23, 392.0, 349.23, 329.63, 293.66, 261.63, null
+    ],
+    bass: [
+      98.0, 98.0, 110.0, 123.47, 130.81, 123.47, 110.0, 98.0
+    ],
+    kick: [60, null, 60, null, 64, null, 60, null]
+  },
+  {
+    id: 'mountain_king_charge',
+    name: 'Mountain King Charge',
+    engine: 'battle_assault',
+    tempoMs: 186,
+    melody: [
+      220.0, 246.94, 261.63, 293.66, 329.63, 261.63, 329.63, 261.63,
+      220.0, 246.94, 261.63, 293.66, 329.63, 349.23, 392.0, 440.0,
+      440.0, 392.0, 349.23, 329.63, 293.66, 261.63, 246.94, 220.0,
+      220.0, 246.94, 261.63, 293.66, 329.63, 349.23, 392.0, 440.0
+    ],
+    bass: [
+      110.0, 110.0, 123.47, 130.81, 146.83, 130.81, 123.47, 110.0
+    ],
+    kick: [52, null, 52, null, 57, null, 62, null]
+  },
+  {
+    id: 'william_tell_overdrive',
+    name: 'William Tell Overdrive',
+    engine: 'battle_chase',
+    tempoMs: 196,
+    melody: [
+      392.0, 493.88, 587.33, 659.25, 587.33, 493.88, 392.0, 493.88,
+      587.33, 659.25, 783.99, 659.25, 587.33, 493.88, 440.0, 392.0,
+      493.88, 587.33, 659.25, 783.99, 880.0, 783.99, 659.25, 587.33,
+      493.88, 440.0, 392.0, 440.0, 493.88, 587.33, 659.25, null
+    ],
+    bass: [
+      98.0, 98.0, 110.0, 123.47, 130.81, 123.47, 110.0, 98.0
+    ],
+    kick: [58, null, 58, null, 64, null, 58, null]
+  },
+  {
+    id: 'bumblebee_barrage',
+    name: 'Bumblebee Barrage',
+    engine: 'battle_assault',
+    tempoMs: 182,
+    melody: [
+      659.25, 698.46, 739.99, 783.99, 830.61, 880.0, 932.33, 987.77,
+      1046.5, 987.77, 932.33, 880.0, 830.61, 783.99, 739.99, 698.46,
+      659.25, 622.25, 587.33, 554.37, 523.25, 554.37, 587.33, 622.25,
+      659.25, 698.46, 739.99, 783.99, 830.61, 880.0, 932.33, null
+    ],
+    bass: [
+      123.47, 123.47, 130.81, 146.83, 164.81, 146.83, 130.81, 123.47
+    ],
+    kick: [62, null, 62, null, 67, null, 62, null]
+  },
+  {
+    id: 'korobeiniki_overclock',
+    name: 'Korobeiniki Overclock',
+    engine: 'battle_chase',
+    tempoMs: 188,
+    melody: [
+      659.25, 493.88, 523.25, 587.33, 523.25, 493.88, 440.0, 440.0,
+      523.25, 659.25, 587.33, 523.25, 493.88, 523.25, 587.33, 659.25,
+      523.25, 440.0, 440.0, null, 587.33, 698.46, 880.0, 783.99,
+      698.46, 659.25, 523.25, 659.25, 587.33, 523.25, 493.88, null
+    ],
+    bass: [
+      98.0, 98.0, 110.0, 123.47, 130.81, 123.47, 110.0, 98.0
+    ],
+    kick: [58, null, 58, null, 64, null, 58, null]
+  },
+  {
+    id: 'sugar_plum_blitz',
+    name: 'Sugar Plum Blitz',
+    engine: 'battle_assault',
+    tempoMs: 184,
+    melody: [
+      523.25, 587.33, 523.25, 440.0, 466.16, 523.25, 466.16, 392.0,
+      440.0, 523.25, 440.0, 349.23, 392.0, 440.0, 392.0, 329.63,
+      523.25, 587.33, 523.25, 440.0, 466.16, 523.25, 466.16, 392.0,
+      440.0, 523.25, 587.33, 659.25, 587.33, 523.25, 440.0, null
+    ],
+    bass: [
+      87.31, 87.31, 98.0, 110.0, 123.47, 110.0, 98.0, 87.31
+    ],
+    kick: [56, null, 56, null, 61, null, 56, null]
   }
 ];
 
@@ -1696,6 +2111,7 @@ export default function CodeQuizApp() {
   const [profile, setProfile] = useState(null);
   const [profileDraft, setProfileDraft] = useState({ nickname: '', full_name: '' });
   const [profileSaving, setProfileSaving] = useState(false);
+  const [onboardingRequired, setOnboardingRequired] = useState(false);
   const [audioSettings, setAudioSettings] = useState(AUDIO_DEFAULTS);
   const [musicMode, setMusicMode] = useState('menu');
   const [menuTrackIndex, setMenuTrackIndex] = useState(0);
@@ -1708,6 +2124,7 @@ export default function CodeQuizApp() {
   const [adminMatches, setAdminMatches] = useState([]);
   const [adminMatchesLoading, setAdminMatchesLoading] = useState(false);
   const [adminMatchesUpdatedAtMs, setAdminMatchesUpdatedAtMs] = useState(0);
+  const [adminHistoryFilter, setAdminHistoryFilter] = useState('all');
   const [adminBotDaemonBusy, setAdminBotDaemonBusy] = useState(false);
   const [botArenaDaemonControl, setBotArenaDaemonControlState] = useState({
     arena_enabled: true,
@@ -1756,6 +2173,10 @@ export default function CodeQuizApp() {
   const [progressReady, setProgressReady] = useState(false);
   const [progressSyncEnabled, setProgressSyncEnabled] = useState(false);
 
+  const [selectedKnowledgeArea, setSelectedKnowledgeArea] = useState('programming');
+  const [kaCarouselIndex, setKaCarouselIndex] = useState(0);
+  const [pvpKnowledgeArea, setPvpKnowledgeArea] = useState('programming');
+  const [arenaKaCarouselIndex, setArenaKaCarouselIndex] = useState(0);
   const [selectedLanguage, setSelectedLanguage] = useState('');
   const [selectedTopic, setSelectedTopic] = useState('');
 
@@ -1855,6 +2276,9 @@ export default function CodeQuizApp() {
   const sfxGainRef = useRef(null);
   const musicLoopTimerRef = useRef(null);
   const musicTransitionTimerRef = useRef(null);
+  const musicAutoSkipTimerRef = useRef(null);
+  const musicSkipSwitchTimerRef = useRef(null);
+  const musicSkipBusyRef = useRef(false);
   const musicStepRef = useRef(0);
   const musicModeRef = useRef('menu');
   const audioUnlockedRef = useRef(false);
@@ -1913,6 +2337,9 @@ export default function CodeQuizApp() {
   const queueFlowLogThrottleRef = useRef({});
   const queueActionBusyStartedAtRef = useRef(0);
   const matchAcceptBusyStartedAtRef = useRef(0);
+  const leavePvpFlowBusyRef = useRef(false);
+  const pveKaTouchStartXRef = useRef(null);
+  const pvpKaTouchStartXRef = useRef(null);
   const preloadRuntimeRef = useRef({
     userId: '',
     lastAtMs: 0,
@@ -2189,6 +2616,17 @@ export default function CodeQuizApp() {
   useEffect(() => {
     battleTrackIndexRef.current = battleTrackIndex;
   }, [battleTrackIndex]);
+
+  useEffect(() => {
+    const menuTotal = Math.max(1, MENU_MUSIC_TRACKS.length);
+    const battleTotal = Math.max(1, BATTLE_MUSIC_TRACKS.length);
+    const randomMenuIndex = Math.floor(Math.random() * menuTotal);
+    const randomBattleIndex = Math.floor(Math.random() * battleTotal);
+    menuTrackIndexRef.current = randomMenuIndex;
+    battleTrackIndexRef.current = randomBattleIndex;
+    setMenuTrackIndex(randomMenuIndex);
+    setBattleTrackIndex(randomBattleIndex);
+  }, []);
 
   useEffect(() => {
     if (!toast) return;
@@ -2557,6 +2995,7 @@ export default function CodeQuizApp() {
       if (cancelled) return;
       const isInitialPass = !authBootstrapDoneRef.current;
       const isGoogleFlow = googleSignInRef.current;
+      let nextBootScreen = 'home';
 
       setAuthUser(user);
       setProgressSyncEnabled(false);
@@ -2567,6 +3006,7 @@ export default function CodeQuizApp() {
 
       if (!user) {
         setProfile(null);
+        setOnboardingRequired(false);
         setProgress(defaultProgress());
         setShopData(defaultShopData());
         if (isGoogleFlow) {
@@ -2600,10 +3040,17 @@ export default function CodeQuizApp() {
       try {
         const ensured = await withTimeout(ensureUserProfile(user), AUTH_OPERATION_TIMEOUT_MS, 'ensureUserProfile');
         if (cancelled) return;
+        const requiresProfileSetup = Boolean(
+          ensured?.onboarding_required === true
+          || !String(ensured?.full_name || '').trim()
+          || !validateNicknameInput(String(ensured?.nickname || '').trim()).ok
+        );
+        nextBootScreen = requiresProfileSetup ? 'settings' : 'home';
+        setOnboardingRequired(requiresProfileSetup);
 
         setProfile(ensured);
         setProfileDraft({
-          nickname: ensured.nickname || 'Jogador',
+          nickname: ensured.nickname || (requiresProfileSetup ? '' : 'Jogador'),
           full_name: ensured.full_name || ''
         });
 
@@ -2721,9 +3168,16 @@ export default function CodeQuizApp() {
         }
 
         if (recoveredProfile) {
+          const requiresProfileSetup = Boolean(
+            recoveredProfile?.onboarding_required === true
+            || !String(recoveredProfile?.full_name || '').trim()
+            || !validateNicknameInput(String(recoveredProfile?.nickname || '').trim()).ok
+          );
+          nextBootScreen = requiresProfileSetup ? 'settings' : 'home';
+          setOnboardingRequired(requiresProfileSetup);
           setProfile(recoveredProfile);
           setProfileDraft({
-            nickname: recoveredProfile.nickname || 'Jogador',
+            nickname: recoveredProfile.nickname || (requiresProfileSetup ? '' : 'Jogador'),
             full_name: recoveredProfile.full_name || ''
           });
         } else {
@@ -2739,6 +3193,7 @@ export default function CodeQuizApp() {
           if (!isTransient) {
             setToast('Falha ao carregar perfil.');
           }
+          setOnboardingRequired(false);
         }
 
         const fallbackLocalProgress = user?.uid
@@ -2754,7 +3209,7 @@ export default function CodeQuizApp() {
         setShopReady(true);
       } finally {
         if (!cancelled) {
-          setScreen('home');
+          setScreen(nextBootScreen);
           if (googleSignInRef.current) {
             setAuthTransition({
               visible: true,
@@ -3335,17 +3790,11 @@ export default function CodeQuizApp() {
 
   useEffect(() => {
     if (screen !== 'quiz' || !quizState || quizState.answered || typeof window === 'undefined') return;
-    let rafId = 0;
-
-    const tick = () => {
-      setQuizClockMs(Date.now());
-      rafId = window.requestAnimationFrame(tick);
-    };
-
-    setQuizClockMs(Date.now());
-    rafId = window.requestAnimationFrame(tick);
-    return () => window.cancelAnimationFrame(rafId);
-  }, [screen, quizState?.index, quizState?.answered]);
+    const tick = () => setQuizClockMs(Date.now());
+    tick();
+    const timer = window.setInterval(tick, 90);
+    return () => window.clearInterval(timer);
+  }, [screen, quizState?.index, quizState?.answered, quizState?.questionStartedAtMs]);
 
   useEffect(() => {
     if (screen !== 'quiz' || !quizState || quizState.answered) return;
@@ -3616,10 +4065,19 @@ export default function CodeQuizApp() {
       clearInterval(musicLoopTimerRef.current);
       musicLoopTimerRef.current = null;
     }
+    if (musicAutoSkipTimerRef.current) {
+      clearTimeout(musicAutoSkipTimerRef.current);
+      musicAutoSkipTimerRef.current = null;
+    }
     if (musicTransitionTimerRef.current) {
       clearTimeout(musicTransitionTimerRef.current);
       musicTransitionTimerRef.current = null;
     }
+    if (musicSkipSwitchTimerRef.current) {
+      clearTimeout(musicSkipSwitchTimerRef.current);
+      musicSkipSwitchTimerRef.current = null;
+    }
+    musicSkipBusyRef.current = false;
   }
 
   function getMusicVolumeLevel(raw = audioSettingsRef.current?.musicVolume) {
@@ -3629,6 +4087,22 @@ export default function CodeQuizApp() {
 
   function getSfxVolumeLevel(raw = audioSettingsRef.current?.sfxVolume) {
     return Math.max(0, Math.min(1, Number(raw ?? AUDIO_DEFAULTS.sfxVolume)));
+  }
+
+  function pickRandomTrackIndex(total, currentIndex = -1) {
+    const safeTotal = Math.max(1, Math.trunc(Number(total || 0)));
+    const safeCurrent = Math.max(0, Math.trunc(Number(currentIndex || 0)));
+    if (safeTotal <= 1) return 0;
+    let nextIndex = safeCurrent;
+    let attempts = 0;
+    while (nextIndex === safeCurrent && attempts < 8) {
+      nextIndex = Math.floor(Math.random() * safeTotal);
+      attempts += 1;
+    }
+    if (nextIndex === safeCurrent) {
+      nextIndex = (safeCurrent + 1) % safeTotal;
+    }
+    return nextIndex;
   }
 
   function setMusicGain(target, durationMs = 450) {
@@ -3641,6 +4115,71 @@ export default function CodeQuizApp() {
     musicGain.gain.cancelScheduledValues(now);
     musicGain.gain.setValueAtTime(musicGain.gain.value, now);
     musicGain.gain.linearRampToValueAtTime(safeTarget, now + durationSec);
+  }
+
+  function scheduleMusicAutoSkip(mode) {
+    if (musicAutoSkipTimerRef.current) {
+      clearTimeout(musicAutoSkipTimerRef.current);
+      musicAutoSkipTimerRef.current = null;
+    }
+    if (typeof window === 'undefined') return;
+    if (!audioSettingsRef.current.musicEnabled) return;
+    const safeMode = mode === 'battle' ? 'battle' : 'menu';
+    musicAutoSkipTimerRef.current = window.setTimeout(() => {
+      musicAutoSkipTimerRef.current = null;
+      if (!audioSettingsRef.current.musicEnabled) return;
+      if (musicModeRef.current !== safeMode) return;
+      triggerMusicTrackSkip({ mode: safeMode, auto: true });
+    }, MUSIC_AUTO_SKIP_INTERVAL_MS);
+  }
+
+  function advanceMusicTrackIndex(mode) {
+    if (mode === 'battle') {
+      const total = Math.max(1, BATTLE_MUSIC_TRACKS.length);
+      const nextIndex = pickRandomTrackIndex(total, battleTrackIndexRef.current);
+      battleTrackIndexRef.current = nextIndex;
+      setBattleTrackIndex(nextIndex);
+      return nextIndex;
+    }
+    const total = Math.max(1, MENU_MUSIC_TRACKS.length);
+    const nextIndex = pickRandomTrackIndex(total, menuTrackIndexRef.current);
+    menuTrackIndexRef.current = nextIndex;
+    setMenuTrackIndex(nextIndex);
+    return nextIndex;
+  }
+
+  function triggerMusicTrackSkip({ mode = null, auto = false } = {}) {
+    if (!audioSettingsRef.current.musicEnabled) return;
+    if (musicSkipBusyRef.current) return;
+    if (typeof window === 'undefined') return;
+    const safeMode = mode === 'battle' || mode === 'menu'
+      ? mode
+      : (musicModeRef.current === 'battle' ? 'battle' : 'menu');
+
+    if (musicAutoSkipTimerRef.current) {
+      clearTimeout(musicAutoSkipTimerRef.current);
+      musicAutoSkipTimerRef.current = null;
+    }
+    if (musicSkipSwitchTimerRef.current) {
+      clearTimeout(musicSkipSwitchTimerRef.current);
+      musicSkipSwitchTimerRef.current = null;
+    }
+
+    musicSkipBusyRef.current = true;
+    setMusicGain(0, MUSIC_SKIP_FADE_OUT_MS);
+    musicSkipSwitchTimerRef.current = window.setTimeout(() => {
+      musicSkipSwitchTimerRef.current = null;
+      musicSkipBusyRef.current = false;
+      if (!audioSettingsRef.current.musicEnabled) return;
+      if (musicModeRef.current !== safeMode) return;
+
+      advanceMusicTrackIndex(safeMode);
+      startMusicLoop(safeMode);
+      setMusicGain(getMusicVolumeLevel(audioSettingsRef.current?.musicVolume), MUSIC_SKIP_FADE_IN_MS);
+      if (!auto) {
+        playSfx('notify');
+      }
+    }, MUSIC_SKIP_SWITCH_DELAY_MS);
   }
 
   function emitMusicTone({
@@ -3677,43 +4216,80 @@ export default function CodeQuizApp() {
     osc.stop(startAt + dur + 0.01);
   }
 
+  function getSequenceNoteAt(sequence, step) {
+    const list = Array.isArray(sequence) ? sequence : [];
+    if (!list.length) return null;
+    const raw = list[step % list.length];
+    if (raw === null || raw === undefined) return null;
+    const safe = Number(raw);
+    if (!Number.isFinite(safe) || safe <= 0) return null;
+    return safe;
+  }
+
+  function transposeFrequency(base, semitones = 0) {
+    const safeBase = Math.max(20, Number(base || 220));
+    return safeBase * (2 ** (Number(semitones || 0) / 12));
+  }
+
   function playMenuMusicStep(track) {
-    const notes = track?.notes || [];
-    if (!notes.length) return;
-    const step = musicStepRef.current % notes.length;
-    const chord = notes[step] || [];
-    const root = Array.isArray(chord) ? chord[0] : chord;
-    const tones = Array.isArray(chord) ? chord : [chord];
+    const melodySequence = track?.melody || track?.notes || [];
+    if (!Array.isArray(melodySequence) || !melodySequence.length) return;
+    const step = musicStepRef.current;
+    const stepDurSec = Math.max(0.2, Number(track?.tempoMs || 320) / 1000);
+    const engine = String(track?.engine || '').trim().toLowerCase();
+    const accent = (step % 4) === 0;
+    const melodyFreq = getSequenceNoteAt(melodySequence, step);
+    const bassFreq = getSequenceNoteAt(track?.bass, step);
+    const chordRoot = getSequenceNoteAt(track?.chords, Math.floor(step / 2)) || bassFreq || (melodyFreq ? melodyFreq / 2 : null);
 
-    tones.forEach((freq, index) => {
+    if (bassFreq) {
       emitMusicTone({
-        frequency: freq,
-        durationSec: 1.12,
-        wave: index === 0 ? 'triangle' : 'sine',
-        volume: Math.max(0.045, 0.13 - index * 0.017),
-        attackSec: 0.024,
-        releaseSec: 0.52
+        frequency: bassFreq,
+        durationSec: Math.min(0.24, stepDurSec * 0.86),
+        wave: engine === 'menu_title_inspired' ? 'square' : 'triangle',
+        volume: accent ? 0.1 : 0.084,
+        attackSec: 0.006,
+        releaseSec: 0.1
       });
-    });
+    }
 
-    emitMusicTone({
-      frequency: Math.max(70, Number(root || 220) / 2),
-      durationSec: 0.88,
-      wave: 'triangle',
-      volume: 0.072,
-      attackSec: 0.018,
-      releaseSec: 0.36
-    });
-
-    if (tones.length) {
+    if (melodyFreq) {
       emitMusicTone({
-        frequency: Number(tones[Math.min(tones.length - 1, 2)] || root || 220) * 2,
-        durationSec: 0.22,
+        frequency: melodyFreq,
+        durationSec: Math.min(0.2, stepDurSec * 0.8),
         wave: 'square',
-        volume: 0.035,
-        attackSec: 0.005,
-        releaseSec: 0.11,
-        whenOffsetSec: 0.18
+        volume: accent ? 0.126 : 0.104,
+        attackSec: 0.004,
+        releaseSec: 0.09,
+        whenOffsetSec: 0.01
+      });
+    }
+
+    if (chordRoot && step % 4 === 0) {
+      const majorThird = transposeFrequency(chordRoot, 4);
+      const fifth = transposeFrequency(chordRoot, 7);
+      [chordRoot, majorThird, fifth].forEach((freq, index) => {
+        emitMusicTone({
+          frequency: freq,
+          durationSec: Math.min(0.34, stepDurSec * 1.34),
+          wave: 'sine',
+          volume: Math.max(0.022, 0.044 - index * 0.008),
+          attackSec: 0.02,
+          releaseSec: 0.2,
+          whenOffsetSec: 0.02
+        });
+      });
+    }
+
+    if (engine === 'menu_title_inspired' && melodyFreq && (step % 8 === 6)) {
+      emitMusicTone({
+        frequency: melodyFreq * 2,
+        durationSec: Math.min(0.12, stepDurSec * 0.42),
+        wave: 'triangle',
+        volume: 0.05,
+        attackSec: 0.003,
+        releaseSec: 0.06,
+        whenOffsetSec: 0.08
       });
     }
 
@@ -3721,49 +4297,61 @@ export default function CodeQuizApp() {
   }
 
   function playBattleMusicStep(track) {
-    const notes = track?.notes || [];
-    if (!notes.length) return;
-    const step = musicStepRef.current % notes.length;
-    const base = Math.max(60, Number(notes[step] || 130.81));
+    const melodySequence = track?.melody || track?.notes || [];
+    if (!Array.isArray(melodySequence) || !melodySequence.length) return;
+    const step = musicStepRef.current;
+    const engine = String(track?.engine || '').trim().toLowerCase();
+    const accent = (step % 4) === 0;
+    const melodyFreq = getSequenceNoteAt(melodySequence, step);
+    const bassFreq = getSequenceNoteAt(track?.bass, step);
+    const kickFreq = getSequenceNoteAt(track?.kick, step);
 
-    emitMusicTone({
-      frequency: base / 2,
-      durationSec: 0.22,
-      wave: 'sawtooth',
-      volume: 0.17,
-      attackSec: 0.006,
-      releaseSec: 0.12
-    });
+    if (kickFreq) {
+      emitMusicTone({
+        frequency: kickFreq,
+        durationSec: 0.09,
+        wave: 'sine',
+        volume: accent ? 0.22 : 0.16,
+        attackSec: 0.002,
+        releaseSec: 0.04
+      });
+    }
 
-    emitMusicTone({
-      frequency: base,
-      durationSec: 0.16,
-      wave: 'square',
-      volume: 0.11,
-      attackSec: 0.004,
-      releaseSec: 0.08,
-      whenOffsetSec: 0.03
-    });
+    if (bassFreq) {
+      emitMusicTone({
+        frequency: bassFreq,
+        durationSec: 0.15,
+        wave: engine === 'battle_chase' ? 'triangle' : 'square',
+        volume: accent ? 0.12 : 0.1,
+        attackSec: 0.003,
+        releaseSec: 0.06,
+        whenOffsetSec: 0.02
+      });
+    }
 
-    emitMusicTone({
-      frequency: base * 1.5,
-      durationSec: 0.12,
-      wave: 'triangle',
-      volume: 0.06,
-      attackSec: 0.005,
-      releaseSec: 0.07,
-      whenOffsetSec: 0.07
-    });
+    if (melodyFreq) {
+      emitMusicTone({
+        frequency: melodyFreq,
+        durationSec: 0.14,
+        wave: 'square',
+        volume: accent ? 0.142 : 0.118,
+        attackSec: 0.003,
+        releaseSec: 0.06,
+        whenOffsetSec: 0.05
+      });
+    }
 
-    emitMusicTone({
-      frequency: base * 2,
-      durationSec: 0.08,
-      wave: 'sine',
-      volume: 0.032,
-      attackSec: 0.003,
-      releaseSec: 0.045,
-      whenOffsetSec: 0.11
-    });
+    if (melodyFreq && (step % 8 === 7)) {
+      emitMusicTone({
+        frequency: melodyFreq * 2,
+        durationSec: 0.08,
+        wave: 'triangle',
+        volume: 0.058,
+        attackSec: 0.002,
+        releaseSec: 0.04,
+        whenOffsetSec: 0.13
+      });
+    }
 
     musicStepRef.current += 1;
   }
@@ -3780,7 +4368,8 @@ export default function CodeQuizApp() {
       setMusicMode('battle');
       musicModeRef.current = 'battle';
       playBattleMusicStep(track);
-      musicLoopTimerRef.current = setInterval(() => playBattleMusicStep(track), Math.max(300, Number(track.tempoMs || 430)));
+      musicLoopTimerRef.current = setInterval(() => playBattleMusicStep(track), Math.max(180, Number(track.tempoMs || 360)));
+      scheduleMusicAutoSkip('battle');
       return;
     }
 
@@ -3788,7 +4377,8 @@ export default function CodeQuizApp() {
     setMusicMode('menu');
     musicModeRef.current = 'menu';
     playMenuMusicStep(track);
-    musicLoopTimerRef.current = setInterval(() => playMenuMusicStep(track), Math.max(620, Number(track.tempoMs || 1260)));
+    musicLoopTimerRef.current = setInterval(() => playMenuMusicStep(track), Math.max(420, Number(track.tempoMs || 620)));
+    scheduleMusicAutoSkip('menu');
   }
 
   function bootstrapMusicIfNeeded(preferredMode) {
@@ -3816,6 +4406,8 @@ export default function CodeQuizApp() {
       return;
     }
 
+    // On each mode entry, jump to a different random track of that mode.
+    advanceMusicTrackIndex(safeMode);
     setMusicGain(0, 420);
     musicTransitionTimerRef.current = setTimeout(() => {
       startMusicLoop(safeMode);
@@ -4098,24 +4690,7 @@ export default function CodeQuizApp() {
   }
 
   function handleMusicSkip() {
-    const mode = musicModeRef.current === 'battle' ? 'battle' : 'menu';
-
-    if (mode === 'battle') {
-      const nextIndex = (battleTrackIndexRef.current + 1) % BATTLE_MUSIC_TRACKS.length;
-      battleTrackIndexRef.current = nextIndex;
-      setBattleTrackIndex(nextIndex);
-    } else {
-      const nextIndex = (menuTrackIndexRef.current + 1) % MENU_MUSIC_TRACKS.length;
-      menuTrackIndexRef.current = nextIndex;
-      setMenuTrackIndex(nextIndex);
-    }
-
-    if (audioSettingsRef.current.musicEnabled) {
-      startMusicLoop(mode);
-      setMusicGain(getMusicVolumeLevel(audioSettingsRef.current?.musicVolume), 220);
-    }
-
-    playSfx('notify');
+    triggerMusicTrackSkip();
   }
 
   function clearRewardSfxTimers() {
@@ -5022,10 +5597,12 @@ export default function CodeQuizApp() {
 
   useEffect(() => {
     if (!audioSettings.musicEnabled) return;
-    startMusicLoop(musicModeRef.current);
+    if (!musicLoopTimerRef.current) {
+      startMusicLoop(musicModeRef.current);
+    }
     const nextVolume = getMusicVolumeLevel(audioSettings.musicVolume);
     setMusicGain(nextVolume, 320);
-  }, [menuTrackIndex, battleTrackIndex, audioSettings.musicEnabled]);
+  }, [audioSettings.musicEnabled, audioSettings.musicVolume]);
 
   useEffect(() => {
     return () => {
@@ -5344,6 +5921,81 @@ export default function CodeQuizApp() {
     });
   }
 
+  function shiftKnowledgeAreaCarousel(target = 'pve', direction = 1) {
+    const safeTarget = target === 'pvp' ? 'pvp' : 'pve';
+    const currentIndex = safeTarget === 'pvp' ? arenaKaCarouselIndex : kaCarouselIndex;
+    const step = Number(direction || 0) >= 0 ? 1 : -1;
+    const nextIndex = Math.max(0, Math.min(KNOWLEDGE_AREAS.length - 1, currentIndex + step));
+    if (nextIndex === currentIndex) return false;
+
+    if (safeTarget === 'pvp') setArenaKaCarouselIndex(nextIndex);
+    else setKaCarouselIndex(nextIndex);
+    playSfx('click');
+    return true;
+  }
+
+  function handleKnowledgeAreaTouchStart(target = 'pve', event) {
+    const touch = event?.touches?.[0];
+    if (!touch) return;
+    if (target === 'pvp') pvpKaTouchStartXRef.current = touch.clientX;
+    else pveKaTouchStartXRef.current = touch.clientX;
+  }
+
+  function handleKnowledgeAreaTouchEnd(target = 'pve', event) {
+    const touch = event?.changedTouches?.[0];
+    if (!touch) return;
+    const startX = target === 'pvp' ? pvpKaTouchStartXRef.current : pveKaTouchStartXRef.current;
+    if (!Number.isFinite(Number(startX))) return;
+    const diff = Number(startX) - Number(touch.clientX || 0);
+    if (Math.abs(diff) > 50) {
+      shiftKnowledgeAreaCarousel(target, diff > 0 ? 1 : -1);
+    }
+    if (target === 'pvp') pvpKaTouchStartXRef.current = null;
+    else pveKaTouchStartXRef.current = null;
+  }
+
+  function chooseKnowledgeAreaForPve(areaId = '') {
+    const safeAreaId = String(areaId || '').trim();
+    if (!KNOWLEDGE_AREAS.some((area) => area.id === safeAreaId)) return;
+    setSelectedKnowledgeArea(safeAreaId);
+    setKaCarouselIndex(getKnowledgeAreaIndex(safeAreaId));
+    playSfx('success');
+    setScreen('select');
+  }
+
+  function chooseKnowledgeAreaForPvp(areaId = '') {
+    const safeAreaId = String(areaId || '').trim();
+    if (!KNOWLEDGE_AREAS.some((area) => area.id === safeAreaId)) return;
+
+    const currentStatus = String(pvpStateRef.current?.status || '').trim().toLowerCase();
+    const areaLocked = (
+      currentStatus === 'queueing'
+      || currentStatus === 'pending_accept'
+      || currentStatus === 'active'
+      || currentStatus === 'round_result'
+      || queueActionBusy
+      || matchAcceptBusy
+    );
+    if (areaLocked) {
+      playSfx('error');
+      return;
+    }
+
+    const preferredLanguage = getPreferredLanguageByKnowledgeArea(safeAreaId, pvpConfig?.language || '');
+    const preferredTopics = getTopicsByLanguage(TOPICS, preferredLanguage);
+    const forcedDifficulty = getPvpQueueDifficultyFromProgress(progress);
+    const nextConfig = ensureValidPvpConfig({
+      ...pvpConfig,
+      language: preferredLanguage,
+      topic: preferredTopics[0]?.id || pvpConfig?.topic || '',
+      difficulty: forcedDifficulty
+    });
+    setPvpConfig(nextConfig);
+    setPvpKnowledgeArea(safeAreaId);
+    setArenaKaCarouselIndex(getKnowledgeAreaIndex(safeAreaId));
+    playSfx('success');
+  }
+
   function triggerAppBackNavigation(source = 'button') {
     const safeSource = String(source || 'button').toLowerCase();
 
@@ -5378,7 +6030,15 @@ export default function CodeQuizApp() {
       return true;
     }
 
-    if (screen === 'settings' || screen === 'rankings' || screen === 'achievements' || screen === 'shop') {
+    if (screen === 'settings') {
+      if (onboardingRequired) {
+        showToast('Complete seu perfil para continuar.');
+        return true;
+      }
+      setScreen('home');
+      return true;
+    }
+    if (screen === 'rankings' || screen === 'achievements' || screen === 'shop') {
       setScreen('home');
       return true;
     }
@@ -5386,8 +6046,12 @@ export default function CodeQuizApp() {
       setScreen('home');
       return true;
     }
-    if (screen === 'select') {
+    if (screen === 'knowledge-area') {
       setScreen('play-mode');
+      return true;
+    }
+    if (screen === 'select') {
+      setScreen('knowledge-area');
       return true;
     }
     if (screen === 'topic') {
@@ -5763,6 +6427,7 @@ export default function CodeQuizApp() {
       setAdminAuthOpen(false);
       setAdminPassword('');
       setAdminAuthError('');
+      setOnboardingRequired(false);
       googleSignInRef.current = false;
       if (typeof window !== 'undefined') {
         try {
@@ -5792,12 +6457,18 @@ export default function CodeQuizApp() {
       showToast(validation.errorMessage);
       return;
     }
+    const fullNameRaw = String(profileDraft.full_name || '').trim();
+    const fullNameValidation = validateFullNameInput(fullNameRaw, { required: true });
+    if (!fullNameValidation.ok) {
+      showToast(fullNameValidation.errorMessage);
+      return;
+    }
 
     setProfileSaving(true);
     try {
       const updated = await updateUserProfile(activeAuthUser.uid, {
         nickname: validation.nickname,
-        full_name: profileDraft.full_name,
+        full_name: fullNameValidation.full_name,
         equipped_frame: shopData?.equipped?.frame,
         equipped_background: shopData?.equipped?.background,
         equipped_emoji: shopData?.equipped?.emoji
@@ -5805,14 +6476,23 @@ export default function CodeQuizApp() {
       setProfile(updated);
       setProfileDraft({
         nickname: updated.nickname || validation.nickname,
-        full_name: updated.full_name || ''
+        full_name: updated.full_name || fullNameValidation.full_name
       });
-      showToast('Perfil atualizado.');
+      const completedOnboarding = onboardingRequired === true;
+      if (completedOnboarding) {
+        setOnboardingRequired(false);
+        setScreen('home');
+        showToast('Perfil criado com sucesso.');
+      } else {
+        showToast('Perfil atualizado.');
+      }
       playSfx('success');
     } catch (error) {
       console.error('save profile error:', error);
       if (error?.code === 'nickname/taken') {
         showToast('Este apelido ja esta em uso.');
+      } else if (String(error?.code || '').startsWith('full_name/')) {
+        showToast(error?.message || FULL_NAME_RULE_COPY);
       } else if (String(error?.code || '').startsWith('nickname/')) {
         showToast(error?.message || NICKNAME_RULE_COPY);
       } else {
@@ -5947,6 +6627,7 @@ export default function CodeQuizApp() {
       ...pvpConfig,
       difficulty: forcedDifficulty
     });
+    const safeKnowledgeArea = resolveKnowledgeAreaByLanguageId(safeConfig.language || '');
     setPvpConfig(safeConfig);
 
     const nowMs = Date.now();
@@ -5991,6 +6672,7 @@ export default function CodeQuizApp() {
           equipped_emoji: shopData?.equipped?.emoji || 'emoji_profile',
           language: safeConfig.language,
           topic: safeConfig.topic,
+          knowledge_area: safeKnowledgeArea,
           difficulty: forcedDifficulty,
           category: forcedDifficulty
         }),
@@ -6025,6 +6707,7 @@ export default function CodeQuizApp() {
         joinedAtMs,
         botMatchAtMs,
         forcedDifficulty,
+        knowledgeArea: safeKnowledgeArea,
         queueElapsedMs: Math.max(0, nowMs - joinedAtMs)
       });
       setQueueActionHint('');
@@ -6072,6 +6755,7 @@ export default function CodeQuizApp() {
       ...pvpConfig,
       difficulty: forcedDifficulty
     });
+    const safeKnowledgeArea = resolveKnowledgeAreaByLanguageId(safeConfig.language || '');
     setPvpConfig(safeConfig);
     queueCancelRequestedRef.current = false;
 
@@ -6118,6 +6802,7 @@ export default function CodeQuizApp() {
           equipped_emoji: shopData?.equipped?.emoji || 'emoji_profile',
           language: safeConfig.language,
           topic: safeConfig.topic,
+          knowledge_area: safeKnowledgeArea,
           difficulty: forcedDifficulty,
           category: forcedDifficulty
         }),
@@ -6159,6 +6844,7 @@ export default function CodeQuizApp() {
         forcedDifficulty,
         language: safeConfig.language,
         topic: safeConfig.topic,
+        knowledgeArea: safeKnowledgeArea,
         botMatchAtMs
       });
       prepareBotForQueue(forcedDifficulty, 'join_queue').catch(() => null);
@@ -6704,19 +7390,10 @@ export default function CodeQuizApp() {
     });
     const rewards = getPvpRewardsByDifficulty(matchRow?.difficulty || pvpConfig?.difficulty || 'easy', result);
 
-    let nextLevel = Math.max(1, Number(progress.level || 1));
-    let nextXp = Math.max(0, Number(progress.xp || 0)) + rewards.xp;
-    let leveledUp = false;
-    while (nextXp >= getXPForLevel(nextLevel)) {
-      nextXp -= getXPForLevel(nextLevel);
-      nextLevel += 1;
-      leveledUp = true;
-    }
-
-    const nextProgress = normalizeProgress({
+    const postBattleProgress = normalizeProgress({
       ...progress,
-      level: nextLevel,
-      xp: nextXp,
+      level: Math.max(1, Number(progress.level || 1)),
+      xp: Math.max(0, Number(progress.xp || 0)) + rewards.xp,
       coins: Math.max(0, Number(progress.coins || 0) + rewards.coins),
       pvpBattles: Math.max(0, Number(progress.pvpBattles || 0) + 1),
       pvpWins: Math.max(0, Number(progress.pvpWins || 0) + (result === 'win' ? 1 : 0)),
@@ -6727,6 +7404,12 @@ export default function CodeQuizApp() {
       },
       updatedAt: Date.now()
     });
+    const passResult = applyEvolutionPassRewards(postBattleProgress);
+    const nextProgress = passResult.progress;
+    const totalRewardXp = Math.max(0, Number(rewards.xp || 0)) + Math.max(0, Number(passResult.rewardXp || 0));
+    const totalRewardCoins = Math.max(0, Number(rewards.coins || 0)) + Math.max(0, Number(passResult.rewardCoins || 0));
+    const leveledUp = Math.max(1, Number(nextProgress.level || 1)) > Math.max(1, Number(progress.level || 1));
+    const passUnlockedCount = Math.max(0, Number(passResult.unlockedAchievements?.length || 0));
 
     setProgress(nextProgress);
 
@@ -6776,7 +7459,7 @@ export default function CodeQuizApp() {
     if (isOwnForfeit) {
       setPvpResultTransitionMode('');
       setPvpCompensation(null);
-      showToast(`Voce saiu da partida: ${formatSignedPoints(pvpPointsGain)} PVP · +${rewards.xp} XP · +${rewards.coins} moedas`);
+      showToast(`Voce saiu da partida: ${formatSignedPoints(pvpPointsGain)} PVP · +${totalRewardXp} XP · +${totalRewardCoins} moedas`);
       return;
     }
 
@@ -6788,8 +7471,8 @@ export default function CodeQuizApp() {
         title: 'Oponente saiu da partida',
         subtitle: 'Voce recebeu compensacao por abandono do adversario. Toque em coletar para sair da partida.',
         points: pvpPointsGain,
-        xp: rewards.xp,
-        coins: rewards.coins
+        xp: totalRewardXp,
+        coins: totalRewardCoins
       });
       return;
     }
@@ -6799,66 +7482,130 @@ export default function CodeQuizApp() {
     setPvpResultReward({
       matchId,
       points: pvpPointsGain,
-      xp: rewards.xp,
-      coins: rewards.coins
+      xp: totalRewardXp,
+      coins: totalRewardCoins
     });
 
     if (result === 'win') {
-      showToast(`Vitoria PVP! ${formatSignedPoints(pvpPointsGain)} PVP · +${rewards.xp} XP · +${rewards.coins} moedas${leveledUp ? ' · Subiu de nivel!' : ''}`);
+      showToast(`Vitoria PVP! ${formatSignedPoints(pvpPointsGain)} PVP · +${totalRewardXp} XP · +${totalRewardCoins} moedas${leveledUp ? ' · Subiu de nivel!' : ''}${passUnlockedCount > 0 ? ` · Passe +${passUnlockedCount}` : ''}`);
     } else if (result === 'draw') {
-      showToast(`Empate PVP. ${formatSignedPoints(pvpPointsGain)} PVP · +${rewards.xp} XP · +${rewards.coins} moedas`);
+      showToast(`Empate PVP. ${formatSignedPoints(pvpPointsGain)} PVP · +${totalRewardXp} XP · +${totalRewardCoins} moedas${passUnlockedCount > 0 ? ` · Passe +${passUnlockedCount}` : ''}`);
     } else {
-      showToast(`Derrota PVP. ${formatSignedPoints(pvpPointsGain)} PVP · +${rewards.xp} XP · +${rewards.coins} moedas`);
+      showToast(`Derrota PVP. ${formatSignedPoints(pvpPointsGain)} PVP · +${totalRewardXp} XP · +${totalRewardCoins} moedas${passUnlockedCount > 0 ? ` · Passe +${passUnlockedCount}` : ''}`);
     }
   }
 
-  async function leavePvpFlow() {
+  function leavePvpFlow() {
+    if (leavePvpFlowBusyRef.current) {
+      resetPvpState();
+      setScreen('play-mode');
+      return;
+    }
+
+    leavePvpFlowBusyRef.current = true;
     const current = pvpStateRef.current;
     const activeMatch = current?.match;
     const myUserId = String(authUser?.uid || '').trim();
+    const activeMatchId = String(activeMatch?.id || '').trim();
+    const activeMatchStatus = String(activeMatch?.status || '').trim().toLowerCase();
+    const player1Id = String(activeMatch?.player1_user_id || '').trim();
+    const player2Id = String(activeMatch?.player2_user_id || '').trim();
+    const opponentId = player1Id === myUserId ? player2Id : player1Id;
 
-    if (
-      myUserId &&
-      activeMatch?.id &&
-      (String(activeMatch.status || '').trim().toLowerCase() === 'active'
-        || String(activeMatch.status || '').trim().toLowerCase() === 'pending_accept')
-    ) {
-      const player1Id = String(activeMatch.player1_user_id || '').trim();
-      const player2Id = String(activeMatch.player2_user_id || '').trim();
-      const opponentId = player1Id === myUserId ? player2Id : player1Id;
-      const matchStatus = String(activeMatch.status || '').trim().toLowerCase();
+    queueFlowLog('leave_pvp_flow:start', {
+      userId: myUserId,
+      matchId: activeMatchId,
+      status: activeMatchStatus
+    });
 
-      if (opponentId) {
-        const latest = await getPvpMatch(activeMatch.id).catch(() => null);
-        if (latest && String(latest.status || '').trim().toLowerCase() === matchStatus) {
-          if (matchStatus === 'pending_accept') {
-            await updatePvpMatch(activeMatch.id, {
-              status: 'finished',
-              ended_reason: 'match_refused',
-              ended_by_user_id: myUserId,
-              ended_at: nowIso(),
-              winner_user_id: null
-            }).catch(() => null);
-          } else {
-            await updatePvpMatch(activeMatch.id, {
-              status: 'finished',
-              winner_user_id: opponentId,
-              ended_reason: 'forfeit',
-              ended_by_user_id: myUserId,
-              forfeit_by_user_id: myUserId,
-              ended_round_no: Math.max(1, Number(activeMatch.round_no || 1)),
-              ended_at: nowIso()
-            }).catch(() => null);
+    // Always unblock the UI first; remote cleanup is best-effort in background.
+    resetPvpState();
+    setQueueActionBusy(false);
+    setQueueActionPhase('');
+    setQueueActionHint('');
+    setMatchAcceptBusy(false);
+    setScreen('play-mode');
+
+    const releaseBusy = () => {
+      leavePvpFlowBusyRef.current = false;
+    };
+    const watchdog = typeof window !== 'undefined'
+      ? window.setTimeout(releaseBusy, UI_ACTION_WATCHDOG_MS + 1200)
+      : null;
+
+    (async () => {
+      try {
+        const canFinalizeMatch = Boolean(
+          myUserId
+          && activeMatchId
+          && opponentId
+          && (activeMatchStatus === 'active' || activeMatchStatus === 'pending_accept')
+        );
+
+        if (canFinalizeMatch) {
+          const latest = await withTimeout(
+            getPvpMatch(activeMatchId).catch(() => null),
+            2400,
+            'leave_flow_get_match'
+          ).catch(() => null);
+          const latestStatus = String(latest?.status || '').trim().toLowerCase();
+
+          if (latest && latestStatus === activeMatchStatus) {
+            if (activeMatchStatus === 'pending_accept') {
+              await withTimeout(
+                updatePvpMatch(activeMatchId, {
+                  status: 'finished',
+                  ended_reason: 'match_refused',
+                  ended_by_user_id: myUserId,
+                  ended_at: nowIso(),
+                  winner_user_id: null
+                }).catch(() => null),
+                2600,
+                'leave_flow_finish_pending_accept'
+              ).catch(() => null);
+            } else {
+              await withTimeout(
+                updatePvpMatch(activeMatchId, {
+                  status: 'finished',
+                  winner_user_id: opponentId,
+                  ended_reason: 'forfeit',
+                  ended_by_user_id: myUserId,
+                  forfeit_by_user_id: myUserId,
+                  ended_round_no: Math.max(1, Number(activeMatch?.round_no || 1)),
+                  ended_at: nowIso()
+                }).catch(() => null),
+                2600,
+                'leave_flow_finish_active'
+              ).catch(() => null);
+            }
           }
         }
-      }
-    }
 
-    if (authUser?.uid) {
-      await leaveQueue(authUser.uid).catch(() => null);
-    }
-    resetPvpState();
-    setScreen('play-mode');
+        if (myUserId) {
+          await withTimeout(
+            leaveQueue(myUserId).catch(() => null),
+            2600,
+            'leave_flow_leave_queue'
+          ).catch(() => null);
+        }
+
+        queueFlowLog('leave_pvp_flow:cleanup_done', {
+          userId: myUserId,
+          matchId: activeMatchId
+        });
+      } catch (error) {
+        queueFlowLog('leave_pvp_flow:cleanup_error', {
+          userId: myUserId,
+          matchId: activeMatchId,
+          message: String(error?.message || error || 'unknown_error')
+        });
+      } finally {
+        if (watchdog && typeof window !== 'undefined') {
+          window.clearTimeout(watchdog);
+        }
+        releaseBusy();
+      }
+    })();
   }
 
   useEffect(() => {
@@ -7268,6 +8015,7 @@ export default function CodeQuizApp() {
             equipped_emoji: shopData?.equipped?.emoji || 'emoji_profile',
             language: pvpConfig?.language || '',
             topic: pvpConfig?.topic || '',
+            knowledge_area: resolveKnowledgeAreaByLanguageId(pvpConfig?.language || ''),
             difficulty: queueCategory,
             category: queueCategory
           }).catch(() => null), 1500, 'upsert_self_queue').catch(() => null);
@@ -7277,6 +8025,12 @@ export default function CodeQuizApp() {
         const userQueueCategory = normalizeDifficulty(
           selfQueue.category || selfQueue.difficulty || queueCategory
         );
+        const userQueueLanguage = String(selfQueue.language || pvpConfig?.language || '').trim();
+        const userQueueArea = String(
+          selfQueue.knowledge_area
+          || resolveKnowledgeAreaByLanguageId(userQueueLanguage || pvpConfig?.language || '')
+          || ''
+        ).trim();
         const preparedAgeMs = Math.max(
           0,
           Date.now() - Math.max(0, Number(preparedBotRef.current?.preparedAtMs || 0))
@@ -7327,7 +8081,7 @@ export default function CodeQuizApp() {
 
         if (!shouldPrioritizeBotAttempt && !shouldSkipHumanMatchScan) {
           const opponents = await withTimeout(
-            findQueueOpponent(authUser.uid, userQueueCategory, userQueueCategory, 12).catch(() => []),
+            findQueueOpponent(authUser.uid, userQueueCategory, userQueueCategory, 12, userQueueLanguage).catch(() => []),
             1200,
             'find_queue_opponents'
           ).catch(() => []);
@@ -7379,16 +8133,44 @@ export default function CodeQuizApp() {
               if (myQueueCategory !== userQueueCategory) continue;
               if (normalizeDifficulty(myQueue.difficulty || 'easy') !== myQueueCategory) continue;
               if (normalizeDifficulty(oppQueue.difficulty || 'easy') !== oppQueueCategory) continue;
+              const myQueueLanguage = String(myQueue.language || userQueueLanguage || pvpConfig.language || '').trim();
+              const oppQueueLanguage = String(oppQueue.language || '').trim();
+              const myQueueArea = String(
+                myQueue.knowledge_area
+                || resolveKnowledgeAreaByLanguageId(myQueueLanguage || userQueueLanguage || pvpConfig.language || '')
+                || userQueueArea
+                || ''
+              ).trim();
+              const oppQueueArea = String(
+                oppQueue.knowledge_area
+                || resolveKnowledgeAreaByLanguageId(oppQueueLanguage)
+                || ''
+              ).trim();
+              if (myQueueArea && oppQueueArea && myQueueArea !== oppQueueArea) {
+                queueFlowLog('matchmaking_tick:human_area_mismatch', {
+                  userId: authUser?.uid || '',
+                  opponentId,
+                  myArea: myQueueArea,
+                  opponentArea: oppQueueArea
+                });
+                continue;
+              }
 
               const safeConfig = ensureValidPvpConfig({
-                language: myQueue.language || pvpConfig.language,
+                language: myQueueLanguage || pvpConfig.language,
                 topic: myQueue.topic || pvpConfig.topic,
-                difficulty: myQueueCategory
+                difficulty: myQueueCategory,
+                area: myQueueArea || userQueueArea
               });
 
-              const questionSet = pickPvpRoundQuestionsByDifficulty(
+              const questionSet = pickPvpRoundQuestionsByConfig(
                 QUESTIONS,
-                myQueueCategory,
+                {
+                  language: safeConfig.language,
+                  topic: safeConfig.topic,
+                  difficulty: myQueueCategory,
+                  area: myQueueArea || userQueueArea
+                },
                 PVP_ROUNDS_PER_MATCH
               );
 
@@ -7402,6 +8184,7 @@ export default function CodeQuizApp() {
                 category: myQueueCategory,
                 language: safeConfig.language,
                 topic: safeConfig.topic,
+                knowledge_area: myQueueArea || userQueueArea || resolveKnowledgeAreaByLanguageId(safeConfig.language || ''),
                 total_rounds: questionSet.length,
                 round_no: 1,
                 question_set: questionSet,
@@ -7698,6 +8481,7 @@ export default function CodeQuizApp() {
               equipped_emoji: shopData?.equipped?.emoji || 'emoji_profile',
               language: pvpConfig?.language || '',
               topic: pvpConfig?.topic || '',
+              knowledge_area: resolveKnowledgeAreaByLanguageId(pvpConfig?.language || ''),
               difficulty: userQueueCategory,
               category: userQueueCategory
             }).catch(() => null);
@@ -7730,22 +8514,38 @@ export default function CodeQuizApp() {
             scheduleNextBotAttempt(1, 12);
             return;
           }
+          const myQueueLanguage = String(myQueue.language || userQueueLanguage || pvpConfig.language || '').trim();
+          const myQueueArea = String(
+            myQueue.knowledge_area
+            || resolveKnowledgeAreaByLanguageId(myQueueLanguage || userQueueLanguage || pvpConfig.language || '')
+            || userQueueArea
+            || ''
+          ).trim();
 
           const safeConfig = ensureValidPvpConfig({
-            language: myQueue.language || pvpConfig.language,
+            language: myQueueLanguage || pvpConfig.language,
             topic: myQueue.topic || pvpConfig.topic,
-            difficulty: myQueueCategory
+            difficulty: myQueueCategory,
+            area: myQueueArea || userQueueArea
           });
-          const questionSet = pickPvpRoundQuestionsByDifficulty(
+          const questionSet = pickPvpRoundQuestionsByConfig(
             QUESTIONS,
-            myQueueCategory,
+            {
+              language: safeConfig.language,
+              topic: safeConfig.topic,
+              difficulty: myQueueCategory,
+              area: myQueueArea || userQueueArea
+            },
             PVP_ROUNDS_PER_MATCH
           );
           if (!questionSet.length) {
             queueFlowLog('matchmaking_tick:no_questions_for_bot_match', {
               userId: authUser?.uid || '',
               botId: selectedBotId,
-              difficulty: myQueueCategory
+              difficulty: myQueueCategory,
+              area: myQueueArea || userQueueArea,
+              language: safeConfig.language,
+              topic: safeConfig.topic
             });
             await rotateUserBotQueue(selectedBotId, 'mm_no_questions').catch(() => null);
             scheduleNextBotAttempt(1, 12);
@@ -7853,6 +8653,7 @@ export default function CodeQuizApp() {
             category: myQueueCategory,
             language: safeConfig.language,
             topic: safeConfig.topic,
+            knowledge_area: myQueueArea || userQueueArea || resolveKnowledgeAreaByLanguageId(safeConfig.language || ''),
             total_rounds: questionSet.length,
             round_no: 1,
             question_set: questionSet,
@@ -9038,6 +9839,24 @@ export default function CodeQuizApp() {
   }, [selectedLanguage]);
 
   useEffect(() => {
+    const nextIndex = getKnowledgeAreaIndex(selectedKnowledgeArea);
+    if (nextIndex !== kaCarouselIndex) {
+      setKaCarouselIndex(nextIndex);
+    }
+  }, [selectedKnowledgeArea]);
+
+  useEffect(() => {
+    const nextArea = resolveKnowledgeAreaByLanguageId(pvpConfig?.language || '');
+    if (nextArea !== pvpKnowledgeArea) {
+      setPvpKnowledgeArea(nextArea);
+    }
+    const nextIndex = getKnowledgeAreaIndex(nextArea);
+    if (nextIndex !== arenaKaCarouselIndex) {
+      setArenaKaCarouselIndex(nextIndex);
+    }
+  }, [pvpConfig?.language]);
+
+  useEffect(() => {
     if (screen === 'quiz') return;
     if (quizMenuOpen) setQuizMenuOpen(false);
   }, [screen, quizMenuOpen]);
@@ -9059,41 +9878,49 @@ export default function CodeQuizApp() {
     []
   );
 
-  const languageIdsByLength = useMemo(
-    () => LANGUAGES.map((language) => language.id).sort((a, b) => b.length - a.length),
-    []
-  );
+  const getTopicProgressPct = (languageId, topicId) => {
+    const topicPack = QUESTIONS?.[languageId]?.[topicId] && typeof QUESTIONS[languageId][topicId] === 'object'
+      ? QUESTIONS[languageId][topicId]
+      : {};
+    let progressTotal = 0;
+    let progressSlots = 0;
 
-  const topicProgressEntries = useMemo(() => (
-    Object.entries(progress.topicProgress || {})
-      .map(([key, value]) => {
-        const parsed = parseTopicProgressKey(key, languageIdsByLength);
-        return {
-          key,
-          value: Math.max(0, Number(value || 0)),
-          parsed
-        };
-      })
-      .filter((entry) => entry.parsed.language && entry.parsed.topic && entry.parsed.difficulty)
-  ), [progress.topicProgress, languageIdsByLength]);
+    ['easy', 'medium', 'hard'].forEach((difficulty) => {
+      const pool = Array.isArray(topicPack[difficulty]) ? topicPack[difficulty] : [];
+      if (!pool.length) return;
+      const quizKey = getQuizKey(languageId, topicId, difficulty);
+      const pct = Math.max(0, Math.min(100, Number(progress.topicProgress?.[quizKey] || 0)));
+      progressTotal += pct;
+      progressSlots += 1;
+    });
+
+    return progressSlots ? Math.round(progressTotal / progressSlots) : 0;
+  };
 
   const languageProgress = useMemo(() => {
     const result = new Map();
     LANGUAGES.forEach((language) => {
-      const entries = topicProgressEntries.filter((entry) => entry.parsed.language === language.id);
-      if (!entries.length) {
+      const topics = getTopicsByLanguage(TOPICS, language.id);
+      if (!topics.length) {
         result.set(language.id, 0);
         return;
       }
-      const total = entries.reduce((sum, entry) => sum + Math.max(0, Number(entry.value || 0)), 0);
-      result.set(language.id, Math.round(total / entries.length));
+
+      const topicAvg = topics.reduce((acc, topic) => {
+        return acc + getTopicProgressPct(language.id, topic.id);
+      }, 0);
+
+      result.set(language.id, Math.round(topicAvg / topics.length));
     });
     return result;
-  }, [topicProgressEntries]);
+  }, [progress.topicProgress]);
 
   const languageThemeSections = useMemo(() => {
     const used = new Set();
-    const sections = LANGUAGE_THEME_GROUPS.map((group) => {
+    const filteredGroups = LANGUAGE_THEME_GROUPS.filter(
+      (group) => group.area === selectedKnowledgeArea
+    );
+    const sections = filteredGroups.map((group) => {
       const items = group.languages
         .map((id) => languageById.get(id))
         .filter(Boolean);
@@ -9101,7 +9928,12 @@ export default function CodeQuizApp() {
       return { ...group, items };
     }).filter((section) => section.items.length > 0);
 
-    const remaining = LANGUAGES.filter((language) => !used.has(language.id));
+    const areaLanguageIds = new Set(
+      filteredGroups.flatMap((g) => g.languages)
+    );
+    const remaining = LANGUAGES.filter(
+      (language) => areaLanguageIds.has(language.id) && !used.has(language.id)
+    );
     if (remaining.length) {
       sections.push({
         id: 'more',
@@ -9112,53 +9944,36 @@ export default function CodeQuizApp() {
     }
 
     return sections;
-  }, [languageById]);
+  }, [languageById, selectedKnowledgeArea]);
 
   const topicProgress = useMemo(() => {
     const result = new Map();
-    topicProgressEntries.forEach((entry) => {
-      const { parsed } = entry;
-      if (parsed.language !== selectedLanguage) return;
-      const current = Math.max(0, Number(result.get(parsed.topic) || 0));
-      const next = Math.max(0, Number(entry.value || 0));
-      result.set(parsed.topic, Math.max(current, next));
+    selectedTopics.forEach((topic) => {
+      result.set(topic.id, getTopicProgressPct(selectedLanguage, topic.id));
     });
     return result;
-  }, [topicProgressEntries, selectedLanguage]);
+  }, [selectedLanguage, selectedTopics, progress.topicProgress]);
 
-  const topicQuestionCount = useMemo(() => {
+  const topicQuestionCountByDifficulty = useMemo(() => {
     const result = new Map();
-    const languageQuestions = QUESTIONS[selectedLanguage] && typeof QUESTIONS[selectedLanguage] === 'object'
-      ? QUESTIONS[selectedLanguage]
-      : {};
-
     selectedTopics.forEach((topic) => {
-      const topicPack = languageQuestions[topic.id] && typeof languageQuestions[topic.id] === 'object'
-        ? languageQuestions[topic.id]
-        : {};
-      const perDifficulty = ['easy', 'medium', 'hard'].map((diff) => (
-        Math.min(QUESTIONS_PER_ROUND, Array.isArray(topicPack[diff]) ? topicPack[diff].length : 0)
-      ));
-      result.set(topic.id, Math.max(0, ...perDifficulty));
+      result.set(topic.id, {
+        easy: getRoundQuestionCapacity(QUESTIONS, selectedLanguage, topic.id, 'easy', QUESTIONS_PER_ROUND),
+        medium: getRoundQuestionCapacity(QUESTIONS, selectedLanguage, topic.id, 'medium', QUESTIONS_PER_ROUND),
+        hard: getRoundQuestionCapacity(QUESTIONS, selectedLanguage, topic.id, 'hard', QUESTIONS_PER_ROUND)
+      });
     });
 
     return result;
   }, [selectedLanguage, selectedTopics]);
 
   const selectedTopicQuestionCountByDifficulty = useMemo(() => {
-    const languageQuestions = QUESTIONS[selectedLanguage] && typeof QUESTIONS[selectedLanguage] === 'object'
-      ? QUESTIONS[selectedLanguage]
-      : {};
-    const topicPack = languageQuestions[selectedTopic] && typeof languageQuestions[selectedTopic] === 'object'
-      ? languageQuestions[selectedTopic]
-      : {};
-
-    return {
-      easy: Math.min(QUESTIONS_PER_ROUND, Array.isArray(topicPack.easy) ? topicPack.easy.length : 0),
-      medium: Math.min(QUESTIONS_PER_ROUND, Array.isArray(topicPack.medium) ? topicPack.medium.length : 0),
-      hard: Math.min(QUESTIONS_PER_ROUND, Array.isArray(topicPack.hard) ? topicPack.hard.length : 0)
+    return topicQuestionCountByDifficulty.get(selectedTopic) || {
+      easy: 0,
+      medium: 0,
+      hard: 0
     };
-  }, [selectedLanguage, selectedTopic]);
+  }, [topicQuestionCountByDifficulty, selectedTopic]);
 
   const selectedTopicDifficultyProgress = useMemo(() => {
     const byDifficulty = {};
@@ -9187,12 +10002,23 @@ export default function CodeQuizApp() {
     () => validateNicknameInput(String(profileDraft.nickname || '').trim()),
     [profileDraft.nickname]
   );
+  const fullNameValidation = useMemo(
+    () => validateFullNameInput(String(profileDraft.full_name || '').trim(), { required: true }),
+    [profileDraft.full_name]
+  );
   const nicknameChanged = String(profileDraft.nickname || '').trim() !== String(profile?.nickname || '').trim();
-  const nicknameHintClass = nicknameChanged && !nicknameValidation.ok ? 'error' : '';
-  const nicknameHintText = nicknameChanged && !nicknameValidation.ok
+  const fullNameChanged = String(profileDraft.full_name || '').trim() !== String(profile?.full_name || '').trim();
+  const nicknameRequiresAttention = (onboardingRequired || nicknameChanged) && !nicknameValidation.ok;
+  const fullNameRequiresAttention = (onboardingRequired || fullNameChanged) && !fullNameValidation.ok;
+  const nicknameHintClass = nicknameRequiresAttention ? 'error' : '';
+  const nicknameHintText = nicknameRequiresAttention
     ? nicknameValidation.errorMessage
     : NICKNAME_RULE_COPY;
-  const unlockedSet = useMemo(() => new Set(progress.achievements || []), [progress.achievements]);
+  const fullNameHintClass = fullNameRequiresAttention ? 'error' : '';
+  const fullNameHintText = fullNameRequiresAttention
+    ? fullNameValidation.errorMessage
+    : FULL_NAME_RULE_COPY;
+  const evolutionPass = useMemo(() => buildEvolutionPassSnapshot(progress), [progress]);
 
   const pvpQueueElapsedMs = pvpState.queueJoinedAtMs > 0
     ? Math.max(0, pvpClockMs - Number(pvpState.queueJoinedAtMs || 0))
@@ -9372,7 +10198,7 @@ export default function CodeQuizApp() {
     return deduped;
   }, [adminMatches, adminBotQuizLiveRows]);
 
-  const adminHistoryTodayMatches = useMemo(() => {
+  const adminHistoryTodayBaseMatches = useMemo(() => {
     const rows = Array.isArray(adminMatches) ? adminMatches : [];
     const now = new Date();
     const dayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
@@ -9393,6 +10219,10 @@ export default function CodeQuizApp() {
         - toMillis(a?.ended_at || a?.updated_at || a?.created_at)
       ));
   }, [adminMatches]);
+
+  const adminHistoryTodayMatches = useMemo(() => (
+    adminHistoryTodayBaseMatches.filter((row) => doesAdminHistoryRowMatchFilter(row, adminHistoryFilter))
+  ), [adminHistoryTodayBaseMatches, adminHistoryFilter]);
 
   const adminHistoryDateLabel = useMemo(() => {
     const now = new Date();
@@ -9600,6 +10430,15 @@ export default function CodeQuizApp() {
   const pvpEmojiCooldownLabel = pvpEmojiCooldownActive
     ? `${(pvpEmojiCooldownRemainingMs / 1000).toFixed(1)}s`
     : '';
+  const arenaKnowledgeArea = KNOWLEDGE_AREAS[arenaKaCarouselIndex] || KNOWLEDGE_AREAS[0];
+  const pvpAreaSelectionLocked = (
+    pvpState.status === 'queueing'
+    || pvpState.status === 'pending_accept'
+    || pvpState.status === 'active'
+    || pvpState.status === 'round_result'
+    || queueActionBusy
+    || matchAcceptBusy
+  );
   const isWideAdminLayout = screen === 'admin-monitor' || screen === 'admin-live' || screen === 'admin-history';
 
   const showPreload = booting || authLoading || !progressReady || !shopReady;
@@ -9719,8 +10558,8 @@ export default function CodeQuizApp() {
                 <span className="btn-text">Loja</span>
               </button>
               <button className="btn btn-secondary btn-modern" onClick={() => setScreen('achievements')}>
-                <span className="btn-icon">🏅</span>
-                <span className="btn-text">Conquistas</span>
+                <span className="btn-icon">🎟️</span>
+                <span className="btn-text">Passe</span>
               </button>
               <button
                 className="btn btn-secondary btn-modern"
@@ -9741,7 +10580,7 @@ export default function CodeQuizApp() {
           <div className="challenge-panel play-mode-panel">
             <h3>Selecione seu modo</h3>
             <div className="play-mode-actions">
-              <button className="btn btn-primary btn-lg btn-modern play-mode-btn" onClick={() => setScreen('select')}>
+              <button className="btn btn-primary btn-lg btn-modern play-mode-btn" onClick={() => setScreen('knowledge-area')}>
                 <span className="play-mode-icon">🎯</span>
                 <span className="play-mode-title">PVE</span>
                 <span className="play-mode-subtitle">Quiz Solo</span>
@@ -9752,6 +10591,70 @@ export default function CodeQuizApp() {
                 <span className="play-mode-subtitle">Online</span>
               </button>
             </div>
+          </div>
+        </div>
+
+        <div className={`screen ${screen === 'knowledge-area' ? 'active' : ''}`}>
+          <div className="screen-top">
+            <button className="btn-back" onClick={() => triggerAppBackNavigation('button')}>←</button>
+            <h2>Área do Quiz</h2>
+          </div>
+          <p className="ka-subtitle">Escolha a área de conhecimento</p>
+          <div className="ka-carousel-container">
+            <button
+              className="ka-arrow-btn ka-arrow-left"
+              disabled={kaCarouselIndex <= 0}
+              onClick={() => shiftKnowledgeAreaCarousel('pve', -1)}
+              aria-label="Anterior"
+            >
+              ◀
+            </button>
+            <div
+              className="ka-carousel-track"
+              onTouchStart={(e) => handleKnowledgeAreaTouchStart('pve', e)}
+              onTouchEnd={(e) => handleKnowledgeAreaTouchEnd('pve', e)}
+            >
+              <div
+                className="ka-carousel-slider"
+                style={{ transform: `translateX(-${kaCarouselIndex * 100}%)` }}
+              >
+                {KNOWLEDGE_AREAS.map((area) => (
+                  <div key={area.id} className="ka-card" style={{ '--ka-color': area.color }}>
+                    <div className="ka-card-icon">{area.icon}</div>
+                    <div className="ka-card-name">{area.name}</div>
+                    <div className="ka-card-desc">{area.desc}</div>
+                    <button
+                      className="ka-card-btn"
+                      onClick={() => chooseKnowledgeAreaForPve(area.id)}
+                    >
+                      Escolher
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <button
+              className="ka-arrow-btn ka-arrow-right"
+              disabled={kaCarouselIndex >= KNOWLEDGE_AREAS.length - 1}
+              onClick={() => shiftKnowledgeAreaCarousel('pve', 1)}
+              aria-label="Próximo"
+            >
+              ▶
+            </button>
+          </div>
+          <div className="ka-dots">
+            {KNOWLEDGE_AREAS.map((area, idx) => (
+              <button
+                key={area.id}
+                className={`ka-dot ${idx === kaCarouselIndex ? 'active' : ''}`}
+                onClick={() => {
+                  if (idx === kaCarouselIndex) return;
+                  setKaCarouselIndex(idx);
+                  playSfx('click');
+                }}
+                aria-label={area.name}
+              />
+            ))}
           </div>
         </div>
 
@@ -9825,8 +10728,11 @@ export default function CodeQuizApp() {
               const pct = topicProgress.get(topic.id) || 0;
               const badgeClass = pct >= 80 ? 'completed' : pct > 0 ? 'started' : 'new';
               const badgeLabel = pct >= 80 ? 'Dominado' : pct > 0 ? `${pct}%` : 'Novo';
-              const totalQuestions = topicQuestionCount.get(topic.id) || 0;
-              const topicCountLabel = totalQuestions > 0 ? `${totalQuestions} por partida` : 'Sem perguntas';
+              const perDiff = topicQuestionCountByDifficulty.get(topic.id) || { easy: 0, medium: 0, hard: 0 };
+              const totalQuestions = Math.max(0, Number(perDiff.easy || 0), Number(perDiff.medium || 0), Number(perDiff.hard || 0));
+              const topicCountLabel = totalQuestions > 0
+                ? `Inic./Inter./Avan.: ${perDiff.easy}/${perDiff.medium}/${perDiff.hard}`
+                : 'Sem perguntas';
               return (
                 <button
                   key={topic.id}
@@ -9864,36 +10770,48 @@ export default function CodeQuizApp() {
             <h2>Dificuldade</h2>
           </div>
           <div className="difficulty-list">
-            <button className="diff-card diff-easy" onClick={() => beginPveRound('easy')}>
+            <button
+              className="diff-card diff-easy"
+              onClick={() => beginPveRound('easy')}
+              disabled={!selectedTopicQuestionCountByDifficulty.easy}
+            >
               <span className="diff-emoji">🌱</span>
               <span className="diff-name">{DIFFICULTY_LABELS.easy}</span>
-              <span className="diff-desc">Conceitos basicos</span>
+              <span className="diff-desc">Perguntas introdutorias e fundamentos.</span>
               <span className="diff-meta">
-                {selectedTopicQuestionCountByDifficulty.easy || 0} perguntas · melhor {selectedTopicDifficultyProgress.easy?.pct || 0}%
+                {selectedTopicQuestionCountByDifficulty.easy || 0} perguntas por partida · melhor {selectedTopicDifficultyProgress.easy?.pct || 0}%
               </span>
               <div className="diff-progress">
                 <div className="diff-progress-fill" style={{ width: `${selectedTopicDifficultyProgress.easy?.pct || 0}%` }} />
               </div>
               <span className="diff-mult">x1 recompensas</span>
             </button>
-            <button className="diff-card diff-medium" onClick={() => beginPveRound('medium')}>
+            <button
+              className="diff-card diff-medium"
+              onClick={() => beginPveRound('medium')}
+              disabled={!selectedTopicQuestionCountByDifficulty.medium}
+            >
               <span className="diff-emoji">🔥</span>
               <span className="diff-name">{DIFFICULTY_LABELS.medium}</span>
-              <span className="diff-desc">Mais velocidade e precisao</span>
+              <span className="diff-desc">Aplicacao pratica e analise intermediaria.</span>
               <span className="diff-meta">
-                {selectedTopicQuestionCountByDifficulty.medium || 0} perguntas · melhor {selectedTopicDifficultyProgress.medium?.pct || 0}%
+                {selectedTopicQuestionCountByDifficulty.medium || 0} perguntas por partida · melhor {selectedTopicDifficultyProgress.medium?.pct || 0}%
               </span>
               <div className="diff-progress">
                 <div className="diff-progress-fill" style={{ width: `${selectedTopicDifficultyProgress.medium?.pct || 0}%` }} />
               </div>
               <span className="diff-mult">x2 recompensas</span>
             </button>
-            <button className="diff-card diff-hard" onClick={() => beginPveRound('hard')}>
+            <button
+              className="diff-card diff-hard"
+              onClick={() => beginPveRound('hard')}
+              disabled={!selectedTopicQuestionCountByDifficulty.hard}
+            >
               <span className="diff-emoji">⚡</span>
               <span className="diff-name">{DIFFICULTY_LABELS.hard}</span>
-              <span className="diff-desc">Nivel avancado</span>
+              <span className="diff-desc">Cenarios avancados e detalhes tecnicos.</span>
               <span className="diff-meta">
-                {selectedTopicQuestionCountByDifficulty.hard || 0} perguntas · melhor {selectedTopicDifficultyProgress.hard?.pct || 0}%
+                {selectedTopicQuestionCountByDifficulty.hard || 0} perguntas por partida · melhor {selectedTopicDifficultyProgress.hard?.pct || 0}%
               </span>
               <div className="diff-progress">
                 <div className="diff-progress-fill" style={{ width: `${selectedTopicDifficultyProgress.hard?.pct || 0}%` }} />
@@ -10036,12 +10954,16 @@ export default function CodeQuizApp() {
 
             {resultState?.unlockedAchievements?.length ? (
               <div className="result-leaderboard">
-                <div className="result-leaderboard-title">Novas conquistas</div>
+                <div className="result-leaderboard-title">Etapas do passe concluidas</div>
                 <div className="result-leaderboard-list">
                   {resultState.unlockedAchievements.map((achievement) => (
                     <div key={achievement.id} className="result-leaderboard-item">
                       <span className="result-leaderboard-pos">{achievement.icon}</span>
-                      <span>{achievement.name}</span>
+                      <span>
+                        {achievement.name}
+                        {' '}
+                        (+{Math.max(0, Number(achievement?.rewardXp || 0))} XP · +{Math.max(0, Number(achievement?.rewardCoins || 0))} moedas)
+                      </span>
                     </div>
                   ))}
                 </div>
@@ -10093,22 +11015,95 @@ export default function CodeQuizApp() {
         <div className={`screen ${screen === 'achievements' ? 'active' : ''}`}>
           <div className="screen-top">
             <button className="btn-back" onClick={() => triggerAppBackNavigation('button')}>←</button>
-            <h2>Conquistas</h2>
+            <h2>Passe de Evolucao</h2>
           </div>
-          <div className="achievements-list">
-            {ACHIEVEMENTS.map((achievement) => {
-              const unlocked = unlockedSet.has(achievement.id);
-              return (
-                <div key={achievement.id} className={`achievement-card ${unlocked ? 'unlocked' : 'locked'}`}>
-                  <div className="achievement-icon">{achievement.icon}</div>
-                  <div className="achievement-info">
-                    <div className="achievement-name">{achievement.name}</div>
-                    <div className="achievement-desc">{achievement.desc}</div>
-                  </div>
-                  <div className="achievement-check">{unlocked ? '✓' : '•'}</div>
+          <div className="evo-pass-shell">
+            <div className="evo-pass-hero-card">
+              <div className="evo-pass-hero-head">
+                <div className="evo-pass-hero-title">Passe de Evolucao</div>
+                <div className="evo-pass-hero-level">
+                  Nivel {evolutionPass.currentLevel}/{evolutionPass.totalLevels}
                 </div>
-              );
-            })}
+              </div>
+              <div className="evo-pass-hero-subtitle">
+                {evolutionPass.activeStage
+                  ? `${evolutionPass.activeStage.icon} ${evolutionPass.activeStage.name}`
+                  : 'Passe concluido'}
+              </div>
+              <div className="evo-pass-bar">
+                <div
+                  className="evo-pass-bar-fill"
+                  style={{ width: `${Math.max(0, Math.min(100, Number(evolutionPass.currentStageProgressPct || 0)))}%` }}
+                />
+              </div>
+              <div className="evo-pass-hero-meta">
+                Progresso da etapa atual: {Math.round(Math.max(0, Number(evolutionPass.currentStageProgressPct || 0)))}%
+              </div>
+              <div className="evo-pass-summary-grid">
+                <div className="evo-pass-summary-item">
+                  <span className="evo-pass-summary-label">Etapas concluidas</span>
+                  <strong>{evolutionPass.completedCount}/{evolutionPass.totalLevels}</strong>
+                </div>
+                <div className="evo-pass-summary-item">
+                  <span className="evo-pass-summary-label">Passe total</span>
+                  <strong>{Math.round(Math.max(0, Number(evolutionPass.overallProgressPct || 0)))}%</strong>
+                </div>
+                <div className="evo-pass-summary-item">
+                  <span className="evo-pass-summary-label">Resgatadas</span>
+                  <strong>{evolutionPass.claimedCount}</strong>
+                </div>
+              </div>
+            </div>
+
+            <div className="evo-pass-list">
+              {evolutionPass.stages.map((stage) => {
+                const stageStatus = stage.claimed
+                  ? 'Concluido'
+                  : (stage.completed ? 'Pronto' : (stage.active ? 'Em progresso' : 'Bloqueado'));
+                return (
+                  <div
+                    key={stage.id}
+                    className={[
+                      'evo-stage-card',
+                      stage.claimed ? 'claimed' : '',
+                      stage.active ? 'active' : '',
+                      stage.locked ? 'locked' : ''
+                    ].filter(Boolean).join(' ')}
+                  >
+                    <div className="evo-stage-top">
+                      <span className="evo-stage-level">Nivel {stage.level}</span>
+                      <span className="evo-stage-status">{stageStatus}</span>
+                    </div>
+                    <div className="evo-stage-title">{stage.icon} {stage.name}</div>
+                    <div className="evo-stage-desc">{stage.desc}</div>
+                    <div className="evo-stage-hint">{stage.hint}</div>
+                    <div className="evo-stage-goals">
+                      {stage.goals.map((goal) => (
+                        <div
+                          key={`${stage.id}_${goal.metric}_${goal.target}`}
+                          className={`evo-stage-goal ${goal.complete ? 'done' : ''}`}
+                        >
+                          <span className="evo-stage-goal-label">{goal.label}</span>
+                          <span className="evo-stage-goal-value">
+                            {Math.min(goal.target, Math.max(0, Math.trunc(Number(goal.value || 0))))}/{goal.target}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="evo-stage-progress">
+                      <div
+                        className="evo-stage-progress-fill"
+                        style={{ width: `${Math.max(0, Math.min(100, Number(stage.progressPct || 0)))}%` }}
+                      />
+                    </div>
+                    <div className="evo-stage-rewards">
+                      <span className="evo-stage-reward">+{Math.max(0, Number(stage?.reward?.xp || 0))} XP</span>
+                      <span className="evo-stage-reward">+{Math.max(0, Number(stage?.reward?.coins || 0))} moedas</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         </div>
 
@@ -10219,7 +11214,7 @@ export default function CodeQuizApp() {
               </div>
               <div className="admin-screen-stat-card">
                 <span>Historico hoje</span>
-                <strong>{adminHistoryTodayMatches.length}</strong>
+                <strong>{adminHistoryTodayBaseMatches.length}</strong>
               </div>
             </div>
 
@@ -10369,23 +11364,23 @@ export default function CodeQuizApp() {
                 );
               }
               return (
-                <div key={`live_${row.id}`} className="admin-monitor-item">
+                <div key={`live_${row.id}`} className="admin-monitor-item admin-monitor-item-pvp admin-monitor-item-pvp-live">
                   <div className="admin-monitor-item-head">
                     <span className="admin-monitor-item-id">{displayCode}</span>
                     <span className={`admin-monitor-status status-${status}`}>{statusLabel}</span>
                   </div>
                   <div className="admin-monitor-versus">
-                    <span>{row.player1_nickname || 'Jogador 1'}</span>
-                    <strong>{Math.max(0, Number(row.player1_score || 0))} x {Math.max(0, Number(row.player2_score || 0))}</strong>
-                    <span>{row.player2_nickname || 'Jogador 2'}</span>
+                    <span className="admin-monitor-player-name">{row.player1_nickname || 'Jogador 1'}</span>
+                    <strong className="admin-monitor-score-pill">{Math.max(0, Number(row.player1_score || 0))} x {Math.max(0, Number(row.player2_score || 0))}</strong>
+                    <span className="admin-monitor-player-name">{row.player2_nickname || 'Jogador 2'}</span>
                   </div>
-                  <div className="admin-monitor-meta">
-                    Iniciada: {startedAtLabel}
-                    {' · '}Atualizada: {updatedAtLabel}
-                    {' · '}Rodadas: {getAdminMatchRoundsLabel(row)}
-                    {' · '}Duracao: {durationLabel}
-                    {' · '}Tipo: {matchTypeLabel}
-                    {botClassSummary ? ` · ${botClassSummary}` : ''}
+                  <div className="admin-monitor-meta-row">
+                    <span className="admin-monitor-meta-chip">Iniciada {startedAtLabel}</span>
+                    <span className="admin-monitor-meta-chip">Atualizada {updatedAtLabel}</span>
+                    <span className="admin-monitor-meta-chip">Rodadas {getAdminMatchRoundsLabel(row)}</span>
+                    <span className="admin-monitor-meta-chip">Duracao {durationLabel}</span>
+                    <span className="admin-monitor-meta-chip">Tipo {matchTypeLabel}</span>
+                    {botClassSummary ? <span className="admin-monitor-meta-chip">{botClassSummary}</span> : null}
                   </div>
                 </div>
               );
@@ -10401,6 +11396,21 @@ export default function CodeQuizApp() {
             <h2>Historico Do Dia</h2>
           </div>
           <div className="admin-monitor-date-label">Data: {adminHistoryDateLabel}</div>
+          <div className="admin-monitor-filters">
+            {ADMIN_HISTORY_FILTER_OPTIONS.map((filter) => (
+              <button
+                key={filter.id}
+                className={`admin-monitor-filter-btn ${adminHistoryFilter === filter.id ? 'active' : ''}`}
+                onClick={() => setAdminHistoryFilter(filter.id)}
+                type="button"
+              >
+                {filter.label}
+              </button>
+            ))}
+          </div>
+          <div className="admin-monitor-filter-summary">
+            Exibindo {adminHistoryTodayMatches.length} de {adminHistoryTodayBaseMatches.length} registros.
+          </div>
           <div className="admin-monitor-list">
             {adminMatchesLoading ? (
               <div className="ranking-loading">Carregando historico...</div>
@@ -10459,7 +11469,7 @@ export default function CodeQuizApp() {
                 );
               }
               return (
-                <div key={`history_${row.id}`} className="admin-monitor-item">
+                <div key={`history_${row.id}`} className="admin-monitor-item admin-monitor-item-pvp admin-monitor-item-pvp-history">
                   <div className="admin-monitor-item-head">
                     <span className="admin-monitor-item-id">{displayCode}</span>
                     <span className="admin-monitor-status status-finished">
@@ -10467,21 +11477,25 @@ export default function CodeQuizApp() {
                     </span>
                   </div>
                   <div className="admin-monitor-versus">
-                    <span>{row.player1_nickname || 'Jogador 1'}</span>
-                    <strong>{Math.max(0, Number(row.player1_score || 0))} x {Math.max(0, Number(row.player2_score || 0))}</strong>
-                    <span>{row.player2_nickname || 'Jogador 2'}</span>
+                    <span className="admin-monitor-player-name">{row.player1_nickname || 'Jogador 1'}</span>
+                    <strong className="admin-monitor-score-pill">{Math.max(0, Number(row.player1_score || 0))} x {Math.max(0, Number(row.player2_score || 0))}</strong>
+                    <span className="admin-monitor-player-name">{row.player2_nickname || 'Jogador 2'}</span>
                   </div>
-                  <div className="admin-monitor-meta">
-                    Vencedor: {winnerName}
-                    {' · '}Fim: {endedAtLabel}
-                    {' · '}Rodadas: {getAdminMatchRoundsLabel(row)}
-                    {' · '}Duracao: {durationLabel}
-                    {botClassSummary ? ` · ${botClassSummary}` : ''}
+                  <div className="admin-monitor-meta-row">
+                    <span className="admin-monitor-meta-chip">Vencedor {winnerName}</span>
+                    <span className="admin-monitor-meta-chip">Fim {endedAtLabel}</span>
+                    <span className="admin-monitor-meta-chip">Rodadas {getAdminMatchRoundsLabel(row)}</span>
+                    <span className="admin-monitor-meta-chip">Duracao {durationLabel}</span>
+                    {botClassSummary ? <span className="admin-monitor-meta-chip">{botClassSummary}</span> : null}
                   </div>
                 </div>
               );
             }) : (
-              <div className="ranking-empty">Sem partidas finalizadas hoje.</div>
+              <div className="ranking-empty">
+                {adminHistoryFilter === 'all'
+                  ? 'Sem partidas finalizadas hoje.'
+                  : 'Sem partidas para este filtro hoje.'}
+              </div>
             )}
           </div>
         </div>
@@ -10548,7 +11562,11 @@ export default function CodeQuizApp() {
             <div className="audio-settings">
               <div className="settings-personal-data">
                 <div className="settings-personal-title">Conta</div>
-                <div className="settings-personal-subtitle">Edite seu apelido e gerencie o app.</div>
+                <div className="settings-personal-subtitle">
+                  {onboardingRequired
+                    ? 'Complete seu perfil para continuar: nome e apelido sao obrigatorios.'
+                    : 'Edite seu perfil e gerencie o app.'}
+                </div>
                 <div className="settings-personal-form">
                   <label className="settings-input-label" htmlFor="settings-nickname">Apelido</label>
                   <input
@@ -10569,12 +11587,19 @@ export default function CodeQuizApp() {
                   <input
                     id="settings-name"
                     type="text"
-                    className="profile-input settings-input settings-readonly"
-                    value={profileDraft.full_name || homeAuthUser.displayName || homeAuthUser.email || 'Jogador'}
-                    readOnly
-                    disabled
+                    className="profile-input settings-input"
+                    value={profileDraft.full_name}
+                    placeholder="Seu nome"
+                    maxLength={40}
+                    autoCapitalize="words"
+                    autoCorrect="off"
+                    spellCheck={false}
+                    onChange={(event) =>
+                      setProfileDraft((prev) => ({ ...prev, full_name: event.target.value }))
+                    }
                   />
                   <div className={`settings-personal-hint ${nicknameHintClass}`}>{nicknameHintText}</div>
+                  <div className={`settings-personal-hint ${fullNameHintClass}`}>{fullNameHintText}</div>
                 </div>
               </div>
 
@@ -10646,10 +11671,10 @@ export default function CodeQuizApp() {
               </div>
               <button
                 className="btn btn-primary btn-lg settings-save-btn"
-                disabled={profileSaving || !nicknameValidation.ok}
+                disabled={profileSaving || !nicknameValidation.ok || !fullNameValidation.ok}
                 onClick={saveProfile}
               >
-                {profileSaving ? 'Salvando...' : 'Salvar'}
+                {profileSaving ? 'Salvando...' : (onboardingRequired ? 'Salvar e continuar' : 'Salvar')}
               </button>
             </div>
           )}
@@ -10869,6 +11894,73 @@ export default function CodeQuizApp() {
                   </div>
                   <div className="pvp-metric"><span>Sua classe</span><strong>{pvpCategory.label}</strong></div>
                   <div className="pvp-metric"><span>Tempo de fila</span><strong>{pvpQueueTimeLabel}</strong></div>
+                </div>
+                <div className="arena-ka-selector">
+                  <div className="arena-ka-head">
+                    <span>Area de confronto</span>
+                    <strong>{arenaKnowledgeArea?.name || 'Programacao'}</strong>
+                  </div>
+                  <div className="arena-ka-carousel-container">
+                    <button
+                      className="ka-arrow-btn arena-ka-arrow-btn arena-ka-arrow-left"
+                      disabled={pvpAreaSelectionLocked || arenaKaCarouselIndex <= 0}
+                      onClick={() => shiftKnowledgeAreaCarousel('pvp', -1)}
+                      aria-label="Area anterior"
+                    >
+                      ◀
+                    </button>
+                    <div
+                      className="arena-ka-carousel-track"
+                      onTouchStart={(e) => handleKnowledgeAreaTouchStart('pvp', e)}
+                      onTouchEnd={(e) => handleKnowledgeAreaTouchEnd('pvp', e)}
+                    >
+                      <div
+                        className="arena-ka-carousel-slider"
+                        style={{ transform: `translateX(-${arenaKaCarouselIndex * 100}%)` }}
+                      >
+                        {KNOWLEDGE_AREAS.map((area) => {
+                          const isSelected = area.id === pvpKnowledgeArea;
+                          return (
+                            <div key={area.id} className={`arena-ka-card ${isSelected ? 'selected' : ''}`} style={{ '--ka-color': area.color }}>
+                              <div className="arena-ka-card-icon">{area.icon}</div>
+                              <div className="arena-ka-card-name">{area.name}</div>
+                              <div className="arena-ka-card-desc">{area.desc}</div>
+                              <button
+                                className={`ka-card-btn arena-ka-card-btn ${isSelected ? 'selected' : ''}`}
+                                disabled={pvpAreaSelectionLocked}
+                                onClick={() => chooseKnowledgeAreaForPvp(area.id)}
+                              >
+                                {isSelected ? 'Selecionada' : 'Escolher'}
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                    <button
+                      className="ka-arrow-btn arena-ka-arrow-btn arena-ka-arrow-right"
+                      disabled={pvpAreaSelectionLocked || arenaKaCarouselIndex >= KNOWLEDGE_AREAS.length - 1}
+                      onClick={() => shiftKnowledgeAreaCarousel('pvp', 1)}
+                      aria-label="Proxima area"
+                    >
+                      ▶
+                    </button>
+                  </div>
+                  <div className="arena-ka-dots">
+                    {KNOWLEDGE_AREAS.map((area, idx) => (
+                      <button
+                        key={`arena_ka_dot_${area.id}`}
+                        className={`arena-ka-dot ${idx === arenaKaCarouselIndex ? 'active' : ''}`}
+                        disabled={pvpAreaSelectionLocked}
+                        onClick={() => {
+                          if (idx === arenaKaCarouselIndex) return;
+                          setArenaKaCarouselIndex(idx);
+                          playSfx('click');
+                        }}
+                        aria-label={area.name}
+                      />
+                    ))}
+                  </div>
                 </div>
 
                 <button className={arenaPrimaryAction.className} onClick={arenaPrimaryAction.onClick} disabled={arenaPrimaryAction.disabled}>
@@ -11104,7 +12196,7 @@ export default function CodeQuizApp() {
                       disabled={pvpRewardCollecting}
                       onClick={(event) => collectPvpResultRewards(event)}
                     >
-                      {pvpRewardCollecting ? 'Coletando...' : 'Coletar recompensas e ir ao inicio'}
+                      {pvpRewardCollecting ? 'Coletando...' : 'Coletar Recompensas'}
                     </button>
                     <div className="result-subtitle pvp-result-seq result-seq-9 pvp-result-collect-note">
                       O retorno ao inicio sera liberado apos a coleta.
@@ -11277,8 +12369,7 @@ export default function CodeQuizApp() {
             <div className="quiz-action-subtitle">Escolha a proxima acao para a partida atual.</div>
             <div className="quiz-action-buttons">
               <button className="btn btn-primary" onClick={restartCurrentQuiz}>Reiniciar Quiz</button>
-              <button className="btn btn-secondary" onClick={chooseAnotherQuiz}>Escolher Outro Quiz</button>
-              <button className="btn btn-secondary" onClick={returnQuizToHome}>Voltar ao Inicio</button>
+              <button className="btn quiz-action-exit" onClick={returnQuizToHome}>Voltar ao Inicio</button>
               <button className="btn btn-secondary quiz-action-close" onClick={closeQuizMenu}>Continuar Quiz</button>
             </div>
           </div>
@@ -11372,7 +12463,7 @@ export default function CodeQuizApp() {
               </div>
             </div>
             <button className="reward-collect-btn" disabled={rewardCollecting} onClick={(event) => handleCollectResultRewards(event)}>
-              {rewardCollecting ? 'Coletando...' : 'Coletar'}
+              {rewardCollecting ? 'Coletando...' : 'Coletar Recompensas'}
             </button>
           </div>
         </div>
@@ -11411,7 +12502,7 @@ export default function CodeQuizApp() {
               </div>
             </div>
             <button className="reward-collect-btn" disabled={pvpRewardCollecting} onClick={(event) => collectPvpCompensation(event)}>
-              {pvpRewardCollecting ? 'Coletando...' : 'Coletar'}
+              {pvpRewardCollecting ? 'Coletando...' : 'Coletar Recompensas'}
             </button>
           </div>
         </div>

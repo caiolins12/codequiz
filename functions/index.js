@@ -19,7 +19,10 @@ const SYSTEM_BOT_ROSTER = [
   { id: 'bot_sys_codequiz_thiagoara', nickname: 'ThiagoAra', full_name: 'Thiago Ara', avatar: '😎', personality: 'competitivo', strength: 'medio' },
   { id: 'bot_sys_codequiz_bdevonly', nickname: 'bDevOnly', full_name: 'bDevOnly', avatar: '🤔', personality: 'estrategista', strength: 'medio' },
   { id: 'bot_sys_codequiz_flakael', nickname: 'Flakael', full_name: 'Flakael', avatar: '😉', personality: 'sarcastico', strength: 'forte' },
-  { id: 'bot_sys_codequiz_z3n', nickname: 'z3n', full_name: 'z3n', avatar: '😉', personality: 'sarcastico', strength: 'medio' }
+  { id: 'bot_sys_codequiz_z3n', nickname: 'z3n', full_name: 'z3n', avatar: '😉', personality: 'sarcastico', strength: 'medio' },
+  { id: 'bot_sys_codequiz_sandman', nickname: 'Sandman', full_name: 'Sandman', avatar: '😴', personality: 'enigmatico', strength: 'medio' },
+  { id: 'bot_sys_codequiz_eliztwa', nickname: 'ElizTWA', full_name: 'ElizTWA', avatar: '🧠', personality: 'visionario', strength: 'medio' },
+  { id: 'bot_sys_codequiz_oharaxx', nickname: 'oharaXx', full_name: 'oharaXx', avatar: '⚡', personality: 'impulsivo', strength: 'medio' }
 ];
 
 const SYSTEM_BOT_IDS = SYSTEM_BOT_ROSTER.map((bot) => bot.id);
@@ -33,6 +36,11 @@ const BOT_BUSY_PATH = 'pvp_bots_state/busy';
 const BOT_LOCK_PATH = 'pvp_bots_state/automation_lock';
 const BOT_DAEMON_CONTROL_PATH = 'pvp_bots_state/daemon_control';
 const BOT_DAEMON_STATUS_PATH = 'pvp_bots_state/daemon_status';
+const BOT_QUIZ_HISTORY_PURGE_STATE_PATH = 'pvp_bots_state/quiz_history_purge_state';
+const BOT_QUIZ_HISTORY_PURGE_VERSION = 2;
+const BOT_QUIZ_HISTORY_PURGE_RETRY_MS = 60000;
+const BOT_QUIZ_HISTORY_PURGE_MATCH_BATCH = 240;
+const BOT_QUIZ_HISTORY_PURGE_RESULT_BATCH = 720;
 
 const BOT_BASE_ROUNDS = 5;
 const BOT_MAX_ROUNDS = 15;
@@ -59,6 +67,14 @@ const BOT_ACCURACY_TARGET_BY_STRENGTH = Object.freeze({
   medio: 0.7,
   forte: 0.9
 });
+const BOT_DEFAULT_PVP_POINTS_BY_STRENGTH = Object.freeze({
+  fraco: 80,
+  medio: 260,
+  forte: 420
+});
+const DB_RETRY_MAX_ATTEMPTS = 4;
+const DB_RETRY_BASE_DELAY_MS = 120;
+const DB_RETRY_MAX_BACKOFF_MS = 1600;
 
 const PVP_XP_REWARD = {
   easy: { win: 20, draw: 10, loss: 6 },
@@ -96,53 +112,73 @@ const PVE_COMPLETION_COINS_BONUS = {
   hard: 4
 };
 
-const BOT_QUIZ_TOPIC_MAP = Object.freeze({
-  c: ['conditionals', 'functions', 'loops', 'pointers', 'structs', 'variables'],
-  fundamentos_computacao: ['dados_memoria', 'hardware_software', 'redes_internet', 'sistemas_operacionais'],
-  fundamentos_programacao: ['boas_praticas', 'eficiencia_basica', 'pensamento_computacional', 'testes_validacao'],
-  historia_computacao: ['geracoes_computadores', 'historia_internet', 'historia_linguagens', 'pioneiros'],
-  html_css: ['css_box', 'css_flex', 'css_responsive', 'css_selectors', 'html_basics', 'html_forms'],
-  java: ['arrays', 'conditionals', 'functions', 'loops', 'oop', 'variables'],
-  javascript: ['arrays', 'conditionals', 'functions', 'loops', 'objects', 'variables'],
-  logic_prog: ['algorithms', 'conditions', 'data_structures', 'flowcharts', 'repetition', 'variables_types'],
-  math: ['algebra', 'arithmetic', 'combinatorics', 'logic', 'numeral', 'sets'],
-  python: ['conditionals', 'dicts', 'functions', 'lists', 'loops', 'variables'],
-  sql: ['aggregate', 'create', 'insert_update', 'joins', 'select', 'where'],
-  zero_to_code: ['boolean_reasoning', 'debugging_basics', 'first_contact', 'operators_basics', 'sequence_logic', 'trace_execution']
-});
+function getBotQuizQuestionPool(questionsMap, languageId, topicId, difficulty) {
+  const safeQuestions = questionsMap && typeof questionsMap === 'object' ? questionsMap : {};
+  const safeDifficulty = normalizeDifficulty(difficulty);
+  const byLanguage = safeQuestions[languageId] && typeof safeQuestions[languageId] === 'object'
+    ? safeQuestions[languageId]
+    : null;
+  const byTopic = byLanguage?.[topicId] && typeof byLanguage[topicId] === 'object'
+    ? byLanguage[topicId]
+    : null;
+  return Array.isArray(byTopic?.[safeDifficulty]) ? byTopic[safeDifficulty] : [];
+}
 
-function buildBotQuizCatalogByDifficulty(topicMap = {}) {
-  const safeTopicMap = topicMap && typeof topicMap === 'object' ? topicMap : {};
+function getRoundQuestionCapacityByCatalog(
+  questionsMap,
+  languageId,
+  topicId,
+  difficulty,
+  count = BOT_QUIZ_QUESTIONS_PER_ROUND
+) {
+  const requestedCount = Math.max(1, Number(count || BOT_QUIZ_QUESTIONS_PER_ROUND));
+  const pool = getBotQuizQuestionPool(questionsMap, languageId, topicId, difficulty);
+  const available = Array.isArray(pool) ? pool.length : 0;
+  if (available <= 0) return 0;
+  return Math.max(1, Math.min(requestedCount, available));
+}
+
+function buildBotQuizCatalogByDifficulty(questionsMap = {}) {
+  const safeQuestions = questionsMap && typeof questionsMap === 'object' ? questionsMap : {};
   const catalog = {
     easy: [],
     medium: [],
     hard: []
   };
 
-  Object.keys(safeTopicMap).sort().forEach((languageId) => {
-    const topics = Array.isArray(safeTopicMap[languageId]) ? safeTopicMap[languageId] : [];
-    topics
-      .map((topicId) => String(topicId || '').trim())
-      .filter((topicId) => !!topicId)
-      .sort()
-      .forEach((topicId) => {
-        BOT_QUIZ_DIFFICULTY_SEQUENCE.forEach((difficulty) => {
-          catalog[difficulty].push({
-            language: String(languageId || '').trim(),
-            topic: topicId,
-            difficulty,
-            total_questions: BOT_QUIZ_QUESTIONS_PER_ROUND
-          });
+  Object.keys(safeQuestions).sort().forEach((languageId) => {
+    const languagePack = safeQuestions[languageId];
+    if (!languagePack || typeof languagePack !== 'object') return;
+    Object.keys(languagePack).sort().forEach((topicId) => {
+      const topicPack = languagePack[topicId];
+      if (!topicPack || typeof topicPack !== 'object') return;
+      BOT_QUIZ_DIFFICULTY_SEQUENCE.forEach((difficulty) => {
+        const totalQuestions = getRoundQuestionCapacityByCatalog(
+          safeQuestions,
+          languageId,
+          topicId,
+          difficulty,
+          BOT_QUIZ_QUESTIONS_PER_ROUND
+        );
+        if (totalQuestions <= 0) return;
+        catalog[difficulty].push({
+          language: String(languageId || '').trim(),
+          topic: String(topicId || '').trim(),
+          difficulty,
+          total_questions: totalQuestions
         });
       });
+    });
   });
 
   return catalog;
 }
 
-const BOT_QUIZ_CATALOG_BY_DIFFICULTY = buildBotQuizCatalogByDifficulty(BOT_QUIZ_TOPIC_MAP);
+const BOT_QUIZ_CATALOG_BY_DIFFICULTY = buildBotQuizCatalogByDifficulty(ALL_QUESTIONS);
 
 const BOT_QUEUE_PRNG_MOD = 2147483647;
+let botQuizHistoryPurgeAttemptAtMs = 0;
+let botQuizHistoryPurgeCompleted = false;
 
 function nowIso(ms = Date.now()) {
   return new Date(ms).toISOString();
@@ -158,6 +194,62 @@ function toMillis(value) {
 
 function wait(ms) {
   return new Promise((resolve) => setTimeout(resolve, Math.max(0, Number(ms || 0))));
+}
+
+function isRetryableDatabaseError(error) {
+  const message = String(error?.message || error || '').toLowerCase();
+  const code = String(error?.code || '').toLowerCase();
+  if (!message && !code) return false;
+  return [
+    'deadline-exceeded',
+    'unavailable',
+    'internal',
+    'aborted',
+    'timeout',
+    'timed out',
+    'econnreset',
+    'etimedout',
+    'eai_again',
+    'network',
+    'socket hang up'
+  ].some((token) => code.includes(token) || message.includes(token));
+}
+
+function getRetryBackoffMs(attemptNo = 1) {
+  const safeAttempt = Math.max(1, Number(attemptNo || 1));
+  const base = Math.min(
+    DB_RETRY_MAX_BACKOFF_MS,
+    Math.round(DB_RETRY_BASE_DELAY_MS * (2 ** Math.max(0, safeAttempt - 1)))
+  );
+  const jitter = Math.floor(Math.random() * 90);
+  return base + jitter;
+}
+
+async function runDbOpWithRetry(label, operation) {
+  const safeLabel = String(label || 'db_op').trim() || 'db_op';
+  const op = typeof operation === 'function' ? operation : null;
+  if (!op) throw new Error(`invalid_db_operation:${safeLabel}`);
+
+  let lastError = null;
+  for (let attempt = 1; attempt <= DB_RETRY_MAX_ATTEMPTS; attempt += 1) {
+    try {
+      return await op();
+    } catch (error) {
+      lastError = error;
+      const retryable = isRetryableDatabaseError(error);
+      const shouldRetry = retryable && attempt < DB_RETRY_MAX_ATTEMPTS;
+      if (!shouldRetry) break;
+      const backoffMs = getRetryBackoffMs(attempt);
+      logger.warn('db op transient failure, retrying', {
+        label: safeLabel,
+        attempt,
+        backoff_ms: backoffMs,
+        message: String(error?.message || error || 'unknown_error').slice(0, 180)
+      });
+      await wait(backoffMs);
+    }
+  }
+  throw lastError || new Error(`db_op_failed:${safeLabel}`);
 }
 
 function normalizeDifficulty(value) {
@@ -177,9 +269,14 @@ function parseBooleanLike(value, fallback = false) {
 
 function resolveDifficultyByPvpPoints(pointsValue) {
   const points = Math.max(0, Number(pointsValue || 0));
-  if (points > 180) return 'hard';
-  if (points > 90) return 'medium';
+  if (points >= 400) return 'hard';
+  if (points >= 200) return 'medium';
   return 'easy';
+}
+
+function getDefaultBotPvpPointsByStrength(strength) {
+  const safeStrength = normalizeBotStrength(strength || 'medio');
+  return Math.max(0, Number(BOT_DEFAULT_PVP_POINTS_BY_STRENGTH[safeStrength] || BOT_DEFAULT_PVP_POINTS_BY_STRENGTH.medio || 260));
 }
 
 function isSystemBotUserId(userId) {
@@ -514,7 +611,17 @@ function normalizeBotQuizAssignment(raw) {
   const language = String(safe.language || '').trim();
   const topic = String(safe.topic || '').trim();
   const difficulty = normalizeDifficulty(safe.difficulty || 'easy');
-  const totalQuestions = Math.max(1, Math.trunc(Number(safe.total_questions || BOT_QUIZ_QUESTIONS_PER_ROUND)));
+  const maxQuestionsByCatalog = getRoundQuestionCapacityByCatalog(
+    ALL_QUESTIONS,
+    language,
+    topic,
+    difficulty,
+    BOT_QUIZ_QUESTIONS_PER_ROUND
+  );
+  const rawTotalQuestions = Math.max(1, Math.trunc(Number(safe.total_questions || BOT_QUIZ_QUESTIONS_PER_ROUND)));
+  const totalQuestions = maxQuestionsByCatalog > 0
+    ? Math.max(1, Math.min(rawTotalQuestions, maxQuestionsByCatalog))
+    : rawTotalQuestions;
   const correctCount = Math.max(0, Math.min(totalQuestions, Math.trunc(Number(safe.correct_count || 0))));
   return {
     bot_id: isSystemBotUserId(botId) ? botId : '',
@@ -620,9 +727,16 @@ function getBotQuizAccuracyTarget(botStrength = 'medio', _difficulty = 'easy') {
 }
 
 function simulateBotQuizOutcome(botStrength = 'medio', quizEntry = {}, options = {}) {
+  const maxQuestionsByCatalog = getRoundQuestionCapacityByCatalog(
+    ALL_QUESTIONS,
+    String(quizEntry.language || '').trim(),
+    String(quizEntry.topic || '').trim(),
+    normalizeDifficulty(quizEntry.difficulty || 'easy'),
+    BOT_QUIZ_QUESTIONS_PER_ROUND
+  );
   const totalQuestions = Math.max(
     1,
-    Math.trunc(Number(quizEntry.total_questions || BOT_QUIZ_QUESTIONS_PER_ROUND))
+    maxQuestionsByCatalog || Math.trunc(Number(quizEntry.total_questions || BOT_QUIZ_QUESTIONS_PER_ROUND))
   );
   const safeDifficulty = normalizeDifficulty(quizEntry.difficulty || 'easy');
   const safeStrength = normalizeBotStrength(botStrength || 'medio');
@@ -641,16 +755,29 @@ function simulateBotQuizOutcome(botStrength = 'medio', quizEntry = {}, options =
 }
 
 async function getNode(path) {
-  const snap = await db.ref(path).get();
+  const safePath = String(path || '').trim();
+  const snap = await runDbOpWithRetry(`get:${safePath}`, () => db.ref(safePath).get());
   return snap.exists() ? snap.val() : null;
 }
 
 async function setNode(path, value) {
-  await db.ref(path).set(value);
+  const safePath = String(path || '').trim();
+  await runDbOpWithRetry(`set:${safePath}`, () => db.ref(safePath).set(value));
+}
+
+async function updateNode(path, patch) {
+  const safePath = String(path || '').trim();
+  await runDbOpWithRetry(`update:${safePath}`, () => db.ref(safePath).update(patch));
+}
+
+async function updateRoot(updates) {
+  const safeUpdates = updates && typeof updates === 'object' ? updates : {};
+  await runDbOpWithRetry('update:root', () => db.ref().update(safeUpdates));
 }
 
 async function tx(path, updater) {
-  return db.ref(path).transaction((current) => updater(current));
+  const safePath = String(path || '').trim();
+  return runDbOpWithRetry(`tx:${safePath}`, () => db.ref(safePath).transaction((current) => updater(current)));
 }
 
 async function ensureSystemBots() {
@@ -688,17 +815,30 @@ async function ensureSystemBots() {
       updated_at: now
     };
 
-    const statsPrev = statsCurrent && typeof statsCurrent === 'object' ? statsCurrent : {};
+    const hasStatsRow = statsCurrent && typeof statsCurrent === 'object';
+    const statsPrev = hasStatsRow ? statsCurrent : {};
+    const safeStrength = normalizeBotStrength(bot.strength || 'medio');
+    const prevPvpPointsRaw = Number(statsPrev.pvp_points);
+    const hasPrevPvpPoints = Number.isFinite(prevPvpPointsRaw);
+    const prevPvpBattles = Math.max(0, Number(statsPrev.pvp_battles || 0));
+    const prevPvpWins = Math.max(0, Number(statsPrev.pvp_wins || 0));
+    const prevPvpLosses = Math.max(0, Number(statsPrev.pvp_losses || 0));
+    const shouldSeedPvpPoints = !hasStatsRow;
+    const seededPvpPoints = getDefaultBotPvpPointsByStrength(safeStrength);
+    const preservedPvpPoints = hasPrevPvpPoints ? Math.max(0, prevPvpPointsRaw) : 0;
+
     const statsNext = {
       user_id: bot.id,
       total_xp: Math.max(0, Number(statsPrev.total_xp || 0)),
       level: Math.max(1, Number(statsPrev.level || 1)),
       ranking_points: Math.max(0, Number(statsPrev.ranking_points || 0)),
-      pvp_points: Math.max(0, Number(statsPrev.pvp_points || 0)),
+      pvp_points: shouldSeedPvpPoints
+        ? seededPvpPoints
+        : preservedPvpPoints,
       coins: Math.max(0, Number(statsPrev.coins || 20)),
-      pvp_battles: Math.max(0, Number(statsPrev.pvp_battles || 0)),
-      pvp_wins: Math.max(0, Number(statsPrev.pvp_wins || 0)),
-      pvp_losses: Math.max(0, Number(statsPrev.pvp_losses || 0)),
+      pvp_battles: prevPvpBattles,
+      pvp_wins: prevPvpWins,
+      pvp_losses: prevPvpLosses,
       pvp_processed_matches: statsPrev.pvp_processed_matches && typeof statsPrev.pvp_processed_matches === 'object'
         ? statsPrev.pvp_processed_matches
         : {},
@@ -976,7 +1116,7 @@ async function cleanupDrawFinishedMatches(maxBatch = 120) {
 
   const now = nowIso();
   let hidden = 0;
-  await Promise.all(targets.map(([matchId]) => db.ref(`pvp_matches/${matchId}`).update({
+  await Promise.all(targets.map(([matchId]) => updateNode(`pvp_matches/${matchId}`, {
     result_void: true,
     result_void_reason: 'draw_result',
     history_hidden: true,
@@ -1017,7 +1157,7 @@ async function cleanupZeroScoreFinishedMatches(maxBatch = 120) {
     const p2 = String(row.player2_user_id || '').trim();
     if (isSystemBotUserId(p1)) tasks.push(clearBotBusy(p1, matchId));
     if (isSystemBotUserId(p2)) tasks.push(clearBotBusy(p2, matchId));
-    tasks.push(db.ref(`pvp_matches/${matchId}`).update({
+    tasks.push(updateNode(`pvp_matches/${matchId}`, {
       result_void: true,
       result_void_reason: reason,
       history_hidden: true,
@@ -1028,6 +1168,119 @@ async function cleanupZeroScoreFinishedMatches(maxBatch = 120) {
   });
   await Promise.all(tasks.map((task) => Promise.resolve(task).catch(() => null)));
   return targets.length;
+}
+
+async function purgeLegacySystemBotQuizHistoryOnce(nowMs = Date.now()) {
+  const safeNowMs = Math.max(0, Number(nowMs || Date.now()));
+  if (botQuizHistoryPurgeCompleted) {
+    return { ok: true, skipped: 'already_done_local' };
+  }
+  if ((safeNowMs - botQuizHistoryPurgeAttemptAtMs) < BOT_QUIZ_HISTORY_PURGE_RETRY_MS) {
+    return { ok: true, skipped: 'cooldown' };
+  }
+  botQuizHistoryPurgeAttemptAtMs = safeNowMs;
+
+  const now = nowIso(safeNowMs);
+  const purgeState = await getNode(BOT_QUIZ_HISTORY_PURGE_STATE_PATH).catch(() => null);
+  const purgeVersion = Math.max(0, Math.trunc(Number(purgeState && purgeState.version || 0)));
+  if (purgeVersion >= BOT_QUIZ_HISTORY_PURGE_VERSION) {
+    botQuizHistoryPurgeCompleted = true;
+    return { ok: true, skipped: 'already_done_remote' };
+  }
+
+  const [matchesMap, quizResultsMap, statsMap] = await Promise.all([
+    getNode('pvp_matches').catch(() => null),
+    getNode('quiz_results').catch(() => null),
+    getNode('user_stats').catch(() => null)
+  ]);
+
+  const updates = {};
+  const matchBatch = [];
+  let hasMoreMatches = false;
+  const resultBatch = [];
+  let hasMoreResults = false;
+
+  if (matchesMap && typeof matchesMap === 'object') {
+    Object.entries(matchesMap).forEach(([matchId, row]) => {
+      if (!matchId || !row || typeof row !== 'object') return;
+      const endedReason = String(row.ended_reason || '').trim().toLowerCase();
+      const hasBatchId = !!String(row.bot_quiz_batch_id || '').trim();
+      const isBotQuiz = row.is_bot_quiz === true || hasBatchId || endedReason.startsWith('bot_quiz_');
+      if (!isBotQuiz) return;
+      if (matchBatch.length >= BOT_QUIZ_HISTORY_PURGE_MATCH_BATCH) {
+        hasMoreMatches = true;
+        return;
+      }
+      matchBatch.push(matchId);
+    });
+  }
+
+  if (quizResultsMap && typeof quizResultsMap === 'object') {
+    Object.entries(quizResultsMap).forEach(([quizKey, rows]) => {
+      if (!quizKey || !rows || typeof rows !== 'object') return;
+      SYSTEM_BOT_IDS.forEach((botId) => {
+        if (!Object.prototype.hasOwnProperty.call(rows, botId)) return;
+        if (resultBatch.length >= BOT_QUIZ_HISTORY_PURGE_RESULT_BATCH) {
+          hasMoreResults = true;
+          return;
+        }
+        resultBatch.push({ quizKey, botId });
+      });
+    });
+  }
+
+  matchBatch.forEach((matchId) => {
+    updates[`pvp_matches/${matchId}`] = null;
+  });
+  resultBatch.forEach(({ quizKey, botId }) => {
+    updates[`quiz_results/${quizKey}/${botId}`] = null;
+  });
+
+  SYSTEM_BOT_IDS.forEach((botId) => {
+    const prev = statsMap && typeof statsMap === 'object' && statsMap[botId] && typeof statsMap[botId] === 'object'
+      ? statsMap[botId]
+      : {};
+    updates[`user_stats/${botId}`] = {
+      ...prev,
+      user_id: botId,
+      pvp_points: Math.max(0, Number(prev.pvp_points || 0)),
+      ranking_points: 0,
+      best_streak: 0,
+      total_correct: 0,
+      total_answered: 0,
+      quizzes_completed: 0,
+      topic_progress: {},
+      quiz_best_scores: {},
+      quiz_best_stars: {},
+      quiz_rewarded: {},
+      progress_updated_at_ms: Math.max(safeNowMs, Number(prev.progress_updated_at_ms || 0)),
+      updated_at: now
+    };
+  });
+
+  const hasPending = hasMoreMatches || hasMoreResults;
+  updates[BOT_QUIZ_HISTORY_PURGE_STATE_PATH] = {
+    version: hasPending ? 0 : BOT_QUIZ_HISTORY_PURGE_VERSION,
+    in_progress: hasPending,
+    updated_at: now,
+    updated_at_ms: safeNowMs,
+    deleted_matches: matchBatch.length,
+    deleted_quiz_results: resultBatch.length,
+    reset_bots: SYSTEM_BOT_IDS.length
+  };
+
+  await updateRoot(updates).catch(() => null);
+
+  if (!hasPending) {
+    botQuizHistoryPurgeCompleted = true;
+  }
+
+  return {
+    ok: true,
+    completed: !hasPending,
+    deleted_matches: matchBatch.length,
+    deleted_quiz_results: resultBatch.length
+  };
 }
 
 async function cleanupStaleOpenBotUserMatches(options = {}) {
@@ -1140,7 +1393,7 @@ async function cleanupStaleOpenBotUserMatches(options = {}) {
       bot_user_stats_applied_at: now,
       updated_at: now
     };
-    await db.ref(`pvp_matches/${target.matchId}`).update(patch).catch(() => null);
+    await updateNode(`pvp_matches/${target.matchId}`, patch).catch(() => null);
     await clearBotBusy(target.botId, target.matchId).catch(() => null);
     if (target.shouldRotate) {
       await rotateQueue([target.botId], false).catch(() => null);
@@ -1243,7 +1496,7 @@ async function recomputeAllPvpStatsFromHistory(maxMatches = 6000) {
     if (invalidReason) {
       invalidCount += 1;
       if (row.result_void !== true || String(row.result_void_reason || '') !== invalidReason) {
-        matchPatchOps.push(db.ref(`pvp_matches/${matchId}`).update({
+        matchPatchOps.push(updateNode(`pvp_matches/${matchId}`, {
           result_void: true,
           result_void_reason: invalidReason,
           result_void_updated_at: nowIso(nowMs),
@@ -1255,7 +1508,7 @@ async function recomputeAllPvpStatsFromHistory(maxMatches = 6000) {
 
     validCount += 1;
     if (row.result_void === true) {
-      matchPatchOps.push(db.ref(`pvp_matches/${matchId}`).update({
+      matchPatchOps.push(updateNode(`pvp_matches/${matchId}`, {
         result_void: false,
         result_void_reason: null,
         result_void_updated_at: nowIso(nowMs),
@@ -1387,12 +1640,8 @@ function simulateScore(strengthA, strengthB, rounds, seedKey = '') {
       ? (seededRandom(hashStringToSeed(`${safeSeedKey}:sd:b:${i}`))() < accB)
       : resolveDeterministicBotRun(`${safeSeedKey}:base:b`, accB, baseRounds, i).hit_at_step;
 
-    if (hitA && !hitB) scoreA += 1;
-    else if (hitB && !hitA) scoreB += 1;
-    else if (hitA && hitB && suddenDeath) {
-      scoreA += 1;
-      scoreB += 1;
-    }
+    if (hitA) scoreA += 1;
+    if (hitB) scoreB += 1;
     if (i >= baseRounds && scoreA !== scoreB) {
       break;
     }
@@ -1530,7 +1779,14 @@ function resolveDuelRoundOutcome(question, answerA, answerB, botAId, botBId, sud
 
   if (aCorrect && !bCorrect) return { winner: botAId, deltaA: 1, deltaB: 0 };
   if (bCorrect && !aCorrect) return { winner: botBId, deltaA: 0, deltaB: 1 };
-  if (aCorrect && bCorrect && suddenDeath) return { winner: null, deltaA: 1, deltaB: 1 };
+  if (aCorrect && bCorrect) {
+    return {
+      winner: null,
+      deltaA: 1,
+      deltaB: 1,
+      reason: suddenDeath ? 'sudden_death_both_correct_scored' : 'both_correct_scored'
+    };
+  }
   return { winner: null, deltaA: 0, deltaB: 0 };
 }
 
@@ -1764,7 +2020,7 @@ async function tickBotDuelPhase(arenaState, nowMs) {
 async function getBotStrength(botId) {
   const cfg = await getNode(`pvp_bots_state/configs/${botId}`).catch(() => null);
   const fallbackStrength = SYSTEM_BOT_ROSTER.find((entry) => entry.id === String(botId || '').trim())?.strength || 'medio';
-  return normalizeBotStrength(fallbackStrength || (cfg && cfg.strength) || 'medio');
+  return normalizeBotStrength((cfg && cfg.strength) || fallbackStrength || 'medio');
 }
 
 async function hasOpenBotDuel() {
@@ -2029,7 +2285,17 @@ async function applyBotQuizOutcomeToStats(botId, assignment = {}) {
   const difficulty = normalizeDifficulty(assignment.difficulty || 'easy');
   if (!language || !topic) return null;
 
-  const totalQuestions = Math.max(1, Math.trunc(Number(assignment.total_questions || BOT_QUIZ_QUESTIONS_PER_ROUND)));
+  const maxQuestionsByCatalog = getRoundQuestionCapacityByCatalog(
+    ALL_QUESTIONS,
+    language,
+    topic,
+    difficulty,
+    BOT_QUIZ_QUESTIONS_PER_ROUND
+  );
+  const rawTotalQuestions = Math.max(1, Math.trunc(Number(assignment.total_questions || BOT_QUIZ_QUESTIONS_PER_ROUND)));
+  const totalQuestions = maxQuestionsByCatalog > 0
+    ? Math.max(1, Math.min(rawTotalQuestions, maxQuestionsByCatalog))
+    : rawTotalQuestions;
   const correctCount = Math.max(0, Math.min(totalQuestions, Math.trunc(Number(assignment.correct_count || 0))));
   const bestStreak = Math.max(0, Math.min(correctCount, Math.trunc(Number(assignment.best_streak || 0))));
   const quizKey = getQuizKey(language, topic, difficulty);
@@ -2424,6 +2690,7 @@ async function tickAutomation(ownerId, options = {}) {
   if (!lockOk) return { ok: false, state: 'lock_not_acquired' };
 
   await ensureSystemBots().catch(() => null);
+  await purgeLegacySystemBotQuizHistoryOnce().catch(() => null);
   const order = await ensureQueueState().catch(() => normalizeBotQueueOrder([]));
   await cleanupDrawFinishedMatches(160).catch(() => null);
   await cleanupZeroScoreFinishedMatches(160).catch(() => null);
