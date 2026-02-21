@@ -1,0 +1,99 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+    "users": {
+      ".read": "auth != null",
+      "$uid": {
+        ".write": "auth != null && (auth.uid === $uid || $uid.matches(/^bot_sys_codequiz_[A-Za-z0-9_]+$/))"
+      }
+    },
+    "user_stats": {
+      ".read": "auth != null",
+      "$uid": {
+        ".write": "auth != null && (auth.uid === $uid || $uid.matches(/^bot_sys_codequiz_[A-Za-z0-9_]+$/))"
+      }
+    },
+    "user_shop": {
+      ".read": "auth != null",
+      "$uid": {
+        ".write": "auth != null && auth.uid === $uid"
+      }
+    },
+    "cloud_saves": {
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid",
+        ".write": "auth != null && auth.uid === $uid"
+      }
+    },
+    "quiz_results": {
+      ".read": "auth != null",
+      "$quizKey": {
+        "$uid": {
+          ".write": "auth != null && (auth.uid === $uid || $uid.matches(/^bot_sys_codequiz_[A-Za-z0-9_]+$/))"
+        }
+      }
+    },
+    "presence": {
+      ".read": "auth != null",
+      "$uid": {
+        ".write": "auth != null && auth.uid === $uid"
+      }
+    },
+    "pvp_queue": {
+      ".read": "auth != null",
+      ".write": false,
+      "$uid": {
+        ".write": "auth != null && (auth.uid === $uid || (newData.child('status').val() === 'matched' && newData.child('match_id').isString() && (root.child('pvp_matches/' + newData.child('match_id').val() + '/player1_user_id').val() === auth.uid || root.child('pvp_matches/' + newData.child('match_id').val() + '/player2_user_id').val() === auth.uid) && (root.child('pvp_matches/' + newData.child('match_id').val() + '/player1_user_id').val() === $uid || root.child('pvp_matches/' + newData.child('match_id').val() + '/player2_user_id').val() === $uid)))"
+      }
+    },
+    "pvp_matches": {
+      ".read": "auth != null",
+      ".write": false,
+      "$matchId": {
+        ".write": "auth != null && newData.child('is_bot_duel').val() !== true && (data.child('player1_user_id').val() === auth.uid || data.child('player2_user_id').val() === auth.uid || newData.child('player1_user_id').val() === auth.uid || newData.child('player2_user_id').val() === auth.uid)"
+      }
+    },
+    "pvp_pair_locks": {
+      ".read": "auth != null",
+      ".write": "auth != null",
+      "$lockKey": {
+        ".write": "auth != null"
+      }
+    },
+    "pvp_round_locks": {
+      ".read": "auth != null",
+      ".write": "auth != null",
+      "$lockKey": {
+        ".write": "auth != null"
+      }
+    },
+    "pvp_bots_state": {
+      ".read": "auth != null",
+      ".write": "auth != null"
+    },
+    "pvp_answers": {
+      "$matchId": {
+        ".read": "auth != null",
+        "$roundNo": {
+          ".read": "auth != null",
+          "$uid": {
+            ".write": "auth != null && (auth.uid === $uid || ($uid.matches(/^bot_sys_codequiz_[A-Za-z0-9_]+$/) && root.child('pvp_matches/' + $matchId + '/is_bot_match').val() === true && root.child('pvp_matches/' + $matchId + '/is_bot_duel').val() !== true && (root.child('pvp_matches/' + $matchId + '/bot_user_id').val() === $uid || root.child('pvp_matches/' + $matchId + '/player1_user_id').val() === $uid || root.child('pvp_matches/' + $matchId + '/player2_user_id').val() === $uid) && (root.child('pvp_matches/' + $matchId + '/player1_user_id').val() === auth.uid || root.child('pvp_matches/' + $matchId + '/player2_user_id').val() === auth.uid)))"
+          }
+        }
+      }
+    },
+    "pvp_emoji_events": {
+      ".read": "auth != null",
+      ".write": "auth != null",
+      "$matchId": {
+        ".read": "auth != null",
+        ".write": "auth != null",
+        "$eventId": {
+          ".read": "auth != null",
+          ".write": "auth != null"
+        }
+      }
+    }
+  }
+}

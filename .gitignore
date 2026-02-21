@@ -1,0 +1,8 @@
+node_modules/
+.next/
+out/
+.firebase/
+firebase-debug.log
+firebase-debug.*.log
+.claude/
+.tmp_*.json

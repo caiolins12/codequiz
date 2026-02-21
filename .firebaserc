@@ -1,0 +1,15 @@
+{
+  "projects": {
+    "default": "devquiz-ee979"
+  },
+  "targets": {
+    "devquiz-ee979": {
+      "hosting": {
+        "default": [
+          "devquiz-ee979"
+        ]
+      }
+    }
+  },
+  "etags": {}
+}
