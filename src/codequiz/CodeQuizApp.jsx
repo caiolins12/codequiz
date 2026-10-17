@@ -2654,7 +2654,9 @@ export default function CodeQuizApp() {
         googleSignInRef.current = false;
         setGoogleSignInBusy(false);
         setAuthTransition({ visible: false, title: '', subtitle: '' });
-        showToast('Não foi possível entrar com Google.');
+        showToast(String(error?.code || '').includes('popup-blocked')
+          ? 'Permita popups deste site para entrar com o Google.'
+          : 'Não foi possível entrar com Google.');
         playSfx('error');
       },
       onFallback: () => {

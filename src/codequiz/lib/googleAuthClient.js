@@ -1,4 +1,12 @@
 import { getSupabase } from './supabaseClient';
+import {
+  GOOGLE_PAGE_CALLBACK_PATH,
+  clearPendingGooglePage,
+  readPendingGooglePage,
+  savePendingGooglePage,
+  subscribeGooglePageResult,
+  takeGooglePageResult
+} from './googlePagePopup';
 
 const GOOGLE_OAUTH_CLIENT_ID = String(
   process.env.NEXT_PUBLIC_GOOGLE_OAUTH_CLIENT_ID
@@ -205,11 +213,100 @@ function loadGoogleGsiScript() {
   return gsiScriptPromise;
 }
 
+const GOOGLE_G_LOGO_SVG = '<svg viewBox="0 0 48 48" width="20" height="20"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>';
+
+function isMobileDevice() {
+  if (navigator.userAgentData?.mobile) return true;
+  const ua = navigator.userAgent || '';
+  // iPadOS se apresenta como Mac; o toque denuncia.
+  return /Android|iPhone|iPad|iPod|Mobile/i.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
+}
+
+// No celular o GSI so usa o seletor nativo (FedCM) do botao no Chrome de
+// Android; nos demais (iPhone, Samsung Internet, Edge, Opera, webviews) o
+// botao oficial abre o cartao /gsi/select de desktop numa aba inteira. Nesses
+// casos o botao proprio abre a pagina normal de conta do Google.
+function shouldUseGooglePagePopup() {
+  if (!isMobileDevice()) return false;
+  const ua = navigator.userAgent || '';
+  const fedcmButton = gsiState.fedcmButton
+    && 'IdentityCredential' in window
+    && /Android/.test(ua)
+    && /Chrome\//.test(ua)
+    && !/SamsungBrowser|EdgA|OPR\/|; wv\)/.test(ua);
+  return !fedcmButton;
+}
+
+function openGooglePagePopup(entry) {
+  const { rawNonce, hashedNonce } = gsiState;
+  if (!rawNonce || !hashedNonce) return;
+  const state = bytesToBase64Url(window.crypto.getRandomValues(new Uint8Array(16)));
+  savePendingGooglePage({ state, rawNonce });
+  const params = new URLSearchParams({
+    client_id: GOOGLE_OAUTH_CLIENT_ID,
+    redirect_uri: `${window.location.origin}${GOOGLE_PAGE_CALLBACK_PATH}`,
+    response_type: 'id_token',
+    scope: 'openid email profile',
+    nonce: hashedNonce,
+    state,
+    prompt: 'select_account',
+    hl: 'pt-BR'
+  });
+  // Precisa ser sincrono no clique: o Safari bloqueia window.open depois de um await.
+  const popup = window.open(
+    `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`,
+    'codequiz_google_login',
+    'popup,width=480,height=640'
+  );
+  if (!popup) {
+    clearPendingGooglePage();
+    entry.onError?.(createAuthError('auth/popup-blocked', 'Popup blocked'));
+  }
+}
+
+function renderGooglePageButton(entry, width) {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'cq-google-page-btn';
+  button.style.width = `${width}px`;
+  button.innerHTML = `<span class="cq-google-page-btn__logo" aria-hidden="true">${GOOGLE_G_LOGO_SVG}</span>`
+    + '<span class="cq-google-page-btn__label">Continuar com o Google</span>';
+  button.addEventListener('click', () => openGooglePagePopup(entry));
+  entry.container.appendChild(button);
+}
+
+// Resultado da janela do Google (pagina /auth/google) para o login pendente.
+function consumeGooglePageResult() {
+  const pending = readPendingGooglePage();
+  if (!pending) return;
+  const result = takeGooglePageResult(pending.state);
+  if (!result) return;
+  clearPendingGooglePage();
+  if (result.idToken) {
+    void handleGoogleCredential({ credential: result.idToken }, pending.rawNonce);
+    return;
+  }
+  // access_denied: o usuario fechou ou cancelou a escolha de conta.
+  if (result.error === 'access_denied') return;
+  const error = createAuthError('auth/internal-error', result.error || 'Google sign in failed');
+  gsiState.buttons.forEach((entry) => {
+    try {
+      entry.onError?.(error);
+    } catch {
+      // ignore UI callback errors
+    }
+  });
+}
+
 function renderButtonInto(entry) {
   const googleId = window.google?.accounts?.id;
   if (!googleId?.renderButton || !entry?.container?.isConnected) return;
   entry.container.innerHTML = '';
   const measuredWidth = Math.floor(Number(entry.container.clientWidth || 0));
+  if (shouldUseGooglePagePopup()) {
+    renderGooglePageButton(entry, Math.max(200, Math.min(400, measuredWidth || Number(entry.width || 320))));
+    return;
+  }
   googleId.renderButton(entry.container, {
     type: 'standard',
     theme: 'outline',
@@ -296,9 +393,9 @@ async function exchangeGoogleCredential(credential = '', rawNonce = '') {
   return user;
 }
 
-async function handleGoogleCredential(response = {}) {
+async function handleGoogleCredential(response = {}, rawNonceOverride = '') {
   const credential = String(response?.credential || '').trim();
-  const rawNonce = gsiState.rawNonce;
+  const rawNonce = rawNonceOverride || gsiState.rawNonce;
   const pendingPrompt = gsiState.pendingPrompt;
   gsiState.pendingPrompt = null;
   const buttonEntries = pendingPrompt ? [] : Array.from(gsiState.buttons);
@@ -359,6 +456,9 @@ export const firebaseAuth = {
 googleProvider.setCustomParameters({ prompt: 'select_account' });
 if (typeof window !== 'undefined') {
   hydrateAuthState();
+  subscribeGooglePageResult(consumeGooglePageResult);
+  // A aba pode ter sido recarregada enquanto o usuario estava na janela do Google.
+  consumeGooglePageResult();
 }
 
 export function onAuthStateChanged(_auth, callback) {
