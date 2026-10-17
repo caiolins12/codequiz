@@ -1,0 +1,150 @@
+/* Tabela de partidas do admin: tabela no desktop, cards no mobile */
+.wrap {
+  overflow-x: auto;
+  border-radius: var(--cq-radius-lg);
+  background: var(--cq-surface-1);
+  box-shadow: var(--cq-shadow-card), inset 0 0 0 1px var(--cq-border);
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--cq-text-sm);
+}
+
+.table th {
+  padding: 12px 14px;
+  background: rgba(8, 5, 30, 0.4);
+  color: var(--cq-text-3);
+  font-size: var(--cq-text-xs);
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-align: left;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.table td {
+  padding: 12px 14px;
+  border-top: 1px solid var(--cq-border);
+  font-weight: 700;
+  vertical-align: middle;
+}
+
+.table tbody tr {
+  transition: background var(--cq-dur-fast) var(--cq-ease-out);
+}
+
+.table tbody tr:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.match {
+  display: grid;
+  gap: 2px;
+  min-width: 180px;
+}
+
+.matchTitle {
+  font-weight: 800;
+}
+
+.matchSub {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  color: var(--cq-text-3);
+  font-size: var(--cq-text-xs);
+}
+
+.code {
+  font-family: var(--cq-font-mono);
+  font-size: var(--cq-text-xs);
+}
+
+.score {
+  font-family: var(--cq-font-display);
+  font-size: var(--cq-text-lg);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.scoreSub {
+  display: block;
+  color: var(--cq-text-3);
+  font-family: var(--cq-font-body);
+  font-size: var(--cq-text-xs);
+  font-weight: 800;
+}
+
+.time {
+  color: var(--cq-text-2);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+@media (max-width: 899px) {
+  .wrap {
+    overflow: visible;
+    background: none;
+    box-shadow: none;
+  }
+
+  .table,
+  .table tbody,
+  .table tr,
+  .table td {
+    display: block;
+  }
+
+  .table thead {
+    display: none;
+  }
+
+  .table tbody {
+    display: grid;
+    gap: var(--cq-space-3);
+  }
+
+  .table tbody tr {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: var(--cq-space-3);
+    padding: var(--cq-space-4);
+    border-radius: var(--cq-radius-lg);
+    background: var(--cq-surface-1);
+    box-shadow: var(--cq-shadow-card), inset 0 0 0 1px var(--cq-border);
+  }
+
+  .table td {
+    min-width: 0;
+    padding: 0;
+    border: 0;
+  }
+
+  .table td[data-label]:not([data-label=''])::before {
+    content: attr(data-label);
+    display: block;
+    margin-bottom: 2px;
+    color: var(--cq-text-3);
+    font-size: 0.6875rem;
+    font-weight: 800;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+
+  .wide {
+    grid-column: 1 / -1;
+  }
+
+  .match {
+    min-width: 0;
+  }
+}

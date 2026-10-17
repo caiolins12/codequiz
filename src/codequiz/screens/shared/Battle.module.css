@@ -243,7 +243,6 @@
 .roundResult {
   display: grid;
   gap: var(--cq-space-4);
-  padding-bottom: var(--cq-space-4);
   text-align: center;
 }
 

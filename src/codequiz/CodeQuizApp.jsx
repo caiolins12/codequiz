@@ -423,7 +423,6 @@ import EliminationExitPromptModal from './overlays/EliminationExitPromptModal';
 import HeroMenuPopover from './overlays/HeroMenuPopover';
 import ShopItemPreviewModal from './overlays/ShopItemPreviewModal';
 import PlayerHistoryModal from './overlays/PlayerHistoryModal';
-import PassDetailModal from './overlays/PassDetailModal';
 import AdminAuthModal from './overlays/AdminAuthModal';
 import UpdateNoticeBar from './overlays/UpdateNoticeBar';
 import CookieConsentBanner from './overlays/CookieConsentBanner';
@@ -586,7 +585,6 @@ export default function CodeQuizApp() {
   });
   const [passRecentClaimStageId, setPassRecentClaimStageId] = useState('');
   const [passFocusedStageId, setPassFocusedStageId] = useState('');
-  const [passDetailModal, setPassDetailModal] = useState(null);
 
   const [rankingsMode, setRankingsMode] = useState('pve');
   const [rankingsRows, setRankingsRows] = useState([]);
@@ -8517,28 +8515,9 @@ export default function CodeQuizApp() {
     focusEvolutionPassStage(evolutionPassStages[nextIndex]?.id || '');
   }
 
-  function openEvolutionPassDetailModal(mode = '', stageId = '', pathId = '') {
-    const safeMode = String(mode || '').trim().toLowerCase();
-    const safeStageId = String(stageId || '').trim();
-    if (!safeStageId || (safeMode !== 'path' && safeMode !== 'rewards')) return;
-    setPassDetailModal({
-      mode: safeMode,
-      stageId: safeStageId,
-      pathId: safeMode === 'path' ? String(pathId || '').trim() : ''
-    });
-  }
-
-  function closeEvolutionPassDetailModal() {
-    setPassDetailModal(null);
-  }
-
   function triggerAppBackNavigation(source = 'button') {
     const safeSource = String(source || 'button').toLowerCase();
 
-    if (passDetailModal) {
-      closeEvolutionPassDetailModal();
-      return true;
-    }
     if (playerHistoryOpen) {
       closePlayerHistoryPanel();
       return true;
@@ -9338,7 +9317,6 @@ export default function CodeQuizApp() {
       if (nextFocusStage?.id) {
         setPassFocusedStageId(String(nextFocusStage.id));
       }
-      setPassDetailModal(null);
       if (rewardShopItems.length > 0) {
         const nextShop = grantShopItems(shopData, rewardShopItems);
         setShopData(nextShop);
@@ -13990,22 +13968,9 @@ export default function CodeQuizApp() {
     ),
     [evolutionPassFocusedStage, evolutionPassStages]
   );
-  const evolutionPassDetailStage = useMemo(() => {
-    if (!passDetailModal) return null;
-    return evolutionPassStages.find(
-      (stage) => String(stage?.id || '').trim() === String(passDetailModal?.stageId || '').trim()
-    ) || null;
-  }, [evolutionPassStages, passDetailModal]);
-  const evolutionPassDetailPath = useMemo(() => {
-    if (!passDetailModal || passDetailModal.mode !== 'path' || !evolutionPassDetailStage) return null;
-    return (Array.isArray(evolutionPassDetailStage.missionPaths) ? evolutionPassDetailStage.missionPaths : []).find(
-      (path) => String(path?.id || '').trim() === String(passDetailModal?.pathId || '').trim()
-    ) || null;
-  }, [evolutionPassDetailStage, passDetailModal]);
   useEffect(() => {
     if (!evolutionPassStages.length) {
       if (passFocusedStageId) setPassFocusedStageId('');
-      if (passDetailModal) setPassDetailModal(null);
       return;
     }
     const focusedExists = evolutionPassStages.some(
@@ -14016,21 +13981,7 @@ export default function CodeQuizApp() {
     if (preferredStage?.id) {
       setPassFocusedStageId(preferredStage.id);
     }
-  }, [evolutionPassStages, passDetailModal, passFocusedStageId]);
-  useEffect(() => {
-    if (!passDetailModal) return;
-    if (screen !== 'achievements') {
-      setPassDetailModal(null);
-      return;
-    }
-    if (!evolutionPassDetailStage) {
-      setPassDetailModal(null);
-      return;
-    }
-    if (passDetailModal.mode === 'path' && !evolutionPassDetailPath) {
-      setPassDetailModal(null);
-    }
-  }, [evolutionPassDetailPath, evolutionPassDetailStage, passDetailModal, screen]);
+  }, [evolutionPassStages, passFocusedStageId]);
   const knowledgeAreaById = useMemo(
     () => new Map(KNOWLEDGE_AREAS.map((area) => [area.id, area])),
     []
@@ -14892,14 +14843,6 @@ export default function CodeQuizApp() {
   const activeShopItemPreview = shopItemPreview && typeof shopItemPreview === 'object'
     ? shopItemPreview
     : null;
-  const shopModalPreviewState = activeShopItemPreview
-    ? getShopPreviewState(activeShopItemPreview)
-    : shopData;
-  const shopModalPreviewAvatar = getDisplayAvatar(profile?.avatar || '🤓', shopModalPreviewState);
-  const shopModalPreviewFrameStyle = getAvatarFrameStyle(shopModalPreviewState);
-  const shopModalPreviewFrameClass = getAvatarFrameClass(shopModalPreviewState);
-  const shopModalPreviewBgStyle = getHeroBackgroundStyle(shopModalPreviewState);
-  const shopModalPreviewBgMeta = getBackgroundVisualMeta(shopModalPreviewState);
 
   const pvpPlayer1Shop = buildCosmeticSnapshot(
     pvpMatch?.player1_frame,
@@ -15357,24 +15300,25 @@ export default function CodeQuizApp() {
             focusAdjacentEvolutionPassStage,
             focusEvolutionPassStage,
             handleClaimEvolutionPassStage,
-            openEvolutionPassDetailModal,
+            openShopItemPreview,
             passClaimingStageId,
-            passRecentClaimStageId,
-            screen,
-            triggerAppBackNavigation
+            passRecentClaimStageId
           }} />
         ) : null}
 
         {screen === 'rankings' ? (
           <RankingsScreen vm={{
             authUser,
+            avatarFrameClass,
+            avatarFrameStyle,
             buildCosmeticSnapshot,
+            displayAvatar,
+            heroNickname,
+            progress,
             rankingsLoading,
             rankingsMode,
             rankingsRows,
-            screen,
-            setRankingsMode,
-            triggerAppBackNavigation
+            setRankingsMode
           }} />
         ) : null}
 
@@ -15392,7 +15336,6 @@ export default function CodeQuizApp() {
             botArenaPvpEnabled,
             botArenaQuizEnabled,
             refreshAdminMetrics,
-            screen,
             setAdminBotArenaAutomationEnabled,
             setScreen,
             triggerAppBackNavigation
@@ -15404,7 +15347,6 @@ export default function CodeQuizApp() {
             adminLiveMatches,
             adminMatchCodeById,
             adminMatchesLoading,
-            screen,
             triggerAppBackNavigation
           }} />
         ) : null}
@@ -15417,7 +15359,6 @@ export default function CodeQuizApp() {
             adminHistoryTodayMatches,
             adminMatchCodeById,
             adminMatchesLoading,
-            screen,
             setAdminHistoryFilter,
             triggerAppBackNavigation
           }} />
@@ -15474,12 +15415,9 @@ export default function CodeQuizApp() {
             profileDraft,
             profileSaving,
             saveProfile,
-            screen,
             setProfileDraft,
             setScreen,
-            settingsSections,
             settingsUpdatedAtValue,
-            toggleSettingsSection,
             triggerAppBackNavigation,
             updateAudioSetting
           }} />
@@ -15488,23 +15426,25 @@ export default function CodeQuizApp() {
         {screen === 'shop' ? (
           <ShopScreen vm={{
             activeShopCategoryOpen,
-            equippedShopId,
             getShopPreviewState,
             groupedShopItems,
             handleBuyShopItem,
             handleToggleOwnedShopItem,
+            heroNickname,
             openShopItemPreview,
             ownedShopSet,
             profile,
             progress,
+            pveCategory,
+            pvpCategory,
+            safeLevel,
             safeShopOwnershipFilter,
-            screen,
+            setScreen,
             setShopOwnershipFilter,
             setShopTab,
             shopData,
-            shopTab,
-            toggleShopCategory,
-            triggerAppBackNavigation
+            shopTab: safeShopTab,
+            toggleShopCategory
           }} />
         ) : null}
 
@@ -15832,17 +15772,18 @@ export default function CodeQuizApp() {
         <ShopItemPreviewModal vm={{
           activeShopItemPreview,
           closeShopItemPreview,
+          getShopPreviewState,
+          handleBuyShopItem,
+          handleToggleOwnedShopItem,
           heroNickname,
+          ownedShopSet,
+          profile,
+          progress,
           pveCategory,
           pvpCategory,
-          safeBestStreak,
-          safeCoins,
           safeLevel,
-          shopModalPreviewAvatar,
-          shopModalPreviewBgMeta,
-          shopModalPreviewBgStyle,
-          shopModalPreviewFrameClass,
-          shopModalPreviewFrameStyle
+          setScreen,
+          shopData
         }} />
       ) : null}
 
@@ -15857,15 +15798,6 @@ export default function CodeQuizApp() {
           playerHistoryItems,
           playerHistoryLoading,
           setPlayerHistoryFilter
-        }} />
-      ) : null}
-
-      {passDetailModal && evolutionPassDetailStage ? (
-        <PassDetailModal vm={{
-          closeEvolutionPassDetailModal,
-          evolutionPassDetailPath,
-          evolutionPassDetailStage,
-          passDetailModal
         }} />
       ) : null}
 

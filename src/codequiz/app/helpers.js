@@ -3472,9 +3472,9 @@ export function getPreferredLanguageByKnowledgeArea(areaId = '', fallbackLanguag
 
 export const ADMIN_HISTORY_FILTER_OPTIONS = [
   { id: 'all', label: 'Todos' },
-  { id: 'pvp', label: 'Somente PVP' },
-  { id: 'users', label: 'Partidas de usuários' },
-  { id: 'quiz', label: 'Somente quiz' },
+  { id: 'pvp', label: 'PvP' },
+  { id: 'users', label: 'PvP de usuários' },
+  { id: 'quiz', label: 'Quiz' },
   { id: 'user_quiz', label: 'Quiz de usuários' }
 ];
 

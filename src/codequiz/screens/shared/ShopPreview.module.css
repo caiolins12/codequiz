@@ -1,0 +1,110 @@
+/* Prévia de cosméticos (painel da loja e sheet no mobile) */
+.preview {
+  display: grid;
+  gap: var(--cq-space-4);
+}
+
+.profile {
+  position: relative;
+  display: grid;
+  justify-items: center;
+  gap: var(--cq-space-2);
+  padding: var(--cq-space-6) var(--cq-space-4) var(--cq-space-5);
+  border-radius: var(--cq-radius-xl);
+  overflow: hidden;
+  isolation: isolate;
+  box-shadow: var(--cq-shadow-card), inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+  text-align: center;
+}
+
+.shade {
+  position: absolute !important;
+  inset: 0;
+  z-index: 1 !important;
+  background: linear-gradient(180deg, rgba(10, 6, 34, 0.02) 0%, rgba(10, 6, 34, 0.55) 100%);
+  pointer-events: none;
+}
+
+.profileName {
+  max-width: 100%;
+  margin-top: var(--cq-space-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--cq-font-display);
+  font-size: var(--cq-text-xl);
+  font-weight: 700;
+  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.3);
+}
+
+.profileBadges {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+}
+
+.info {
+  display: grid;
+  gap: var(--cq-space-3);
+}
+
+.infoHead {
+  display: flex;
+  align-items: center;
+  gap: var(--cq-space-3);
+  min-width: 0;
+}
+
+.itemIcon {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.07);
+  font-size: 24px;
+}
+
+.itemText {
+  flex: 1 1 auto;
+  display: grid;
+  min-width: 0;
+  line-height: 1.2;
+}
+
+.itemName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--cq-font-display);
+  font-size: var(--cq-text-lg);
+  font-weight: 700;
+}
+
+.itemType {
+  color: var(--cq-text-3);
+  font-size: var(--cq-text-xs);
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.statusText {
+  color: var(--cq-text-2);
+  font-weight: 700;
+}
+
+/* Miniaturas da grade */
+.thumbBg {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+
+.thumbEmoji {
+  font-size: 46px;
+  line-height: 1;
+  filter: drop-shadow(0 4px 0 rgba(0, 0, 0, 0.25));
+}

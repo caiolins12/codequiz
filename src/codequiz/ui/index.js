@@ -12,3 +12,4 @@ export { default as StatPill } from './StatPill';
 export { default as Tabs } from './Tabs';
 export { default as TextField } from './TextField';
 export { default as TimerBar, TimerDisplay } from './TimerBar';
+export { default as Switch, RangeSlider } from './Switch';

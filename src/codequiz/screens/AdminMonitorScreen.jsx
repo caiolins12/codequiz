@@ -1,3 +1,20 @@
+import { Bot, ChevronRight, History, Hourglass, Radio, RefreshCw, Wifi } from 'lucide-react';
+import { Card, IconButton, PageHeader, SectionHeader, StatTile, Switch, cx } from '../ui';
+import styles from './AdminScreens.module.css';
+
+function NavLink({ icon: Icon, title, desc, onClick, live = false }) {
+  return (
+    <button type="button" className={styles.link} onClick={onClick}>
+      <span className={cx(styles.linkIcon, live ? styles.linkLive : '')} aria-hidden="true"><Icon strokeWidth={2.4} /></span>
+      <span className={styles.linkText}>
+        <span className={styles.linkTitle}>{title}</span>
+        <span className={styles.linkDesc}>{desc}</span>
+      </span>
+      <ChevronRight className={styles.linkChevron} aria-hidden="true" strokeWidth={2.6} />
+    </button>
+  );
+}
+
 export default function AdminMonitorScreen({ vm }) {
   const {
     adminBotDaemonBusy,
@@ -12,112 +29,93 @@ export default function AdminMonitorScreen({ vm }) {
     botArenaPvpEnabled,
     botArenaQuizEnabled,
     refreshAdminMetrics,
-    screen,
     setAdminBotArenaAutomationEnabled,
     setScreen,
     triggerAppBackNavigation
   } = vm;
 
+  const liveCount = Array.isArray(adminLiveMatches) ? adminLiveMatches.length : 0;
+  const historyCount = Array.isArray(adminHistoryTodayBaseMatches) ? adminHistoryTodayBaseMatches.length : 0;
+  const updatedAt = adminMatchesUpdatedAtMs ? new Date(adminMatchesUpdatedAtMs).toLocaleTimeString('pt-BR') : '--:--:--';
+
   return (
-    <div className={`screen ${screen === 'admin-monitor' ? 'active' : ''}`}>
-      <div className="screen-top">
-        <button className="btn-back" onClick={() => triggerAppBackNavigation('button')}>←</button>
-        <h2>Monitoramento Admin</h2>
+    <div className={styles.screen}>
+      <PageHeader
+        eyebrow="Admin"
+        title="Monitoramento"
+        subtitle="Partidas em tempo real, histórico do dia e automação dos bots."
+        onBack={() => triggerAppBackNavigation('button')}
+        actions={(
+          <IconButton
+            icon={RefreshCw}
+            label="Atualizar painel"
+            variant="surface"
+            disabled={adminBusy}
+            onClick={() => refreshAdminMetrics().catch(() => null)}
+          />
+        )}
+      />
+
+      <div className={styles.stats}>
+        <StatTile icon={Wifi} label="Online" value={Math.max(0, Number(arenaMetrics?.online || 0))} tone="lime" />
+        <StatTile icon={Hourglass} label="Na fila" value={Math.max(0, Number(arenaMetrics?.queue || 0))} tone="gold" />
+        <StatTile icon={Radio} label="Ao vivo" value={liveCount} tone="red" />
+        <StatTile icon={History} label="Hoje" value={historyCount} tone="violet" />
       </div>
-      <div className="admin-screen-shell">
-        <div className="admin-screen-hero">
-          <div className="admin-screen-hero-title">Painel de monitoramento</div>
-          <div className="admin-screen-hero-subtitle">Acompanhe partidas em tempo real e histórico diário.</div>
-        </div>
+      <p className={styles.updated}>Atualizado às {updatedAt}</p>
 
-        <div className="admin-screen-stats">
-          <div className="admin-screen-stat-card">
-            <span>Online</span>
-            <strong>{arenaMetrics.online}</strong>
+      <div className={styles.grid}>
+        <Card padding="lg" className={styles.card}>
+          <SectionHeader title="Automação dos bots" subtitle="Liga e desliga as partidas automáticas." icon={Bot} />
+          <div className={styles.daemon}>
+            <span className={cx(styles.dot, botArenaBattlesEnabled ? styles.dotOn : '')} aria-hidden="true" />
+            <span className={styles.daemonText}>
+              <span className={styles.daemonTitle}>{botArenaBattlesEnabled ? 'Automação ativa' : 'Automação desativada'}</span>
+              <span className={styles.daemonMeta}>Daemon: {botArenaDaemonModeLabel} · Atualizado: {botArenaDaemonUpdatedAtLabel}</span>
+            </span>
           </div>
-          <div className="admin-screen-stat-card">
-            <span>Fila</span>
-            <strong>{arenaMetrics.queue}</strong>
-          </div>
-          <div className="admin-screen-stat-card">
-            <span>Ao vivo</span>
-            <strong>{adminLiveMatches.length}</strong>
-          </div>
-          <div className="admin-screen-stat-card">
-            <span>Historico hoje</span>
-            <strong>{adminHistoryTodayBaseMatches.length}</strong>
-          </div>
-        </div>
-
-        <div className="admin-screen-updated-at">
-          Atualizado em {adminMatchesUpdatedAtMs ? new Date(adminMatchesUpdatedAtMs).toLocaleTimeString('pt-BR') : '--:--:--'}
-        </div>
-
-        <div className="admin-daemon-control">
-          <div className="admin-daemon-head">
-            <span className={`admin-daemon-dot ${botArenaBattlesEnabled ? 'enabled' : 'disabled'}`} aria-hidden="true" />
-            <div className="admin-daemon-copy">
-              <strong>{botArenaBattlesEnabled ? 'Automação de bots ativa' : 'Automação de bots desativada'}</strong>
-              <span>
-                PVP: {botArenaPvpEnabled ? 'ativado' : 'desativado'}
-                {' · '}
-                Quiz: {botArenaQuizEnabled ? 'ativado' : 'desativado'}
-                {' · '}
-                Daemon: {botArenaDaemonModeLabel}
-                {' · '}
-                Atualizado: {botArenaDaemonUpdatedAtLabel}
+          <div className={styles.toggles}>
+            <div className={styles.toggle}>
+              <span className={styles.toggleText}>
+                <span className={styles.toggleTitle}>Batalhas PvP dos bots</span>
+                <span className={styles.toggleState}>{botArenaPvpEnabled ? 'Ativadas' : 'Desativadas'}</span>
               </span>
+              <Switch
+                checked={!!botArenaPvpEnabled}
+                disabled={adminBotDaemonBusy}
+                label="Ativar batalhas PvP dos bots"
+                onChange={(value) => setAdminBotArenaAutomationEnabled('pvp', value)}
+              />
+            </div>
+            <div className={styles.toggle}>
+              <span className={styles.toggleText}>
+                <span className={styles.toggleTitle}>Partidas de quiz dos bots</span>
+                <span className={styles.toggleState}>{botArenaQuizEnabled ? 'Ativadas' : 'Desativadas'}</span>
+              </span>
+              <Switch
+                checked={!!botArenaQuizEnabled}
+                disabled={adminBotDaemonBusy}
+                label="Ativar partidas de quiz dos bots"
+                onChange={(value) => setAdminBotArenaAutomationEnabled('quiz', value)}
+              />
             </div>
           </div>
-          <div className="admin-daemon-toggles">
-            <div className="admin-daemon-toggle-row">
-              <div className="admin-daemon-toggle-copy">
-                <strong>Batalhas PVP dos bots</strong>
-                <span>{botArenaPvpEnabled ? 'Ativado' : 'Desativado'}</span>
-              </div>
-              <label className="settings-switch" aria-label="Ativar batalhas PVP dos bots">
-                <input
-                  type="checkbox"
-                  checked={botArenaPvpEnabled}
-                  disabled={adminBotDaemonBusy}
-                  onChange={(event) => setAdminBotArenaAutomationEnabled('pvp', event.target.checked)}
-                />
-                <span className="settings-switch-track">
-                  <span className="settings-switch-thumb" />
-                </span>
-              </label>
-            </div>
+        </Card>
 
-            <div className="admin-daemon-toggle-row">
-              <div className="admin-daemon-toggle-copy">
-                <strong>Partidas de quiz dos bots</strong>
-                <span>{botArenaQuizEnabled ? 'Ativado' : 'Desativado'}</span>
-              </div>
-              <label className="settings-switch" aria-label="Ativar partidas de quiz dos bots">
-                <input
-                  type="checkbox"
-                  checked={botArenaQuizEnabled}
-                  disabled={adminBotDaemonBusy}
-                  onChange={(event) => setAdminBotArenaAutomationEnabled('quiz', event.target.checked)}
-                />
-                <span className="settings-switch-track">
-                  <span className="settings-switch-thumb" />
-                </span>
-              </label>
-            </div>
-          </div>
-        </div>
-
-        <div className="admin-screen-actions">
-          <button className="btn btn-primary btn-lg" onClick={() => setScreen('admin-live')}>
-            Partidas ao vivo
-          </button>
-          <button className="btn btn-secondary btn-lg" onClick={() => setScreen('admin-history')}>
-            Historico de partidas do dia
-          </button>
-          <button className="btn btn-secondary" disabled={adminBusy} onClick={() => refreshAdminMetrics().catch(() => null)}>
-            Atualizar painel
-          </button>
+        <div className={styles.links}>
+          <NavLink
+            icon={Radio}
+            live
+            title="Partidas ao vivo"
+            desc={liveCount ? `${liveCount} em andamento agora` : 'Nenhuma partida em andamento'}
+            onClick={() => setScreen('admin-live')}
+          />
+          <NavLink
+            icon={History}
+            title="Histórico do dia"
+            desc={historyCount ? `${historyCount} partida${historyCount === 1 ? '' : 's'} finalizada${historyCount === 1 ? '' : 's'} hoje` : 'Sem partidas finalizadas hoje'}
+            onClick={() => setScreen('admin-history')}
+          />
         </div>
       </div>
     </div>

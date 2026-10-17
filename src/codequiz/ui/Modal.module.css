@@ -112,6 +112,11 @@
   overscroll-behavior: contain;
 }
 
+/* Sem rodapé: o corpo ganha respiro extra embaixo */
+.body:last-child {
+  padding-bottom: var(--cq-space-6);
+}
+
 .footer {
   display: flex;
   flex-wrap: wrap;

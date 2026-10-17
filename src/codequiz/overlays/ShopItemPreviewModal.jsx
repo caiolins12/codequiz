@@ -1,56 +1,58 @@
-import { AvatarImage, isImageAvatarValue } from '../app/helpers';
+import { Eye } from 'lucide-react';
+import { Modal } from '../ui';
+import ShopPreview, { ShopItemAction, getShopItemStatus } from '../screens/shared/ShopPreview';
 
 export default function ShopItemPreviewModal({ vm }) {
   const {
     activeShopItemPreview,
     closeShopItemPreview,
+    getShopPreviewState,
+    handleBuyShopItem,
+    handleToggleOwnedShopItem,
     heroNickname,
+    ownedShopSet,
+    profile,
+    progress,
     pveCategory,
     pvpCategory,
-    safeBestStreak,
-    safeCoins,
     safeLevel,
-    shopModalPreviewAvatar,
-    shopModalPreviewBgMeta,
-    shopModalPreviewBgStyle,
-    shopModalPreviewFrameClass,
-    shopModalPreviewFrameStyle
+    setScreen,
+    shopData
   } = vm;
 
+  const item = activeShopItemPreview;
+  const status = getShopItemStatus(item, {
+    shopData,
+    coins: Math.max(0, Number(progress?.coins || 0)),
+    ownedSet: ownedShopSet
+  });
+
   return (
-    <div className="reset-modal shop-item-preview-modal" onClick={closeShopItemPreview}>
-      <div className="reset-modal-card shop-item-preview-card" onClick={(event) => event.stopPropagation()}>
-        <h3>Pre-visualizacao</h3>
-        <p>{activeShopItemPreview.name}</p>
-        <div
-          className={[
-            'shop-modal-profile',
-            shopModalPreviewBgMeta.className
-          ].filter(Boolean).join(' ')}
-          data-bg-id={shopModalPreviewBgMeta.id}
-          data-bg-rarity={shopModalPreviewBgMeta.rarity}
-          style={{ background: shopModalPreviewBgStyle }}
-        >
-          <div className="shop-modal-profile-content">
-            <span className={`hero-avatar shop-modal-avatar ${shopModalPreviewFrameClass}`} style={shopModalPreviewFrameStyle}>
-              {isImageAvatarValue(shopModalPreviewAvatar) ? (
-                <AvatarImage className="hero-avatar-image" src={shopModalPreviewAvatar} alt="Avatar da pre-visualizacao" fallback="🙂" />
-              ) : shopModalPreviewAvatar}
-            </span>
-            <div className="shop-modal-profile-info">
-              <div className="shop-modal-profile-name">{heroNickname}</div>
-              <div className="shop-modal-profile-meta">Nv. {safeLevel} · 🔥 {safeBestStreak} · 🪙 {safeCoins}</div>
-              <div className="shop-modal-profile-badges">
-                <span className={`tier-badge tier-badge-compact tier-${pveCategory.key}`}>PVE {pveCategory.label}</span>
-                <span className={`tier-badge tier-badge-compact tier-${pvpCategory.key}`}>PVP {pvpCategory.label}</span>
-              </div>
-            </div>
-          </div>
-        </div>
-        <div className="match-accept-actions">
-          <button className="btn btn-secondary btn-lg" onClick={closeShopItemPreview}>Fechar</button>
-        </div>
-      </div>
-    </div>
+    <Modal title="Prévia do item" icon={Eye} tone="violet" size="sm" onClose={closeShopItemPreview}>
+      <ShopPreview
+        item={item}
+        previewState={getShopPreviewState(item)}
+        profileAvatar={profile?.avatar || '🤓'}
+        nickname={heroNickname}
+        level={safeLevel}
+        pveCategory={pveCategory}
+        pvpCategory={pvpCategory}
+        status={status}
+        action={(
+          <ShopItemAction
+            item={item}
+            status={status}
+            size="lg"
+            block
+            onBuy={handleBuyShopItem}
+            onToggle={handleToggleOwnedShopItem}
+            onOpenPass={() => {
+              closeShopItemPreview();
+              setScreen('achievements');
+            }}
+          />
+        )}
+      />
+    </Modal>
   );
 }

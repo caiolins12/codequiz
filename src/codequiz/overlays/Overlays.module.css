@@ -3,7 +3,6 @@
 .stack {
   display: grid;
   gap: var(--cq-space-3);
-  padding-bottom: var(--cq-space-4);
 }
 
 .rewardGrid {

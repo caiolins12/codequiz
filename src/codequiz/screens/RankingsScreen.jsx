@@ -1,99 +1,183 @@
+import { Crown, Swords, Target, Trophy } from 'lucide-react';
 import { getCategoryByPoints } from '../lib/pvp';
-import { getAvatarFrameClass, getAvatarFrameStyle, getDisplayAvatar, getHeroBackgroundStyle } from '../lib/shop';
-import { getBackgroundVisualMeta } from '../app/helpers';
+import { Avatar, Card, EmptyState, PageHeader, Skeleton, Tabs, TierBadge, cx } from '../ui';
+import { buildRankingRowView } from './shared/rankings';
+import styles from './RankingsScreen.module.css';
+
+const MODE_TABS = [
+  { value: 'pve', label: 'Treino PvE', icon: Target },
+  { value: 'pvp', label: 'Arena PvP', icon: Swords }
+];
+
+// Fundo cosmético só para quem equipou um fundo da loja (o padrão usa a superfície do card).
+function cosmeticBackground(row) {
+  if (!row || !row.backgroundMeta || row.backgroundMeta.id === 'bg_default') return null;
+  return {
+    className: row.backgroundMeta.className,
+    style: { background: row.background },
+    'data-bg-id': row.backgroundMeta.id,
+    'data-bg-rarity': row.backgroundMeta.rarity
+  };
+}
+
+function PodiumSpot({ row, place }) {
+  const bg = cosmeticBackground(row);
+  return (
+    <li className={cx(styles.spot, styles[`place${place}`])}>
+      {row ? (
+        <div
+          className={cx(styles.spotCard, row.isSelf ? styles.spotSelf : '', bg?.className)}
+          style={bg?.style}
+          data-bg-id={bg?.['data-bg-id']}
+          data-bg-rarity={bg?.['data-bg-rarity']}
+        >
+          {bg ? <span className={styles.shade} aria-hidden="true" /> : null}
+          {place === 1 ? <Crown className={styles.crown} aria-hidden="true" strokeWidth={2.4} /> : null}
+          <Avatar avatar={row.avatar} frameClass={row.frameClass} frameStyle={row.frameStyle} size={place === 1 ? 'lg' : 'md'} />
+          <span className={styles.spotName}>{row.nickname}{row.isSelf ? ' (você)' : ''}</span>
+          <TierBadge tierKey={row.category.key} label={row.category.label} size="sm" />
+          <span className={styles.spotPoints}>{row.points}<small>pts</small></span>
+        </div>
+      ) : (
+        <div className={cx(styles.spotCard, styles.spotEmpty)}>
+          <span className={styles.emptyAvatar} aria-hidden="true">?</span>
+          <span className={styles.spotName}>Vaga aberta</span>
+        </div>
+      )}
+      <span className={styles.pedestal} aria-label={`${place}º lugar`}>{place}</span>
+    </li>
+  );
+}
+
+function RankRow({ row }) {
+  const bg = cosmeticBackground(row);
+  return (
+    <li
+      className={cx(styles.row, row.isSelf ? styles.rowSelf : '', bg?.className)}
+      style={bg?.style}
+      data-bg-id={bg?.['data-bg-id']}
+      data-bg-rarity={bg?.['data-bg-rarity']}
+    >
+      {bg ? <span className={styles.shade} aria-hidden="true" /> : null}
+      <span className={styles.pos}>{row.position}</span>
+      <Avatar avatar={row.avatar} frameClass={row.frameClass} frameStyle={row.frameStyle} size="sm" />
+      <span className={styles.rowText}>
+        <span className={styles.rowName}>{row.nickname}{row.isSelf ? ' (você)' : ''}</span>
+        <span className={styles.rowMeta}>{row.meta}</span>
+      </span>
+      <TierBadge className={styles.rowTier} tierKey={row.category.key} label={row.category.label} size="sm" />
+      <span className={styles.rowPoints}>{row.points}<small>pts</small></span>
+    </li>
+  );
+}
+
+function SelfCard({ row, fallback, className }) {
+  const view = row || fallback;
+  return (
+    <div className={cx(styles.selfCard, className)}>
+      <span className={styles.selfPos}>{row ? `${row.position}º` : '50+'}</span>
+      <Avatar avatar={view.avatar} frameClass={view.frameClass} frameStyle={view.frameStyle} size="sm" />
+      <span className={styles.rowText}>
+        <span className={styles.selfLabel}>{row ? 'Sua posição' : 'Fora do top 50'}</span>
+        <span className={styles.rowName}>{view.nickname}</span>
+      </span>
+      <span className={styles.rowPoints}>{view.points}<small>pts</small></span>
+    </div>
+  );
+}
+
+function LoadingList() {
+  return (
+    <ul className={styles.list} aria-hidden="true">
+      {[0, 1, 2, 3, 4, 5].map((index) => (
+        <li key={index} className={styles.row}>
+          <Skeleton width={32} height={32} radius={10} />
+          <Skeleton width={40} height={40} radius={999} />
+          <span className={styles.rowText}>
+            <Skeleton width="60%" height={14} />
+            <Skeleton width="35%" height={10} />
+          </span>
+        </li>
+      ))}
+    </ul>
+  );
+}
 
 export default function RankingsScreen({ vm }) {
   const {
     authUser,
+    avatarFrameClass,
+    avatarFrameStyle,
     buildCosmeticSnapshot,
+    displayAvatar,
+    heroNickname,
+    progress,
     rankingsLoading,
     rankingsMode,
     rankingsRows,
-    screen,
-    setRankingsMode,
-    triggerAppBackNavigation
+    setRankingsMode
   } = vm;
 
-  return (
-    <div className={`screen ${screen === 'rankings' ? 'active' : ''}`}>
-      <div className="screen-top">
-        <button className="btn-back" onClick={() => triggerAppBackNavigation('button')}>←</button>
-        <h2>Rankings</h2>
-      </div>
-      <div className="ranking-tabs">
-        <button
-          className={`ranking-tab ${rankingsMode === 'pve' ? 'active' : ''}`}
-          onClick={() => setRankingsMode('pve')}
-        >
-          PVE
-        </button>
-        <button
-          className={`ranking-tab ${rankingsMode === 'pvp' ? 'active' : ''}`}
-          onClick={() => setRankingsMode('pvp')}
-        >
-          PVP
-        </button>
-      </div>
-      <div className="ranking-content">
-        {rankingsLoading ? (
-          <div className="ranking-loading">Carregando...</div>
-        ) : rankingsRows.length ? (
-          <div className="ranking-list">
-            {rankingsRows.map((row, index) => {
-              const isSelf = String(row.user_id || '') === String(authUser?.uid || '');
-              const rowShop = buildCosmeticSnapshot(
-                row.equipped_frame,
-                row.equipped_background,
-                row.equipped_emoji
-              );
-              const rowAvatar = getDisplayAvatar(row.avatar || '🤓', rowShop);
-              const rowFrameStyle = getAvatarFrameStyle(rowShop);
-              const rowFrameClass = getAvatarFrameClass(rowShop);
-              const rowBackgroundMeta = getBackgroundVisualMeta(rowShop);
-              const itemClasses = [
-                'ranking-item',
-                isSelf ? 'ranking-self' : '',
-                index === 0 ? 'ranking-top1' : '',
-                index === 1 ? 'ranking-top2' : '',
-                index === 2 ? 'ranking-top3' : '',
-                rowBackgroundMeta.className
-              ].filter(Boolean).join(' ');
-              const points = rankingsMode === 'pvp'
-                ? Math.max(0, Number(row.pvp_points || 0))
-                : Math.max(0, Number(row.ranking_points || 0));
-              const category = getCategoryByPoints(points);
-              const meta = rankingsMode === 'pvp'
-                ? `${Math.max(0, Number(row.pvp_wins || 0))}V · ${Math.max(0, Number(row.pvp_battles || 0))}P`
-                : `${Math.max(0, Number(row.total_correct || 0))} corretas · Lv ${Math.max(1, Number(row.level || 1))}`;
+  const mode = rankingsMode === 'pvp' ? 'pvp' : 'pve';
+  const rows = (Array.isArray(rankingsRows) ? rankingsRows : [])
+    .map((row, index) => buildRankingRowView(row, index, mode, buildCosmeticSnapshot, authUser?.uid));
+  const podium = rows.slice(0, 3);
+  const rest = rows.slice(3);
+  const selfRow = rows.find((row) => row.isSelf) || null;
+  const myPoints = Math.max(0, Number(mode === 'pvp' ? progress?.pvpPoints : progress?.rankingPoints) || 0);
+  const selfFallback = {
+    nickname: heroNickname || 'Você',
+    avatar: displayAvatar,
+    frameClass: avatarFrameClass,
+    frameStyle: avatarFrameStyle,
+    points: myPoints,
+    category: getCategoryByPoints(myPoints)
+  };
+  const loading = rankingsLoading && !rows.length;
 
-              return (
-                <div
-                  key={`${row.user_id}_${index}`}
-                  className={itemClasses}
-                  data-bg-id={rowBackgroundMeta.id}
-                  data-bg-rarity={rowBackgroundMeta.rarity}
-                  style={{ background: getHeroBackgroundStyle(rowShop) }}
-                >
-                  <span className="rank-pos">#{index + 1}</span>
-                  <span className={`rank-avatar ${rowFrameClass}`} style={rowFrameStyle}>{rowAvatar}</span>
-                  <div className="rank-info">
-                    <div className="rank-name-row">
-                      <span className="rank-name">{row.nickname || 'Jogador'}</span>
-                      <span className={`tier-badge tier-badge-compact tier-badge-rank tier-${category.key}`}>
-                        {rankingsMode === 'pvp' ? 'PVP' : 'PVE'} {category.label}
-                      </span>
-                    </div>
-                    <div className="rank-meta">{meta}</div>
-                  </div>
-                  <span className="rank-xp">{points} PTS</span>
-                </div>
-              );
-            })}
-          </div>
-        ) : (
-          <div className="ranking-empty">Sem ranking disponível ainda.</div>
-        )}
-      </div>
+  return (
+    <div className={styles.screen}>
+      <PageHeader
+        title="Ranking"
+        subtitle={mode === 'pvp' ? 'Pontos de liga conquistados na arena.' : 'Pontos acumulados nos treinos das trilhas.'}
+      />
+
+      <Tabs className={styles.modeTabs} items={MODE_TABS} value={mode} onChange={setRankingsMode} ariaLabel="Modo do ranking" />
+
+      {loading ? (
+        <Card padding="lg"><LoadingList /></Card>
+      ) : !rows.length ? (
+        <Card padding="lg">
+          <EmptyState
+            icon={Trophy}
+            title="Ranking vazio por enquanto"
+            text={mode === 'pvp' ? 'Vença partidas na arena para aparecer aqui.' : 'Complete treinos nas trilhas para aparecer aqui.'}
+          />
+        </Card>
+      ) : (
+        <div className={styles.layout}>
+          <aside className={styles.aside}>
+            <ol className={styles.podium} aria-label="Pódio">
+              {[1, 2, 3].map((place) => (
+                <PodiumSpot key={place} place={place} row={podium[place - 1] || null} />
+              ))}
+            </ol>
+            <SelfCard row={selfRow} fallback={selfFallback} className={styles.selfAside} />
+          </aside>
+
+          <section className={styles.listCol} aria-label="Classificação">
+            {rest.length ? (
+              <ol className={styles.list} start={4}>
+                {rest.map((row) => <RankRow key={row.key} row={row} />)}
+              </ol>
+            ) : (
+              <p className={styles.note}>Só três jogadores no ranking até agora. Que tal entrar nessa lista?</p>
+            )}
+          </section>
+
+          <SelfCard row={selfRow} fallback={selfFallback} className={styles.selfBar} />
+        </div>
+      )}
     </div>
   );
 }

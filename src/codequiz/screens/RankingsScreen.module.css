@@ -1,0 +1,365 @@
+.screen {
+  display: grid;
+  gap: var(--cq-space-4);
+  animation: cq-fade-in var(--cq-dur-slow) var(--cq-ease-out);
+}
+
+.screen > header {
+  margin-bottom: 0;
+}
+
+.modeTabs {
+  justify-self: stretch;
+}
+
+.layout {
+  display: grid;
+  gap: var(--cq-space-5);
+}
+
+.aside,
+.listCol {
+  display: grid;
+  gap: var(--cq-space-4);
+  align-content: start;
+  min-width: 0;
+}
+
+/* ---------------------------------------------------------------- */
+/* Pódio */
+.podium {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-areas: 'p2 p1 p3';
+  align-items: end;
+  gap: var(--cq-space-2);
+  margin: 0;
+  padding: var(--cq-space-2) 0 var(--cq-space-1);
+  list-style: none;
+}
+
+.spot {
+  display: grid;
+  min-width: 0;
+  animation: cq-slide-up var(--cq-dur-slow) var(--cq-ease-out) both;
+}
+
+.place1 { grid-area: p1; animation-delay: 0.12s; }
+.place2 { grid-area: p2; }
+.place3 { grid-area: p3; animation-delay: 0.06s; }
+
+.spotCard {
+  position: relative;
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: var(--cq-space-4) var(--cq-space-2) var(--cq-space-3);
+  border-radius: var(--cq-radius-lg) var(--cq-radius-lg) 0 0;
+  background: var(--cq-surface-1);
+  box-shadow: inset 0 0 0 1px var(--cq-border);
+  overflow: hidden;
+  isolation: isolate;
+  text-align: center;
+}
+
+.place1 .spotCard {
+  padding-top: calc(var(--cq-space-6) + 6px);
+  box-shadow: inset 0 0 0 2px rgba(255, 210, 74, 0.6), 0 0 40px rgba(255, 210, 74, 0.16);
+}
+
+.spotSelf {
+  box-shadow: inset 0 0 0 2px rgba(166, 144, 255, 0.85);
+}
+
+.spotEmpty {
+  opacity: 0.6;
+}
+
+.emptyAvatar {
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.06);
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.12);
+  color: var(--cq-text-3);
+  font-family: var(--cq-font-display);
+  font-size: var(--cq-text-2xl);
+}
+
+.crown {
+  position: absolute !important;
+  top: 8px;
+  left: 50%;
+  z-index: 3 !important;
+  width: 28px;
+  height: 28px;
+  color: var(--cq-gold);
+  filter: drop-shadow(0 2px 0 var(--cq-gold-dark));
+  transform: translateX(-50%);
+  animation: cq-float 2.6s ease-in-out infinite;
+}
+
+.spotName {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--cq-font-display);
+  font-size: var(--cq-text-md);
+  font-weight: 700;
+  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.3);
+}
+
+.spotPoints {
+  font-family: var(--cq-font-display);
+  font-size: var(--cq-text-lg);
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.spotPoints small,
+.rowPoints small {
+  margin-left: 3px;
+  color: var(--cq-text-3);
+  font-family: var(--cq-font-body);
+  font-size: var(--cq-text-xs);
+  font-weight: 800;
+}
+
+.pedestal {
+  display: grid;
+  place-items: center;
+  border-radius: 0 0 var(--cq-radius-md) var(--cq-radius-md);
+  font-family: var(--cq-font-display);
+  font-size: var(--cq-text-2xl);
+  font-weight: 700;
+  line-height: 1;
+}
+
+.place1 .pedestal {
+  height: 60px;
+  background: var(--cq-grad-gold);
+  box-shadow: 0 4px 0 var(--cq-gold-dark);
+  color: #3a2600;
+}
+
+.place2 .pedestal {
+  height: 42px;
+  background: linear-gradient(135deg, #e9eef8, #aab6cf);
+  box-shadow: 0 4px 0 #7d8aa6;
+  color: #232b3d;
+}
+
+.place3 .pedestal {
+  height: 30px;
+  background: linear-gradient(135deg, #f2b07a, #c46a2b);
+  box-shadow: 0 4px 0 #8f4a1a;
+  color: #3b1a05;
+}
+
+/* Escurece fundos cosméticos para manter o texto legível */
+.shade {
+  position: absolute !important;
+  inset: 0;
+  z-index: 1 !important;
+  background: linear-gradient(180deg, rgba(10, 6, 34, 0.1), rgba(10, 6, 34, 0.68));
+  pointer-events: none;
+}
+
+/* ---------------------------------------------------------------- */
+/* Lista */
+.list {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--cq-space-3);
+  min-width: 0;
+  min-height: 60px;
+  padding: 8px var(--cq-space-3);
+  border-radius: var(--cq-radius-md);
+  background: var(--cq-surface-1);
+  box-shadow: inset 0 0 0 1px var(--cq-border);
+  overflow: hidden;
+  isolation: isolate;
+}
+
+.row .shade {
+  background: linear-gradient(90deg, rgba(10, 6, 34, 0.4), rgba(10, 6, 34, 0.78));
+}
+
+.rowSelf {
+  background-color: rgba(123, 92, 255, 0.2);
+  box-shadow: inset 0 0 0 2px rgba(166, 144, 255, 0.8);
+}
+
+.pos {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.08);
+  font-family: var(--cq-font-display);
+  font-size: var(--cq-text-sm);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.rowText {
+  flex: 1 1 auto;
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  line-height: 1.2;
+}
+
+.rowName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 800;
+}
+
+.rowMeta {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--cq-text-3);
+  font-size: var(--cq-text-xs);
+  font-weight: 700;
+}
+
+.rowTier {
+  flex-shrink: 0;
+}
+
+.rowPoints {
+  flex-shrink: 0;
+  min-width: 64px;
+  font-family: var(--cq-font-display);
+  font-size: var(--cq-text-lg);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.note {
+  padding: var(--cq-space-4);
+  border-radius: var(--cq-radius-md);
+  background: rgba(8, 5, 30, 0.35);
+  color: var(--cq-text-2);
+  font-weight: 700;
+  text-align: center;
+}
+
+/* ---------------------------------------------------------------- */
+/* Sua posição */
+.selfCard {
+  display: flex;
+  align-items: center;
+  gap: var(--cq-space-3);
+  min-width: 0;
+  padding: var(--cq-space-3) var(--cq-space-4);
+  border-radius: var(--cq-radius-lg);
+  background: var(--cq-grad-primary);
+  box-shadow: 0 4px 0 var(--cq-violet-dark), 0 14px 30px rgba(10, 6, 34, 0.45);
+}
+
+.selfCard .rowPoints small {
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.selfPos {
+  flex-shrink: 0;
+  min-width: 44px;
+  font-family: var(--cq-font-display);
+  font-size: var(--cq-text-xl);
+  font-weight: 700;
+  text-align: center;
+}
+
+.selfLabel {
+  color: rgba(255, 255, 255, 0.78);
+  font-size: var(--cq-text-xs);
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+/* Mobile/tablet: barra fixa acima das abas */
+.selfBar {
+  position: sticky;
+  bottom: calc(var(--cq-tabbar-height) + var(--cq-safe-bottom) + var(--cq-space-3));
+  z-index: 5;
+}
+
+.selfAside {
+  display: none;
+}
+
+@media (max-width: 419px) {
+  .rowTier {
+    display: none;
+  }
+}
+
+@media (min-width: 768px) {
+  .modeTabs {
+    justify-self: start;
+    min-width: 340px;
+  }
+
+  .podium {
+    gap: var(--cq-space-3);
+  }
+}
+
+@media (min-width: 1024px) {
+  .podium {
+    justify-self: center;
+    width: min(100%, 600px);
+  }
+
+  .selfBar {
+    bottom: var(--cq-space-4);
+  }
+}
+
+/* Desktop largo: pódio e sua posição fixos à esquerda, lista à direita */
+@media (min-width: 1200px) {
+  .layout {
+    grid-template-columns: minmax(320px, 400px) minmax(0, 1fr);
+    align-items: start;
+    gap: var(--cq-space-6);
+  }
+
+  .podium {
+    width: 100%;
+  }
+
+  .aside {
+    position: sticky;
+    top: var(--cq-space-8);
+  }
+
+  .selfBar {
+    display: none;
+  }
+
+  .selfAside {
+    display: flex;
+  }
+}
