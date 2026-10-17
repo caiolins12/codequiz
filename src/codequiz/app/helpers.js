@@ -3024,7 +3024,6 @@ export const PRELOAD_RUNTIME_CHALLENGE_INTERVAL_MS = 18000;
 export const PROGRESS_RECOVERY_RETRY_MS = 6000;
 export const PROGRESS_FORCED_RESET_GUARD_MS = 1200;
 export const NICKNAME_RULE_COPY = 'Use 3 a 12 caracteres. Letras, números, espaços, . _ ou -.';
-export const ADMIN_PANEL_PASSWORD = 'admin';
 export const PVP_EMOJI_STORAGE_PREFIX = 'codequiz_pvp_battle_emojis_v1';
 export const PVP_SEQUENCE_CURSOR_STORAGE_PREFIX = 'codequiz_pvp_sequence_cursor_v1';
 export const PVP_SEQUENCE_RECENT_STARTS_STORAGE_PREFIX = 'codequiz_pvp_sequence_recent_starts_v1';

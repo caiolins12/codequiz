@@ -2014,24 +2014,10 @@ async function getNode(path) {
   return snap.exists() ? snap.val() : null;
 }
 
+// Só o admin grava daemon_control (regra no banco); sem registro, valem os padrões.
 export async function getBotArenaDaemonControl() {
-  const nowIso = new Date().toISOString();
   const row = await getNode(BOT_DAEMON_CONTROL_PATH).catch(() => null);
-  const normalized = normalizeBotArenaDaemonControl(row);
-  const shouldHydrateDefaults = !row
-    || typeof row !== 'object'
-    || typeof row.arena_enabled !== 'boolean'
-    || typeof row.pvp_enabled !== 'boolean'
-    || typeof row.quiz_enabled !== 'boolean';
-  if (shouldHydrateDefaults) {
-    const next = {
-      ...normalized,
-      updated_at: normalized.updated_at || nowIso
-    };
-    await set(ref(firebaseDb, BOT_DAEMON_CONTROL_PATH), next).catch(() => null);
-    return next;
-  }
-  return normalized;
+  return normalizeBotArenaDaemonControl(row);
 }
 
 export async function setBotArenaDaemonControl(nextControl, actorId = '') {
