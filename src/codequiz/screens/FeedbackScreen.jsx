@@ -37,7 +37,7 @@ export default function FeedbackScreen({ vm }) {
 
   return (
     <div className={game.game}>
-      <main className={game.stage}>
+      <main className={cx(game.stage, styles.feedbackStage)}>
         <section className={cx(styles.hero, tone)} aria-live="polite">
           <span className={styles.heroIcon} aria-hidden="true"><Icon strokeWidth={2.6} /></span>
           <h1 className={styles.heroTitle}>{title}</h1>
@@ -62,7 +62,7 @@ export default function FeedbackScreen({ vm }) {
           </Card>
         ) : null}
 
-        <Card padding="lg">
+        <Card padding="lg" className={styles.explainCard}>
           <div className={styles.explain}>
             <span className={styles.explainIcon} aria-hidden="true"><Lightbulb strokeWidth={2.4} /></span>
             <p>

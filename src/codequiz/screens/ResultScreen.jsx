@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import {
   AlarmClock,
   ArrowRight,
@@ -27,6 +28,7 @@ import {
   ProgressRing,
   SectionHeader,
   StatTile,
+  Tabs,
   XpIcon,
   cx
 } from '../ui';
@@ -68,13 +70,26 @@ export default function ResultScreen({ vm }) {
   const review = Array.isArray(resultState?.questionReview) ? resultState.questionReview : [];
   const unlocked = Array.isArray(resultState?.unlockedAchievements) ? resultState.unlockedAchievements : [];
   const ranking = Array.isArray(quizRankingRows) ? quizRankingRows.slice(0, 5) : [];
+  // Mobile: o resultado vira três sub-telas (sem rolagem longa); no desktop tudo aparece junto.
+  const [panel, setPanel] = useState('summary');
+  const panelTabs = [
+    { value: 'summary', label: 'Resumo' },
+    { value: 'review', label: 'Revisão', count: review.length || undefined },
+    { value: 'ranking', label: 'Ranking' }
+  ];
+  const playAgain = () => setScreen('difficulty');
+  const goHome = () => {
+    resetQuizFlow();
+    setScreen('home');
+  };
 
   return (
     <div className={game.game}>
       {tier !== 'low' && resultState?.rewardsCollected ? <Confetti count={70} seed={correct + total} /> : null}
-      <main className={styles.resultLayout}>
-        <div className={styles.column}>
-          <section className={cx(styles.hero, styles[tier])}>
+      <Tabs className={styles.resultTabs} items={panelTabs} value={panel} onChange={setPanel} block size="sm" ariaLabel="Seções do resultado" />
+      <main className={cx(styles.resultLayout, styles[`show_${panel}`])}>
+        <div className={cx(styles.column, styles.summaryPanel)}>
+          <section className={cx(styles.hero, styles[tier], styles.resultHero)}>
             <span className={styles.heroIcon} aria-hidden="true"><HeroIcon strokeWidth={2.4} /></span>
             <h1 className={styles.heroTitle}>{heroTitle}</h1>
             <div className={styles.stars} role="img" aria-label={`${stars} de 3 estrelas`}>
@@ -89,7 +104,7 @@ export default function ResultScreen({ vm }) {
             </div>
           </section>
 
-          <Card padding="lg">
+          <Card padding="lg" className={styles.scoreCard}>
             <div className={styles.scoreRow}>
               <ProgressRing value={scorePct} size={96} stroke={10} tone={tier === 'low' ? 'violet' : 'lime'} label="Precisão">
                 <span className={styles.scoreValue}>
@@ -101,6 +116,14 @@ export default function ResultScreen({ vm }) {
                 <span className={styles.scoreBig}>{correct}/{total}</span>
                 <span className={styles.scoreSmall}>acertos</span>
               </span>
+            </div>
+            {/* Mobile: barra de XP dentro do card de pontuação */}
+            <div className={cx(styles.xpLine, styles.scoreXp)}>
+              <span className={styles.xpLabel}>
+                <span>Nível {progress?.level || 1}</span>
+                <span>{progress?.xp || 0}/{xpForNextLevel} XP</span>
+              </span>
+              <ProgressBar value={xpPercent} tone="blue" size="sm" label="Progresso de XP" />
             </div>
           </Card>
 
@@ -117,7 +140,7 @@ export default function ResultScreen({ vm }) {
             </div>
           ) : null}
 
-          <Card padding="lg" className={styles.xpLine}>
+          <Card padding="lg" className={cx(styles.xpLine, styles.xpCard)}>
             <span className={styles.xpLabel}>
               <span>Nível {progress?.level || 1}</span>
               <span>{progress?.xp || 0}/{xpForNextLevel} XP</span>
@@ -126,7 +149,15 @@ export default function ResultScreen({ vm }) {
           </Card>
 
           {unlocked.length ? (
-            <Card padding="lg">
+            <button type="button" className={styles.passCompact} onClick={() => setScreen('achievements')}>
+              <Ticket aria-hidden="true" strokeWidth={2.4} />
+              <span>{unlocked.length} etapa{unlocked.length === 1 ? '' : 's'} do passe pronta{unlocked.length === 1 ? '' : 's'}</span>
+              <ChevronRight aria-hidden="true" strokeWidth={2.6} />
+            </button>
+          ) : null}
+
+          {unlocked.length ? (
+            <Card padding="lg" className={styles.passCard}>
               <SectionHeader title="Passe de Evolução" subtitle="Etapas prontas para coletar" icon={Ticket} />
               <ul className={styles.list}>
                 {unlocked.map((achievement) => (
@@ -148,18 +179,10 @@ export default function ResultScreen({ vm }) {
           ) : null}
 
           <div className={styles.actionsRow}>
-            <Button size="lg" variant="success" iconRight={ArrowRight} onClick={() => setScreen('difficulty')}>
+            <Button size="lg" variant="success" iconRight={ArrowRight} onClick={playAgain}>
               Novo desafio
             </Button>
-            <Button
-              size="lg"
-              variant="secondary"
-              icon={House}
-              onClick={() => {
-                resetQuizFlow();
-                setScreen('home');
-              }}
-            >
+            <Button size="lg" variant="secondary" icon={House} onClick={goHome}>
               Voltar ao início
             </Button>
           </div>
@@ -167,7 +190,7 @@ export default function ResultScreen({ vm }) {
 
         <div className={styles.column}>
           {review.length ? (
-            <Card padding="lg">
+            <Card padding="lg" className={styles.reviewPanel}>
               <SectionHeader title="Revisão da rodada" subtitle="Toque numa pergunta para ver a explicação." icon={BookOpenCheck} />
               <ol className={styles.list}>
                 {review.map((row, index) => {
@@ -215,7 +238,7 @@ export default function ResultScreen({ vm }) {
             </Card>
           ) : null}
 
-          <Card padding="lg">
+          <Card padding="lg" className={styles.rankingPanel}>
             <SectionHeader title="Ranking deste quiz" icon={Trophy} />
             {quizRankingLoading ? (
               <p className={styles.muted}>Carregando ranking...</p>
@@ -240,6 +263,14 @@ export default function ResultScreen({ vm }) {
           </Card>
         </div>
       </main>
+
+      {/* Mobile: ações fixas no rodapé */}
+      <footer className={cx(game.actions, styles.resultFooter)}>
+        <div className={styles.footerRow}>
+          <Button variant="secondary" icon={House} onClick={goHome} aria-label="Voltar ao início" />
+          <Button variant="success" block iconRight={ArrowRight} onClick={playAgain}>Novo desafio</Button>
+        </div>
+      </footer>
     </div>
   );
 }

@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { DoorOpen, Music2, Swords, VolumeX } from 'lucide-react';
 import { Badge, Button, IconButton, Modal, TimerDisplay, cx } from '../ui';
 import AnswerOptions from './shared/AnswerOptions';
-import { EmojiBar, EmojiFxLayer, ScorePlayer, SidePlayer, battleStyles as styles } from './shared/BattleParts';
+import { EmojiBar, EmojiFxLayer, EmojiToggle, ScorePlayer, SidePlayer, battleStyles as styles } from './shared/BattleParts';
 import { playerViewFromShop } from './shared/players';
 import QuestionCard from './shared/QuestionCard';
 
@@ -143,7 +143,16 @@ export default function PvpDuelScreen({ vm }) {
         <SidePlayer player={player2} score={score2} me={!meIsPlayer1 && !!selfId} answered={answeredStatus && pvpHasPlayer2Answer} />
       </div>
 
-      <footer className={styles.footer}>
+      <footer className={cx(styles.footer, styles.footerDuel)}>
+        {!pvpIsRoundResult ? (
+          <EmojiToggle
+            emojis={pvpBattleEmojis}
+            onSend={sendPvpEmoji}
+            cooldownActive={pvpEmojiCooldownActive}
+            cooldownPct={pvpEmojiCooldownFillPct}
+            cooldownLabel={pvpEmojiCooldownLabel}
+          />
+        ) : null}
         <Button size="xl" variant="success" block disabled={!canConfirm} onClick={confirmPvpAnswer}>
           Confirmar resposta
         </Button>
@@ -155,6 +164,7 @@ export default function PvpDuelScreen({ vm }) {
         ) : null}
         {!pvpIsRoundResult ? (
           <EmojiBar
+            className={styles.emojiBarWide}
             emojis={pvpBattleEmojis}
             onSend={sendPvpEmoji}
             cooldownActive={pvpEmojiCooldownActive}

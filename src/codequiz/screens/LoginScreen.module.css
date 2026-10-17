@@ -414,3 +414,88 @@
     display: none;
   }
 }
+
+/* Mobile/tablet: tela de abertura que cabe inteira, sem rolagem */
+@media (max-width: 1023px) {
+  .layout {
+    gap: var(--cq-space-4);
+  }
+
+  .hero {
+    gap: var(--cq-space-3);
+  }
+
+  .heroTop {
+    gap: var(--cq-space-2);
+  }
+
+  .brandMark {
+    width: 46px;
+    height: 46px;
+    border-radius: 15px;
+    font-size: 17px;
+  }
+
+  .brandName {
+    font-size: 1.5rem;
+  }
+
+  .artMobile {
+    height: 170px;
+  }
+
+  .artMobile .artCard {
+    gap: 8px;
+    padding: 14px;
+  }
+
+  .artMobile .artAnswer {
+    height: 30px;
+  }
+
+  .artMobile .artChip {
+    padding: 6px 10px;
+    font-size: var(--cq-text-sm);
+  }
+
+  .title {
+    font-size: var(--cq-text-3xl);
+  }
+
+  .lead {
+    font-size: var(--cq-text-md);
+  }
+
+  .features {
+    flex-wrap: nowrap;
+    gap: 6px;
+  }
+
+  .feature {
+    gap: 6px;
+    padding: 4px 10px 4px 4px;
+    font-size: var(--cq-text-xs);
+    white-space: nowrap;
+  }
+
+  .featureIcon {
+    width: 24px;
+    height: 24px;
+  }
+
+  .featureIcon svg {
+    width: 14px;
+    height: 14px;
+  }
+
+  .card {
+    gap: var(--cq-space-3);
+    padding: var(--cq-space-4);
+  }
+}
+
+@media (max-width: 1023px) and (max-height: 760px) {
+  .trust {
+    display: none;
+  }
+}

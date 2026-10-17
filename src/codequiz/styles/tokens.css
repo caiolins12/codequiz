@@ -124,11 +124,13 @@
   --cq-z-nav: 40;
   --cq-z-overlay: 80;
   --cq-z-modal: 100;
+  --cq-z-fx: 120;
   --cq-z-toast: 140;
 
   /* Layout */
   --cq-sidebar-width: 264px;
-  --cq-tabbar-height: 64px;
+  /* Altura real da barra de abas (6 + aba de 59 + 6); a barra usa height fixa com este valor */
+  --cq-tabbar-height: 72px;
   --cq-topbar-height: 60px;
   --cq-content-max: 1180px;
   --cq-safe-top: env(safe-area-inset-top, 0px);

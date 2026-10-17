@@ -55,3 +55,28 @@
     padding: var(--cq-space-6) var(--cq-space-8);
   }
 }
+
+/* Mobile: o palco é flex; a pergunta nunca é espremida (se faltar espaço, rola o palco) */
+@media (max-width: 767px) {
+  .card {
+    flex-shrink: 0;
+    /* Só a sombra 3D: a difusa grande era cortada pelos limites do palco rolável */
+    box-shadow: 0 6px 0 rgba(0, 0, 0, 0.28);
+  }
+
+  /* Código mais compacto: um trecho de 4 linhas cabe inteiro sem rolar o card */
+  .code {
+    margin-top: 10px;
+    padding: 10px 12px;
+    font-size: 0.8125rem;
+    line-height: 1.45;
+  }
+}
+
+/* Celulares baixos: a pergunta cede espaço para as alternativas (rolagem só dentro do card) */
+@media (max-width: 767px) and (max-height: 720px) {
+  .scroll {
+    max-height: 26dvh;
+    padding: var(--cq-space-4);
+  }
+}

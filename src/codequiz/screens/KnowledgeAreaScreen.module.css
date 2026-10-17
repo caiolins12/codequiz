@@ -18,3 +18,31 @@
     gap: var(--cq-space-5);
   }
 }
+
+/* Mobile: as três áreas dividem a altura disponível */
+@media (max-width: 767px) {
+  .screen {
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+    gap: var(--cq-space-3);
+  }
+
+  .screen > header {
+    margin-bottom: 0;
+  }
+
+  .screen > header p {
+    display: none;
+  }
+
+  .list {
+    flex: 1 1 auto;
+    grid-auto-rows: minmax(0, 1fr);
+    gap: var(--cq-space-3);
+  }
+
+  .list > li > * {
+    height: 100%;
+  }
+}

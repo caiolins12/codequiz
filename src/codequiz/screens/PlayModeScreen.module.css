@@ -180,3 +180,122 @@
     gap: var(--cq-space-4);
   }
 }
+
+/* ---------------------------------------------------------------- */
+/* Mobile: modos dividem a altura da tela e áreas viram atalhos compactos */
+.areaTiles {
+  display: none;
+}
+
+@media (max-width: 767px) {
+  .screen {
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+    gap: var(--cq-space-3);
+  }
+
+  .screen > header {
+    margin-bottom: 0;
+  }
+
+  .screen > header p {
+    display: none;
+  }
+
+  .modes {
+    flex: 1 1 auto;
+    grid-auto-rows: minmax(0, 1fr);
+    gap: var(--cq-space-3);
+  }
+
+  .mode {
+    align-content: space-between;
+    gap: var(--cq-space-3);
+    padding: var(--cq-space-4);
+  }
+
+  .modeIcon {
+    width: 48px;
+    height: 48px;
+    border-radius: 15px;
+  }
+
+  .modeIcon svg {
+    width: 26px;
+    height: 26px;
+  }
+
+  .modeTitle {
+    font-size: var(--cq-text-2xl);
+  }
+
+  .point {
+    font-size: var(--cq-text-sm);
+  }
+
+  .cta {
+    min-height: 44px;
+    font-size: var(--cq-text-md);
+  }
+
+  .areas {
+    display: none;
+  }
+
+  .areaTiles {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: var(--cq-space-2);
+  }
+
+  .areaTile {
+    display: grid;
+    justify-items: center;
+    gap: 2px;
+    min-width: 0;
+    padding: 10px 6px;
+    border: 0;
+    border-radius: var(--cq-radius-lg);
+    background:
+      linear-gradient(160deg, color-mix(in srgb, var(--area-color) 28%, transparent), transparent 75%),
+      var(--cq-surface-1);
+    box-shadow: 0 4px 0 color-mix(in srgb, var(--area-color) 40%, #0b0820), inset 0 0 0 1px color-mix(in srgb, var(--area-color) 40%, transparent);
+    color: inherit;
+    font: inherit;
+    text-align: center;
+    cursor: pointer;
+  }
+
+  .areaTile:active {
+    transform: translateY(2px);
+  }
+
+  .areaTileIcon {
+    font-size: 24px;
+    line-height: 1.2;
+  }
+
+  .areaTileName {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-family: var(--cq-font-display);
+    font-size: var(--cq-text-sm);
+    font-weight: 700;
+  }
+
+  .areaTileMeta {
+    color: var(--cq-text-3);
+    font-size: 0.6875rem;
+    font-weight: 800;
+  }
+}
+
+/* Telas mais baixas: sem a lista de vantagens nos cards de modo */
+@media (max-width: 767px) and (max-height: 820px) {
+  .points {
+    display: none;
+  }
+}

@@ -513,3 +513,232 @@
     font-size: var(--cq-text-3xl);
   }
 }
+
+/* ---------------------------------------------------------------- */
+/* Mobile: tela única sem rolagem (perfil compacto, jogar e atalhos) */
+.miniStats,
+.quick {
+  display: none;
+}
+
+@media (max-width: 767px) {
+  .screen {
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+    gap: var(--cq-space-3);
+  }
+
+  .grid {
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+    gap: var(--cq-space-3);
+  }
+
+  .hero {
+    gap: var(--cq-space-3);
+    padding: var(--cq-space-4);
+  }
+
+  .heroTop {
+    gap: var(--cq-space-3);
+  }
+
+  .heroAvatar.heroAvatar {
+    --avatar-size: 64px;
+  }
+
+  .heroEyebrow {
+    display: none;
+  }
+
+  .heroInfo {
+    gap: 6px;
+  }
+
+  .heroName {
+    font-size: var(--cq-text-xl);
+  }
+
+  .heroBadges {
+    flex-wrap: nowrap;
+    gap: 4px;
+  }
+
+  .heroBadges > * {
+    padding: 2px 8px;
+    font-size: 0.6875rem;
+    white-space: nowrap;
+  }
+
+  .xpRow {
+    gap: 6px;
+    padding: var(--cq-space-2) var(--cq-space-3);
+  }
+
+  .xpLevel {
+    font-size: var(--cq-text-md);
+  }
+
+  .heroStats {
+    display: none;
+  }
+
+  .miniStats {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 6px;
+    margin: 0;
+  }
+
+  .miniStats div {
+    display: flex;
+    flex-direction: column-reverse;
+    align-items: center;
+    gap: 2px;
+    padding: 6px 4px;
+    border-radius: var(--cq-radius-md);
+    background: rgba(8, 5, 30, 0.45);
+  }
+
+  .miniStats dt {
+    color: rgba(255, 255, 255, 0.72);
+    font-size: 0.6875rem;
+    font-weight: 800;
+  }
+
+  .miniStats dd {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin: 0;
+    font-family: var(--cq-font-display);
+    font-size: var(--cq-text-md);
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .miniStats dd svg {
+    width: 14px;
+    height: 14px;
+    color: var(--cq-gold);
+  }
+
+  .play {
+    flex: 1 1 auto;
+    min-height: 128px;
+  }
+
+  .playCard {
+    min-height: 0;
+    gap: var(--cq-space-2);
+    padding: 14px;
+  }
+
+  .continueCard,
+  .passCard,
+  .rankCard,
+  .stats {
+    display: none;
+  }
+
+  .quick {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: var(--cq-space-2);
+  }
+
+  .quickTile {
+    position: relative;
+    display: grid;
+    align-content: start;
+    gap: 4px;
+    min-width: 0;
+    padding: 10px var(--cq-space-3);
+    border: 0;
+    border-radius: var(--cq-radius-lg);
+    background: var(--cq-surface-1);
+    box-shadow: var(--cq-shadow-card), inset 0 0 0 1px color-mix(in srgb, var(--quick-color) 35%, transparent);
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .quickTile:active {
+    transform: translateY(1px);
+  }
+
+  .quickIcon {
+    display: grid;
+    place-items: center;
+    width: 34px;
+    height: 34px;
+    border-radius: 10px;
+    background: color-mix(in srgb, var(--quick-color) 22%, transparent);
+    color: var(--quick-color);
+    font-size: 18px;
+  }
+
+  .quickIcon svg {
+    width: 18px;
+    height: 18px;
+  }
+
+  .quickLabel {
+    margin-top: 2px;
+    color: var(--cq-text-3);
+    font-size: 0.6875rem;
+    font-weight: 900;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+
+  .quickValue {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-family: var(--cq-font-display);
+    font-size: var(--cq-text-sm);
+    font-weight: 700;
+  }
+
+  .quickHint {
+    color: var(--cq-text-3);
+    font-size: 0.6875rem;
+    font-weight: 700;
+  }
+
+  .quickBadge {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    display: grid;
+    place-items: center;
+    min-width: 20px;
+    height: 20px;
+    padding: 0 6px;
+    border-radius: var(--cq-radius-pill);
+    background: var(--cq-lime);
+    color: #062a14;
+    font-size: 0.75rem;
+    font-weight: 900;
+  }
+}
+
+/* Telas baixas (ex.: iPhone SE): reduz o herói */
+@media (max-width: 767px) and (max-height: 700px) {
+  .xpRow {
+    display: none;
+  }
+
+  .playIcon {
+    width: 42px;
+    height: 42px;
+  }
+
+  .playTitle {
+    font-size: var(--cq-text-xl);
+  }
+}

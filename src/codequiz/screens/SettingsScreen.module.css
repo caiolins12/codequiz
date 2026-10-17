@@ -191,3 +191,45 @@
     gap: var(--cq-space-5);
   }
 }
+
+/* Abas das seções: só no mobile */
+.panelTabs {
+  display: none;
+}
+
+@media (max-width: 767px) {
+  .screen {
+    gap: var(--cq-space-3);
+  }
+
+  .panelTabs {
+    display: flex;
+  }
+
+  .column {
+    display: contents;
+  }
+
+  .show_account .audioPanel,
+  .show_account .aboutPanel,
+  .show_audio .accountPanel,
+  .show_audio .aboutPanel,
+  .show_about .accountPanel,
+  .show_about .audioPanel {
+    display: none;
+  }
+
+  .layout .card {
+    gap: var(--cq-space-3);
+    padding: var(--cq-space-4);
+  }
+
+  /* A aba já diz qual é a seção; o cabeçalho do card só repetiria */
+  .layout .card > :first-child {
+    display: none;
+  }
+
+  .setting {
+    padding: var(--cq-space-3);
+  }
+}

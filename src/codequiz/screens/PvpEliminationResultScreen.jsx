@@ -67,7 +67,7 @@ export default function PvpEliminationResultScreen({ vm }) {
         </div>
 
         <div className={outcome.splitSide}>
-          <Card padding="lg">
+          <Card padding="lg" className={outcome.rankCard}>
             <SectionHeader title="Classificação final" icon={ListOrdered} />
             <ol className={outcome.list}>
               {rows.map((entry, index) => {

@@ -62,7 +62,7 @@ export default function TopicScreen({ vm }) {
           </div>
         </aside>
 
-        <ul className={styles.grid}>
+        <ul className={cx(styles.grid, styles.topicGrid)}>
           {selectedTopics.map((topic) => {
             const pct = Math.round(Number(topicProgress.get(topic.id) || 0));
             const status = topicStatus(pct);

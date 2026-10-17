@@ -64,6 +64,26 @@ export default function PlayModeScreen({ vm }) {
         />
       </section>
 
+      {/* Mobile: atalhos das áreas em uma linha */}
+      <nav className={styles.areaTiles} aria-label="Atalhos do treino">
+        {KNOWLEDGE_AREAS.map((area) => {
+          const summary = getAreaSummary(area.id, languageProgress);
+          return (
+            <button
+              key={area.id}
+              type="button"
+              className={styles.areaTile}
+              style={{ '--area-color': area.color }}
+              onClick={() => chooseKnowledgeAreaForPve(area.id)}
+            >
+              <span className={styles.areaTileIcon} aria-hidden="true">{area.icon}</span>
+              <span className={styles.areaTileName}>{area.name}</span>
+              <span className={styles.areaTileMeta}>{summary.tracks} trilhas · {summary.progress}%</span>
+            </button>
+          );
+        })}
+      </nav>
+
       <section className={styles.areas}>
         <SectionHeader title="Atalhos do treino" subtitle="Vá direto para as trilhas de uma área." />
         <ul className={styles.areaList}>

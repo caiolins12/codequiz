@@ -67,6 +67,10 @@
   font-weight: 800;
 }
 
+.meta > span {
+  white-space: nowrap;
+}
+
 .metaBar {
   flex: 1 1 auto;
   max-width: 160px;

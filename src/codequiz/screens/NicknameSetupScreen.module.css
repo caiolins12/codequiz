@@ -169,3 +169,35 @@
     padding: var(--cq-space-8);
   }
 }
+
+/* Mobile: cartão mais enxuto para caber sem rolagem */
+@media (max-width: 767px) {
+  .screen {
+    padding-top: calc(var(--cq-space-4) + var(--cq-safe-top));
+    padding-bottom: calc(var(--cq-space-4) + var(--cq-safe-bottom));
+  }
+
+  .card {
+    gap: var(--cq-space-3);
+    padding: var(--cq-space-5) var(--cq-space-4);
+  }
+
+  .welcomeIcon {
+    width: 52px;
+    height: 52px;
+    border-radius: 17px;
+  }
+
+  .welcomeIcon svg {
+    width: 28px;
+    height: 28px;
+  }
+
+  .title {
+    font-size: var(--cq-text-2xl);
+  }
+
+  .subtitle {
+    font-size: var(--cq-text-sm);
+  }
+}

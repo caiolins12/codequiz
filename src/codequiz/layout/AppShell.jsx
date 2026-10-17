@@ -273,7 +273,10 @@ export default function AppShell({
           {tabsMode && showTopBar ? (
             <MobileTopBar profile={profile} music={music} onOpenMenu={() => setMenuPlacement('topbar')} />
           ) : null}
-          <main className={tabsMode ? styles.content : styles.focusContent} id="cq-main">
+          <main
+            className={tabsMode ? cx(styles.content, showTopBar ? styles.contentWithBar : '') : styles.focusContent}
+            id="cq-main"
+          >
             {children}
           </main>
         </div>

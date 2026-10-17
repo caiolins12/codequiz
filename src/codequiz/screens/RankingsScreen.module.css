@@ -302,7 +302,7 @@
 /* Mobile/tablet: barra fixa acima das abas */
 .selfBar {
   position: sticky;
-  bottom: calc(var(--cq-tabbar-height) + var(--cq-safe-bottom) + var(--cq-space-3));
+  bottom: calc(var(--cq-tabbar-height) + var(--cq-safe-bottom) + var(--cq-space-4));
   z-index: 5;
 }
 

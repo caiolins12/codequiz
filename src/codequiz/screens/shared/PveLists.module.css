@@ -251,3 +251,125 @@
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+/* ---------------------------------------------------------------- */
+/* Mobile: listas cabem na tela (um tema por vez e tópicos em grade) */
+.sectionTabs {
+  display: none;
+}
+
+@media (max-width: 767px) {
+  .screen {
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+    gap: var(--cq-space-3);
+  }
+
+  .screen > header {
+    margin-bottom: 0;
+  }
+
+  .screen > header p {
+    display: none;
+  }
+
+  /* Temas em grade de 2 colunas dentro das margens (sem fileira rolando até a borda da tela) */
+  .sectionTabs {
+    display: block;
+  }
+
+  .sectionTabs > div {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
+  }
+
+  .sectionTabs button[role='tab'] {
+    min-width: 0;
+    padding: 0 var(--cq-space-2);
+    font-size: var(--cq-text-xs);
+  }
+
+  .sectionTabs button[role='tab'] > span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .sectionInactive {
+    display: none;
+  }
+
+  .sectionHead {
+    display: none;
+  }
+
+  .grid {
+    gap: var(--cq-space-2);
+  }
+
+  .item {
+    gap: var(--cq-space-3);
+    padding: 12px var(--cq-space-3) 12px var(--cq-space-4);
+  }
+
+  .itemIcon {
+    width: 44px;
+    height: 44px;
+    border-radius: 14px;
+    font-size: 22px;
+  }
+
+  .itemName {
+    font-size: var(--cq-text-md);
+  }
+
+  .itemDesc {
+    -webkit-line-clamp: 1;
+    font-size: var(--cq-text-xs);
+  }
+
+  /* Tópicos: sem o card de resumo, em grade 2 colunas */
+  .summary {
+    display: none;
+  }
+
+  .topicGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .topicGrid .item {
+    grid-template-columns: minmax(0, 1fr);
+    align-content: start;
+    gap: 6px;
+    padding: 12px;
+  }
+
+  .topicGrid .chevron,
+  .topicGrid .itemDesc,
+  .topicGrid .counts {
+    display: none;
+  }
+
+  .topicGrid .itemTop {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+  }
+
+  .topicGrid .itemName {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    white-space: normal;
+    font-size: var(--cq-text-sm);
+    line-height: 1.2;
+  }
+
+  .topicGrid .itemIcon {
+    width: 40px;
+    height: 40px;
+    font-size: 20px;
+  }
+}

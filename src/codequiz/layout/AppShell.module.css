@@ -82,6 +82,35 @@
   min-height: 100dvh;
 }
 
+/* Mobile/tablet: o conteúdo ocupa exatamente o espaço entre a barra superior e as abas.
+   Telas que cabem na tela usam flex: 1 para se distribuir nesse espaço (sem rolagem). */
+@media (max-width: 1023px) {
+  .content {
+    display: flex;
+    flex-direction: column;
+    min-height: 100dvh;
+    /* Folga visível acima das abas (que têm sombra para cima) */
+    padding-top: calc(var(--cq-space-4) + var(--cq-safe-top));
+    padding-bottom: calc(var(--cq-tabbar-height) + var(--cq-safe-bottom) + var(--cq-space-5));
+  }
+
+  /* Com a barra superior, a área segura do topo já fica nela */
+  .contentWithBar {
+    min-height: calc(100dvh - var(--cq-topbar-height) - var(--cq-safe-top));
+    padding-top: var(--cq-space-4);
+  }
+}
+
+@media (max-width: 767px) {
+  .content {
+    padding-top: calc(var(--cq-space-3) + var(--cq-safe-top));
+  }
+
+  .contentWithBar {
+    padding-top: var(--cq-space-3);
+  }
+}
+
 @media (min-width: 768px) {
   .content {
     padding-left: var(--cq-space-6);
@@ -448,7 +477,7 @@
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 2px;
-  min-height: calc(var(--cq-tabbar-height) + var(--cq-safe-bottom));
+  height: calc(var(--cq-tabbar-height) + var(--cq-safe-bottom));
   padding: 6px calc(8px + var(--cq-safe-right)) calc(6px + var(--cq-safe-bottom)) calc(8px + var(--cq-safe-left));
   background: rgba(14, 10, 42, 0.92);
   backdrop-filter: blur(18px);

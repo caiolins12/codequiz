@@ -123,3 +123,48 @@
     min-height: 76px;
   }
 }
+
+/* Celulares: alternativas mais baixas para pergunta + 4 opções caberem sem rolagem.
+   O espaço entre elas desconta a sombra 3D (4px), para não parecerem coladas. */
+@media (max-width: 767px) {
+  .grid {
+    gap: var(--cq-space-3);
+  }
+
+  .option {
+    min-height: 52px;
+    padding: var(--cq-space-2) var(--cq-space-3) var(--cq-space-2) var(--cq-space-2);
+    font-size: var(--cq-text-md);
+  }
+
+  .letter {
+    width: 34px;
+    height: 34px;
+    border-radius: 10px;
+  }
+
+  /* Sem o brilho difuso: o anel branco já marca a escolha e nada vaza para fora do palco */
+  .selected {
+    box-shadow:
+      0 4px 0 var(--opt-shade),
+      0 0 0 3px #fff;
+  }
+}
+
+/* Celulares baixos (ex.: iPhone SE, Safari com barras): mais um pouco de compactação */
+@media (max-width: 767px) and (max-height: 720px) {
+  .grid {
+    gap: 10px;
+  }
+
+  .option {
+    min-height: 46px;
+    padding-top: 6px;
+    padding-bottom: 6px;
+  }
+
+  .letter {
+    width: 32px;
+    height: 32px;
+  }
+}

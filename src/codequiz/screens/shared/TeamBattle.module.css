@@ -173,3 +173,176 @@
     position: static;
   }
 }
+
+/* Mobile: times compactos no topo e palco com rolagem interna */
+@media (max-width: 767px) {
+  .layout {
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    min-height: 0;
+  }
+
+  .team {
+    gap: 4px;
+    padding: var(--cq-space-2);
+  }
+
+  .teamScore {
+    font-size: var(--cq-text-xl);
+  }
+
+  .member {
+    padding: 2px 4px;
+  }
+
+  .teamHead {
+    min-width: 0;
+  }
+
+  /* Card estreito: o selo de vencedor fica só com a coroa (texto segue para leitores de tela) */
+  .winnerText {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+  }
+
+  .stageCol {
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+
+  /* O placar mostra quem está duelando; o aviso extra só ocupa espaço */
+  .duelNow {
+    display: none;
+  }
+
+  .spectator {
+    padding: var(--cq-space-2) var(--cq-space-3);
+    font-size: var(--cq-text-sm);
+    line-height: 1.3;
+  }
+}
+
+/* Etiqueta "Seu time": só na faixa compacta do mobile (no desktop o nome já diz "(você)") */
+.youTag {
+  display: none;
+}
+
+/* Batalha em equipe no mobile: cada time vira uma faixa com avatares, quem está duelando e o placar */
+@media (max-width: 767px) {
+  .teams {
+    flex-shrink: 0;
+    padding-top: 6px;
+  }
+
+  .teams .team {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    padding: 6px 10px;
+  }
+
+  .teams .teamBlue,
+  .teams .teamBlue .members,
+  .teams .teamBlue .member {
+    flex-direction: row-reverse;
+  }
+
+  .teams .teamBlue .memberText {
+    text-align: right;
+  }
+
+  .youTag {
+    position: absolute;
+    top: -7px;
+    left: 50%;
+    z-index: 1;
+    display: block;
+    padding: 1px 8px;
+    border-radius: var(--cq-radius-pill);
+    background: var(--team-color);
+    color: #fff;
+    font-size: 0.625rem;
+    font-weight: 800;
+    letter-spacing: 0.06em;
+    line-height: 1.4;
+    text-transform: uppercase;
+    white-space: nowrap;
+    transform: translateX(-50%);
+  }
+
+  .teams .teamHead {
+    flex: 0 0 auto;
+    order: 2;
+  }
+
+  .teams .teamName {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+  }
+
+  .teams .members {
+    flex: 1 1 auto;
+    display: flex;
+    align-items: center;
+    min-width: 0;
+  }
+
+  .teams .member {
+    flex: 0 0 auto;
+    gap: 6px;
+    padding: 0;
+    background: none;
+    box-shadow: none;
+  }
+
+  /* Só quem está duelando mostra o nome; fica por último, colado ao placar */
+  .teams .memberText {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+  }
+
+  .teams .memberActive {
+    order: 2;
+    flex: 1 1 auto;
+    min-width: 0;
+    margin-left: -6px;
+  }
+
+  .teams .teamBlue .memberActive {
+    margin-right: -6px;
+    margin-left: 0;
+  }
+
+  .teams .memberActive .memberText {
+    position: static;
+    width: auto;
+    height: auto;
+    overflow: visible;
+    clip: auto;
+  }
+
+  .teams .memberActive .memberMeta {
+    display: none;
+  }
+
+  .teams .memberActive :global(.cq-avatar) {
+    z-index: 1;
+    box-shadow: 0 0 0 2px var(--cq-gold);
+  }
+}

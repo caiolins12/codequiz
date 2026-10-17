@@ -336,3 +336,124 @@ button.room:hover {
     width: min(100%, 420px);
   }
 }
+
+/* ---------------------------------------------------------------- */
+/* Mobile: cada etapa do lobby cabe na tela */
+@media (max-width: 767px) {
+  .screen {
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+    gap: var(--cq-space-3);
+  }
+
+  .screen > header {
+    margin-bottom: 0;
+  }
+
+  .screen > header p {
+    display: none;
+  }
+
+  /* Menu: os três modos dividem a altura */
+  .modes {
+    flex: 1 1 auto;
+    grid-auto-rows: minmax(0, 1fr);
+    gap: var(--cq-space-3);
+  }
+
+  .modes > li > * {
+    height: 100%;
+  }
+
+  .mode {
+    min-height: 0;
+    align-content: space-between;
+    gap: 6px;
+    padding: var(--cq-space-4);
+  }
+
+  .modeIcon {
+    width: 44px;
+    height: 44px;
+    border-radius: 14px;
+  }
+
+  .modeIcon svg {
+    width: 24px;
+    height: 24px;
+  }
+
+  .modeTitle {
+    font-size: var(--cq-text-xl);
+  }
+
+  .modeText {
+    display: -webkit-box;
+    overflow: hidden;
+    font-size: var(--cq-text-sm);
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
+
+  /* Duelo e eliminatória: configuração, emojis e a fila embaixo */
+  .layout {
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+    gap: var(--cq-space-3);
+  }
+
+  .config {
+    gap: var(--cq-space-3);
+    padding: var(--cq-space-4) !important;
+  }
+
+  .side {
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+    gap: var(--cq-space-3);
+  }
+
+  .side > :first-child {
+    order: 2;
+    margin-top: auto;
+  }
+
+  .emojiCard {
+    order: 1;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: var(--cq-space-2);
+    padding: var(--cq-space-3) !important;
+  }
+
+  .emojiCard > :first-child {
+    display: none;
+  }
+
+  .emojiRow {
+    flex-wrap: nowrap;
+    gap: 4px;
+  }
+
+  .emoji {
+    width: 34px;
+    height: 34px;
+    border-radius: 10px;
+    font-size: 19px;
+  }
+
+  /* Na busca o radar ocupa o espaço da configuração (já travada) */
+  .layoutSearching .config,
+  .layoutSearching .emojiCard {
+    display: none;
+  }
+
+  .layoutSearching .side > :first-child {
+    margin-top: 0;
+    flex: 1 1 auto;
+    align-content: center;
+  }
+}

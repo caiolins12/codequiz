@@ -21,7 +21,11 @@ function TeamResult({ side, label, members, winner, mine, buildCosmeticSnapshot,
     >
       <div className={team.teamHead}>
         <span className={team.teamName}>{label}{mine ? ' (você)' : ''}</span>
-        {winner ? <Badge tone="gold" variant="solid" size="sm" icon={Crown}>Venceu</Badge> : null}
+        {winner ? (
+          <Badge tone="gold" variant="solid" size="sm" icon={Crown}>
+            <span className={team.winnerText}>Venceu</span>
+          </Badge>
+        ) : null}
       </div>
       <ul className={team.members}>
         {members.map((member) => {

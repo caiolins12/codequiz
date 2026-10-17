@@ -1,7 +1,15 @@
+import { useState } from 'react';
 import { Headphones, Info, LogIn, LogOut, Music2, RefreshCw, ShieldCheck, UserRound, Volume2 } from 'lucide-react';
 import { AvatarImage, isImageAvatarValue } from '../app/helpers';
-import { Badge, Button, Card, EmptyState, PageHeader, RangeSlider, SectionHeader, Switch, TextField } from '../ui';
+import { Badge, Button, Card, EmptyState, PageHeader, RangeSlider, SectionHeader, Switch, Tabs, TextField, cx } from '../ui';
 import styles from './SettingsScreen.module.css';
+
+// Mobile: cada seção vira uma sub-tela (abas); no desktop tudo aparece junto.
+const PANEL_TABS = [
+  { value: 'account', label: 'Conta', icon: UserRound },
+  { value: 'audio', label: 'Áudio', icon: Headphones },
+  { value: 'about', label: 'Sobre', icon: Info }
+];
 
 const HINT_STATUS = {
   error: 'error',
@@ -55,6 +63,7 @@ export default function SettingsScreen({ vm }) {
     triggerAppBackNavigation,
     updateAudioSetting
   } = vm;
+  const [panel, setPanel] = useState('account');
 
   const header = (
     <PageHeader
@@ -84,9 +93,11 @@ export default function SettingsScreen({ vm }) {
     <div className={styles.screen}>
       {header}
 
-      <div className={styles.layout}>
+      <Tabs className={styles.panelTabs} items={PANEL_TABS} value={panel} onChange={setPanel} block size="sm" ariaLabel="Seções das configurações" />
+
+      <div className={cx(styles.layout, styles[`show_${panel}`])}>
         <div className={styles.column}>
-          <Card padding="lg" className={styles.card}>
+          <Card padding="lg" className={cx(styles.card, styles.accountPanel)}>
             <SectionHeader title="Conta" subtitle="Conta Google conectada e apelido público." icon={UserRound} />
 
             <div className={styles.account}>
@@ -144,7 +155,7 @@ export default function SettingsScreen({ vm }) {
         </div>
 
         <div className={styles.column}>
-          <Card padding="lg" className={styles.card}>
+          <Card padding="lg" className={cx(styles.card, styles.audioPanel)}>
             <SectionHeader title="Áudio" subtitle="Música e efeitos sonoros do jogo." icon={Headphones} />
             <AudioSetting
               icon={Music2}
@@ -170,7 +181,7 @@ export default function SettingsScreen({ vm }) {
             </AudioSetting>
           </Card>
 
-          <Card padding="lg" className={styles.card}>
+          <Card padding="lg" className={cx(styles.card, styles.aboutPanel)}>
             <SectionHeader title="Sobre o app" icon={Info} />
             <p className={styles.version}>
               <span className={styles.versionLabel}>Versão em uso</span>

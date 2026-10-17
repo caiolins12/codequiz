@@ -558,6 +558,44 @@
   text-transform: uppercase;
 }
 
+/* Mobile: herói sem aperto (selo no canto, título com a largura toda) e trilho sem barra de rolagem */
+@media (max-width: 767px) {
+  .hero {
+    position: relative;
+    gap: var(--cq-space-3);
+    padding: var(--cq-space-4);
+  }
+
+  .heroMain {
+    gap: var(--cq-space-3);
+  }
+
+  .heroIcon {
+    width: 52px;
+    height: 52px;
+    border-radius: 16px;
+    font-size: 28px;
+  }
+
+  .heroBadge {
+    position: absolute;
+    top: var(--cq-space-4);
+    right: var(--cq-space-4);
+  }
+
+  .heroTitle {
+    font-size: var(--cq-text-xl);
+  }
+
+  .track {
+    scrollbar-width: none;
+  }
+
+  .track::-webkit-scrollbar {
+    display: none;
+  }
+}
+
 @media (min-width: 768px) {
   .trackSection {
     margin: 0;

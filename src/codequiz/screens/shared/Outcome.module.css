@@ -473,13 +473,279 @@
   }
 }
 
-/* Telas estreitas: recompensas empilham ícone e valor para não quebrar o rótulo */
-@media (max-width: 479px) {
+/* Mobile: recompensas compactas (ícone ao lado do valor, rótulo embaixo) */
+@media (max-width: 767px) {
   .rewards > div {
-    flex-direction: column;
+    display: grid;
+    grid-template-columns: auto auto;
+    grid-template-areas: 'icon value' 'label label';
     justify-content: center;
-    gap: var(--cq-space-2);
-    padding: var(--cq-space-3) var(--cq-space-2);
+    align-items: center;
+    gap: 2px 6px;
+    padding: var(--cq-space-2);
     text-align: center;
+  }
+
+  .rewards > div > span:first-child {
+    grid-area: icon;
+    width: 26px;
+    height: 26px;
+    border-radius: 8px;
+  }
+
+  .rewards > div > span:first-child svg {
+    width: 16px;
+    height: 16px;
+  }
+
+  .rewards > div > span:last-child {
+    display: contents;
+  }
+
+  .rewards > div > span:last-child > span:first-child {
+    grid-area: value;
+  }
+
+  .rewards > div > span:last-child > span:last-child {
+    grid-area: label;
+  }
+}
+
+/* Mobile: herói compacto e explicação ocupando o espaço que sobra */
+@media (max-width: 767px) {
+  .hero {
+    gap: 4px;
+    padding: var(--cq-space-4);
+  }
+
+  .heroIcon {
+    width: 60px;
+    height: 60px;
+    border-radius: 20px;
+  }
+
+  .heroIcon svg {
+    width: 34px;
+    height: 34px;
+  }
+
+  .heroTitle {
+    margin-top: 4px;
+    font-size: var(--cq-text-2xl);
+  }
+
+  .heroText {
+    font-size: var(--cq-text-sm);
+  }
+
+  .feedbackStage {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .explainCard {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+  }
+}
+
+@media (max-width: 767px) {
+  /* Área rolável até as bordas da tela, com a margem devolvida como padding:
+     sombras e anéis dos cards não são cortados */
+  .split,
+  .resultLayout {
+    flex: 1 1 auto;
+    min-height: 0;
+    margin: 0 calc(-1 * var(--cq-space-4));
+    padding: 4px var(--cq-space-4) 8px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  /* Resultados PvP em grupo: herói menor e ações encostadas no rodapé */
+  .split {
+    display: flex;
+    flex-direction: column;
+    gap: var(--cq-space-3);
+  }
+
+  .splitMain,
+  .splitSide,
+  .splitActions {
+    gap: var(--cq-space-3);
+  }
+
+  .splitActions {
+    margin-top: auto;
+  }
+
+  .split .hero {
+    padding: var(--cq-space-3) var(--cq-space-4);
+  }
+
+  .split .heroIcon {
+    width: 52px;
+    height: 52px;
+    border-radius: 18px;
+  }
+
+  .split .heroIcon svg {
+    width: 30px;
+    height: 30px;
+  }
+
+  .split .heroScore {
+    margin-top: 0;
+  }
+
+  .split .rankCard {
+    padding: var(--cq-space-3);
+  }
+}
+
+/* ---------------------------------------------------------------- */
+/* Resultado do quiz: sub-telas no mobile (Resumo, Revisão, Ranking) */
+.resultTabs,
+.scoreXp,
+.passCompact,
+.resultFooter {
+  display: none;
+}
+
+@media (max-width: 767px) {
+  .resultTabs {
+    display: flex;
+    flex-shrink: 0;
+  }
+
+  .resultLayout {
+    gap: var(--cq-space-3);
+    align-content: start;
+  }
+
+  .resultLayout .column {
+    gap: 10px;
+  }
+
+  .show_summary .reviewPanel,
+  .show_summary .rankingPanel,
+  .show_review .summaryPanel,
+  .show_review .rankingPanel,
+  .show_ranking .summaryPanel,
+  .show_ranking .reviewPanel {
+    display: none;
+  }
+
+  .resultHero .heroIcon {
+    display: none;
+  }
+
+  .resultHero .heroTitle {
+    margin-top: 0;
+  }
+
+  .resultHero .stars {
+    margin: 0;
+  }
+
+  .resultHero .star {
+    width: 34px;
+    height: 34px;
+  }
+
+  .scoreXp {
+    display: grid;
+    margin-top: var(--cq-space-3);
+  }
+
+  .resultLayout .scoreCard {
+    padding: var(--cq-space-4);
+  }
+
+  .resultLayout .levelUp {
+    padding: var(--cq-space-2) var(--cq-space-4);
+  }
+
+  .xpCard,
+  .passCard,
+  .summaryPanel .actionsRow {
+    display: none;
+  }
+
+  .passCompact {
+    display: flex;
+    align-items: center;
+    gap: var(--cq-space-3);
+    width: 100%;
+    padding: var(--cq-space-3) var(--cq-space-4);
+    border: 0;
+    border-radius: var(--cq-radius-lg);
+    background: var(--cq-grad-gold);
+    box-shadow: 0 4px 0 var(--cq-gold-dark);
+    color: #3a2600;
+    font: inherit;
+    font-weight: 800;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .passCompact span {
+    flex: 1 1 auto;
+  }
+
+  .passCompact svg {
+    flex-shrink: 0;
+    width: 20px;
+    height: 20px;
+  }
+
+  .resultFooter {
+    display: grid;
+  }
+
+  .footerRow {
+    display: flex;
+    gap: var(--cq-space-2);
+  }
+
+  .reviewSummary {
+    padding: 10px var(--cq-space-3);
+  }
+}
+
+@media (max-width: 767px) {
+  .reviewPanel,
+  .rankingPanel {
+    padding: var(--cq-space-3) !important;
+  }
+
+  .reviewPanel p {
+    display: none;
+  }
+
+  .reviewPanel .reviewBody p {
+    display: block;
+  }
+
+  .reviewPanel .list {
+    gap: 4px;
+  }
+
+  .reviewSummary {
+    gap: var(--cq-space-2);
+    padding: 7px 10px;
+    font-size: var(--cq-text-sm);
+  }
+
+  .reviewStatus {
+    width: 26px;
+    height: 26px;
+    border-radius: 8px;
+  }
+
+  .reviewStatus svg {
+    width: 16px;
+    height: 16px;
   }
 }

@@ -100,9 +100,10 @@ export default function HomeScreen({ vm }) {
   const passClaimable = Math.max(0, Number(evolutionPass?.claimableCount || 0));
   const passReward = passStage?.reward || {};
 
-  const rankingViews = (Array.isArray(rankingsRows) ? rankingsRows : [])
-    .map((row, index) => buildRankingRowView(row, index, rankingsMode, buildCosmeticSnapshot, authUser?.uid))
-    .slice(0, 5);
+  const allRankingViews = (Array.isArray(rankingsRows) ? rankingsRows : [])
+    .map((row, index) => buildRankingRowView(row, index, rankingsMode, buildCosmeticSnapshot, authUser?.uid));
+  const rankingViews = allRankingViews.slice(0, 5);
+  const selfRanking = allRankingViews.find((row) => row.isSelf) || null;
 
   return (
     <div className={styles.screen}>
@@ -131,6 +132,7 @@ export default function HomeScreen({ vm }) {
               size="xl"
               badge={safeLevel}
               alt="Seu avatar"
+              className={styles.heroAvatar}
             />
             <div className={styles.heroInfo}>
               <span className={styles.heroEyebrow}>Seu perfil</span>
@@ -155,6 +157,13 @@ export default function HomeScreen({ vm }) {
             </div>
             <ProgressBar value={xpPercent} tone="blue" size="md" label="Progresso para o próximo nível" />
           </div>
+          {/* Mobile: estatísticas em uma linha (moedas já aparecem na barra superior) */}
+          <dl className={styles.miniStats}>
+            <div><dt>Acertos</dt><dd><CircleCheck aria-hidden="true" strokeWidth={2.6} />{totalCorrect}</dd></div>
+            <div><dt>Precisão</dt><dd><Crosshair aria-hidden="true" strokeWidth={2.6} />{accuracy}%</dd></div>
+            <div><dt>Sequência</dt><dd><Flame aria-hidden="true" strokeWidth={2.6} />{bestStreak}</dd></div>
+            <div><dt>Vitórias</dt><dd><Swords aria-hidden="true" strokeWidth={2.6} />{pvpWins}</dd></div>
+          </dl>
           <div className={styles.heroStats}>
             <StatPill icon={CoinIcon} value={safeCoins} label="moedas" ariaLabel={`${safeCoins} moedas`} />
             <StatPill icon={Trophy} value={pvePoints} label="pts PvE" tone="violet" ariaLabel={`${pvePoints} pontos PvE`} />
@@ -181,6 +190,36 @@ export default function HomeScreen({ vm }) {
             onClick={startPvpFlow}
           />
         </section>
+
+        {/* Mobile: atalhos compactos no lugar dos cards de trilha, passe e ranking */}
+        <nav className={styles.quick} aria-label="Atalhos">
+          {continueTrack ? (
+            <button
+              type="button"
+              className={styles.quickTile}
+              style={{ '--quick-color': continueTrack.color }}
+              onClick={() => openPveTrack(continueTrack.id)}
+            >
+              <span className={styles.quickIcon} aria-hidden="true">{continueTrack.icon}</span>
+              <span className={styles.quickLabel}>{continueTrack.started ? 'Continuar' : 'Começar'}</span>
+              <span className={styles.quickValue}>{continueTrack.name}</span>
+              <ProgressBar value={continueTrack.progress} tone="violet" size="sm" label={`Progresso em ${continueTrack.name}`} />
+            </button>
+          ) : null}
+          <button type="button" className={styles.quickTile} style={{ '--quick-color': 'var(--cq-gold)' }} onClick={() => setScreen('achievements')}>
+            <span className={styles.quickIcon} aria-hidden="true">{passStage?.icon || <Ticket strokeWidth={2.4} />}</span>
+            <span className={styles.quickLabel}>Passe</span>
+            <span className={styles.quickValue}>Nível {evolutionPass?.currentLevel || 1}/{evolutionPass?.totalLevels || 1}</span>
+            <ProgressBar value={evolutionPass?.currentStageProgressPct || 0} tone="gold" size="sm" label="Progresso da etapa do passe" />
+            {passClaimable ? <span className={styles.quickBadge}>{passClaimable}</span> : null}
+          </button>
+          <button type="button" className={styles.quickTile} style={{ '--quick-color': 'var(--cq-cyan)' }} onClick={() => setScreen('rankings')}>
+            <span className={styles.quickIcon} aria-hidden="true"><Trophy strokeWidth={2.4} /></span>
+            <span className={styles.quickLabel}>Ranking</span>
+            <span className={styles.quickValue}>{selfRanking ? `${selfRanking.position}º lugar` : 'Ver top'}</span>
+            <span className={styles.quickHint}>{rankingsMode === 'pvp' ? 'Arena PvP' : 'Treino PvE'}</span>
+          </button>
+        </nav>
 
         {continueTrack ? (
           <Card className={cx(styles.infoCard, styles.continueCard)} padding="lg">

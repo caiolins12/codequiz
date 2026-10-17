@@ -1,4 +1,6 @@
-import { CircleCheck, Hourglass } from 'lucide-react';
+import { useState } from 'react';
+import { createPortal } from 'react-dom';
+import { CircleCheck, Hourglass, SmilePlus, X } from 'lucide-react';
 import { Avatar, cx } from '../../ui';
 import styles from './Battle.module.css';
 
@@ -53,9 +55,9 @@ export function SidePlayer({ player, score, answered = null, me = false, accent 
   );
 }
 
-export function EmojiBar({ emojis = [], onSend, cooldownActive = false, cooldownPct = 0, cooldownLabel = '' }) {
+export function EmojiBar({ emojis = [], onSend, cooldownActive = false, cooldownPct = 0, cooldownLabel = '', className = '' }) {
   return (
-    <div className={styles.emojiBar} role="group" aria-label="Reações">
+    <div className={cx(styles.emojiBar, className)} role="group" aria-label="Reações">
       {(Array.isArray(emojis) ? emojis : []).map((emoji) => (
         <button
           key={emoji}
@@ -78,9 +80,46 @@ export function EmojiBar({ emojis = [], onSend, cooldownActive = false, cooldown
   );
 }
 
-export function EmojiFxLayer({ items = [] }) {
-  if (!items.length) return null;
+// Mobile: as reações ficam num botão ao lado do "Confirmar"; tocar abre a fileira de emojis.
+export function EmojiToggle({ emojis = [], onSend, cooldownActive = false, cooldownPct = 0, cooldownLabel = '' }) {
+  const [open, setOpen] = useState(false);
+  if (!Array.isArray(emojis) || !emojis.length) return null;
   return (
+    <div className={styles.emojiToggleWrap}>
+      {open ? (
+        <div className={styles.emojiPopover}>
+          <EmojiBar
+            emojis={emojis}
+            onSend={(emoji) => {
+              onSend(emoji);
+              setOpen(false);
+            }}
+            cooldownActive={cooldownActive}
+            cooldownPct={cooldownPct}
+            cooldownLabel={cooldownLabel}
+          />
+        </div>
+      ) : null}
+      <button
+        type="button"
+        className={cx(styles.emojiButton, styles.emojiToggle, open ? styles.emojiToggleOpen : '')}
+        onClick={() => setOpen((value) => !value)}
+        aria-expanded={open}
+        aria-label={open ? 'Fechar reações' : 'Abrir reações'}
+      >
+        {open ? <X aria-hidden="true" strokeWidth={2.6} /> : <SmilePlus aria-hidden="true" strokeWidth={2.4} />}
+        {cooldownActive && !open ? (
+          <span className={styles.emojiCooldown} style={{ height: `${cooldownPct}%` }} aria-hidden="true" />
+        ) : null}
+      </button>
+    </div>
+  );
+}
+
+// Renderizada no body (como o Modal) para ficar por cima do resultado da rodada.
+export function EmojiFxLayer({ items = [] }) {
+  if (!items.length || typeof document === 'undefined') return null;
+  return createPortal(
     <div className={styles.fxLayer} aria-hidden="true">
       {items.map((fx) => (
         <span
@@ -94,7 +133,8 @@ export function EmojiFxLayer({ items = [] }) {
           {fx.emoji}
         </span>
       ))}
-    </div>
+    </div>,
+    document.body
   );
 }
 
