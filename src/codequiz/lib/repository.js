@@ -13,6 +13,14 @@ import { buildMatchId, getPvpPointsDeltaAdvanced, PVP_ROUNDS_PER_MATCH } from '.
 import { getRoundQuestionCapacity } from './quizEngine';
 import { getItemsByType } from './shop';
 import {
+  BOT_ECONOMY_VERSION,
+  BOT_STARTING_COINS,
+  buildInitialSystemBotLoadout,
+  isItemAllowedForBot,
+  normalizeSystemBotInventory,
+  planSystemBotProgression
+} from './botProgression';
+import {
   calculateStars,
   getProgressTotalXp,
   getQuizKey,
@@ -148,15 +156,11 @@ const BOT_STRENGTH_RANK = {
   medio: 2,
   forte: 3
 };
-const BOT_PROFILE_EMOJI_BY_PERSONALITY = {
-  provocador: 'emoji_common_smart',
-  analitico: 'emoji_common_focus',
-  calmo: 'emoji_common_happy'
-};
 const BOT_DEFAULT_FRAME_ID = 'frame_default';
 const BOT_DEFAULT_BACKGROUND_ID = 'bg_default';
 const BOT_DEFAULT_EMOJI_ID = 'emoji_profile';
-const BOT_INITIAL_SHOP_BUDGET_COINS = 600;
+// Bots entram no ranking PvP do zero, como qualquer jogador novo.
+const BOT_INITIAL_PVP_POINTS = 0;
 const BOT_FRAME_ITEMS = getItemsByType('frame');
 const BOT_BACKGROUND_ITEMS = getItemsByType('background');
 const BOT_EMOJI_ITEMS = getItemsByType('emoji');
@@ -174,25 +178,6 @@ const BOT_RANDOM_BACKGROUND_IDS = BOT_BACKGROUND_ITEMS
 const BOT_RANDOM_EMOJI_IDS = BOT_EMOJI_ITEMS
   .map((item) => String(item?.id || '').trim())
   .filter((itemId) => itemId && itemId !== BOT_DEFAULT_EMOJI_ID);
-const BOT_RANDOM_AVATAR_ICONS = BOT_EMOJI_ITEMS
-  .map((item) => String(item?.icon || '').trim())
-  .filter((icon) => !!icon);
-const BOT_LEGENDARY_FRAME_IDS = BOT_FRAME_ITEMS
-  .filter((item) => String(item?.rarity || '').trim().toLowerCase() === 'legendary')
-  .map((item) => String(item?.id || '').trim())
-  .filter((itemId) => itemId && itemId !== BOT_DEFAULT_FRAME_ID);
-const BOT_LEGENDARY_BACKGROUND_IDS = BOT_BACKGROUND_ITEMS
-  .filter((item) => String(item?.rarity || '').trim().toLowerCase() === 'legendary')
-  .map((item) => String(item?.id || '').trim())
-  .filter((itemId) => itemId && itemId !== BOT_DEFAULT_BACKGROUND_ID);
-const BOT_LEGENDARY_EMOJI_IDS = BOT_EMOJI_ITEMS
-  .filter((item) => String(item?.rarity || '').trim().toLowerCase() === 'legendary')
-  .map((item) => String(item?.id || '').trim())
-  .filter((itemId) => itemId && itemId !== BOT_DEFAULT_EMOJI_ID);
-const BOT_LEGENDARY_AVATAR_ICONS = BOT_EMOJI_ITEMS
-  .filter((item) => String(item?.rarity || '').trim().toLowerCase() === 'legendary')
-  .map((item) => String(item?.icon || '').trim())
-  .filter((icon) => !!icon);
 const BOT_VALID_FRAME_ID_SET = new Set([BOT_DEFAULT_FRAME_ID, ...BOT_RANDOM_FRAME_IDS]);
 const BOT_VALID_BACKGROUND_ID_SET = new Set([BOT_DEFAULT_BACKGROUND_ID, ...BOT_RANDOM_BACKGROUND_IDS]);
 const BOT_VALID_EMOJI_ID_SET = new Set([BOT_DEFAULT_EMOJI_ID, ...BOT_RANDOM_EMOJI_IDS]);
@@ -229,7 +214,8 @@ const BOT_QUIZ_DURATION_MS_MAX = 36000;
 const BOT_QUIZ_BUSY_SOURCE = 'arena_quiz';
 const ENSURE_SYSTEM_BOTS_MIN_INTERVAL_MS = 900000;
 const PVP_MATCH_ROWS_CACHE_TTL_MS = 1200;
-const BOT_LOCAL_CACHE_STORAGE_KEY = 'codequiz_bot_local_cache_v1';
+// v2: economia individual dos bots (cache v1 guardava o enxoval antigo de 600 moedas).
+const BOT_LOCAL_CACHE_STORAGE_KEY = 'codequiz_bot_local_cache_v2';
 const BOT_LOCAL_CACHE_GLOBAL_PURGE_MARKER_KEY = 'codequiz_bot_local_cache_global_purge_v1';
 const BOT_LOCAL_CACHE_MAX_AGE_MS = 1000 * 60 * 60 * 24;
 const BOT_LOCAL_QUEUE_MAX_AGE_MS = 1000 * 60 * 60 * 24;
@@ -433,20 +419,6 @@ function hashBotSeed(value = '') {
   return normalized + 1;
 }
 
-function shuffleBotIdsDeterministic(ids = [], seedKey = '') {
-  const list = Array.isArray(ids) ? ids.map((value) => String(value || '').trim()).filter(Boolean) : [];
-  if (list.length <= 1) return list;
-  const random = buildSeededRandom(hashBotSeed(`shuffle:${seedKey}`));
-  const next = [...list];
-  for (let index = next.length - 1; index > 0; index -= 1) {
-    const swapIndex = Math.floor(random() * (index + 1));
-    const temp = next[index];
-    next[index] = next[swapIndex];
-    next[swapIndex] = temp;
-  }
-  return next;
-}
-
 function resolveDeterministicBotRun(seedKey, targetAccuracy, totalSteps, targetStep = totalSteps) {
   const safeSteps = Math.max(1, Math.trunc(Number(totalSteps || 1)));
   const safeTargetStep = Math.max(1, Math.min(safeSteps, Math.trunc(Number(targetStep || safeSteps))));
@@ -514,20 +486,12 @@ function canUseBrowserLocalStorage() {
   return typeof window !== 'undefined' && !!window.localStorage;
 }
 
-function getDefaultBotPvpPointsByStrength(strength) {
-  const safeStrength = normalizeSystemBotStrength(strength);
-  if (safeStrength === 'forte') return 420;
-  if (safeStrength === 'medio') return 260;
-  return 80;
-}
-
 function buildSeedBotSnapshot(botId = SYSTEM_BOT_ID, nowIso = new Date().toISOString()) {
   const botDef = getSystemBotDefinition(botId);
   const config = buildSystemBotConfigPayload(botDef, {}, nowIso);
-  const stats = buildSystemBotStatsPayload(botDef, {
-    pvp_points: getDefaultBotPvpPointsByStrength(config.strength),
-    level: config.strength === 'forte' ? 20 : (config.strength === 'medio' ? 12 : 8)
-  }, nowIso);
+  // Mesmos stats que ensureSystemBots grava no banco para um bot novo, para o
+  // fallback nunca mostrar um nível/pontuação diferente do que os outros veem.
+  const stats = buildSystemBotStatsPayload(botDef, null, nowIso);
   const profile = buildSystemBotUserPayload(botDef, {}, nowIso, config.personality, config.strength, stats);
   return {
     bot_id: botDef.id,
@@ -704,6 +668,14 @@ function setCachedBotSnapshot(snapshot, source = 'remote') {
     stats,
     config
   };
+}
+
+// Atualiza só a config de um snapshot já cacheado. Sem snapshot do banco no
+// cache, não cria um a partir do seed: isso marcaria dados locais como remotos.
+function setCachedBotConfig(botId, config) {
+  const cached = getCachedBotSnapshot(botId, BOT_LOCAL_CACHE_MAX_AGE_MS);
+  if (!cached || !config || typeof config !== 'object') return;
+  setCachedBotSnapshot({ ...cached, config }, cached.snapshot_source);
 }
 
 function getCachedBotQueueOrder() {
@@ -1189,19 +1161,6 @@ function getMatchDecisiveRoundNo(matchRow, fallback = 5) {
   );
 }
 
-function getBotProfileEmojiByPersonality(personality) {
-  const safePersonality = normalizeBotPersonality(personality);
-  return String(BOT_PROFILE_EMOJI_BY_PERSONALITY[safePersonality] || 'emoji_common_happy');
-}
-
-function pickDeterministicBotCosmeticId(candidates, seedKey, fallbackId) {
-  const pool = Array.isArray(candidates) ? candidates.filter(Boolean) : [];
-  if (!pool.length) return String(fallbackId || '');
-  const seed = Math.abs(hashBotSeed(seedKey));
-  const index = seed % pool.length;
-  return String(pool[index] || fallbackId || '');
-}
-
 function getBotEvolutionPassLevel(statsRow = null) {
   const safeStats = statsRow && typeof statsRow === 'object' ? statsRow : {};
   const achievementIds = normalizeAchievementIds(
@@ -1232,213 +1191,6 @@ function isBotCosmeticUnlockedForPassLevel(itemId = '', passLevel = 0) {
   if (unlockLevel <= 0) return true;
   const safePassLevel = Math.max(0, Math.floor(Number(passLevel || 0)));
   return safePassLevel >= unlockLevel;
-}
-
-function filterBotCosmeticIdsByPassLevel(itemIds = [], passLevel = 0) {
-  const source = Array.isArray(itemIds) ? itemIds : [];
-  const safePassLevel = Math.max(0, Math.floor(Number(passLevel || 0)));
-  return source.filter((itemId) => isBotCosmeticUnlockedForPassLevel(itemId, safePassLevel));
-}
-
-function getBotShopItemPrice(itemId = '') {
-  const safeItemId = String(itemId || '').trim();
-  if (!safeItemId) return 0;
-  const item = BOT_ITEM_META_BY_ID.get(safeItemId);
-  return Math.max(0, Math.floor(Number(item?.price || 0)));
-}
-
-function pickBotEquippedCosmeticByType(
-  purchasedIds = [],
-  type = 'frame',
-  seedKey = '',
-  fallbackId = ''
-) {
-  const source = Array.isArray(purchasedIds)
-    ? purchasedIds.map((itemId) => String(itemId || '').trim()).filter(Boolean)
-    : [];
-  if (!source.length) return String(fallbackId || '');
-
-  const sorted = [...source].sort((itemA, itemB) => {
-    const priceDiff = getBotShopItemPrice(itemB) - getBotShopItemPrice(itemA);
-    if (priceDiff !== 0) return priceDiff;
-    return String(itemA).localeCompare(String(itemB));
-  });
-  const topPrice = getBotShopItemPrice(sorted[0]);
-  const bestTier = sorted.filter((itemId) => getBotShopItemPrice(itemId) === topPrice);
-  const picked = pickDeterministicBotCosmeticId(
-    bestTier,
-    `bot_shop:equip:${type}:${seedKey}`,
-    fallbackId
-  );
-  return String(picked || fallbackId || '');
-}
-
-function canBotBuyCosmeticWithCoins(itemId = '', passLevel = 0) {
-  const safeItemId = String(itemId || '').trim();
-  if (!safeItemId) return false;
-  const item = BOT_ITEM_META_BY_ID.get(safeItemId);
-  if (!item || typeof item !== 'object') return false;
-  const unlockSource = String(item.unlockSource || '').trim().toLowerCase();
-  if (unlockSource === 'evolution_pass') return false;
-  if (!isBotCosmeticUnlockedForPassLevel(safeItemId, passLevel)) return false;
-  return getBotShopItemPrice(safeItemId) > 0;
-}
-
-function getRandomSystemBotShopCosmetics(
-  botId = SYSTEM_BOT_ID,
-  personality = 'provocador',
-  options = {}
-) {
-  const safeBotId = String(botId || SYSTEM_BOT_ID).trim() || SYSTEM_BOT_ID;
-  const safePersonality = normalizeBotPersonality(personality);
-  const passLevel = Math.max(0, Math.floor(Number(options?.passLevel || 0)));
-  const budgetCoins = Math.max(0, Math.floor(Number(options?.budgetCoins ?? BOT_INITIAL_SHOP_BUDGET_COINS)));
-
-  const poolsByType = {
-    frame: shuffleBotIdsDeterministic(
-      BOT_RANDOM_FRAME_IDS.filter((itemId) => canBotBuyCosmeticWithCoins(itemId, passLevel)),
-      `bot_shop:${safeBotId}:frame`
-    ),
-    background: shuffleBotIdsDeterministic(
-      BOT_RANDOM_BACKGROUND_IDS.filter((itemId) => canBotBuyCosmeticWithCoins(itemId, passLevel)),
-      `bot_shop:${safeBotId}:background`
-    ),
-    emoji: shuffleBotIdsDeterministic(
-      BOT_RANDOM_EMOJI_IDS.filter((itemId) => canBotBuyCosmeticWithCoins(itemId, passLevel)),
-      `bot_shop:${safeBotId}:emoji:${safePersonality}`
-    )
-  };
-
-  const purchasedByType = {
-    frame: [],
-    background: [],
-    emoji: []
-  };
-  let remainingCoins = budgetCoins;
-  const typeOrder = shuffleBotIdsDeterministic(
-    ['frame', 'background', 'emoji'],
-    `bot_shop:${safeBotId}:type_order`
-  );
-
-  let boughtAtLeastOne = true;
-  while (boughtAtLeastOne && remainingCoins > 0) {
-    boughtAtLeastOne = false;
-    typeOrder.forEach((type) => {
-      const pool = Array.isArray(poolsByType[type]) ? poolsByType[type] : [];
-      if (!pool.length) return;
-      const pickIndex = pool.findIndex((itemId) => getBotShopItemPrice(itemId) <= remainingCoins);
-      if (pickIndex < 0) return;
-      const [pickedItemId] = pool.splice(pickIndex, 1);
-      if (!pickedItemId) return;
-      purchasedByType[type].push(pickedItemId);
-      remainingCoins = Math.max(0, remainingCoins - getBotShopItemPrice(pickedItemId));
-      boughtAtLeastOne = true;
-    });
-  }
-
-  const defaults = [BOT_DEFAULT_FRAME_ID, BOT_DEFAULT_BACKGROUND_ID, BOT_DEFAULT_EMOJI_ID];
-  const owned = normalizeShopOwnedIds([
-    ...defaults,
-    ...purchasedByType.frame,
-    ...purchasedByType.background,
-    ...purchasedByType.emoji
-  ]);
-  const ownedSet = new Set(owned);
-  const fallbackEmoji = getBotProfileEmojiByPersonality(safePersonality);
-  const equippedFrame = pickBotEquippedCosmeticByType(
-    purchasedByType.frame,
-    'frame',
-    safeBotId,
-    BOT_DEFAULT_FRAME_ID
-  );
-  const equippedBackground = pickBotEquippedCosmeticByType(
-    purchasedByType.background,
-    'background',
-    safeBotId,
-    BOT_DEFAULT_BACKGROUND_ID
-  );
-  const equippedEmojiCandidate = pickBotEquippedCosmeticByType(
-    purchasedByType.emoji,
-    'emoji',
-    `${safeBotId}:${safePersonality}`,
-    BOT_DEFAULT_EMOJI_ID
-  );
-  const equippedEmoji = ownedSet.has(equippedEmojiCandidate)
-    ? equippedEmojiCandidate
-    : (ownedSet.has(fallbackEmoji) ? fallbackEmoji : BOT_DEFAULT_EMOJI_ID);
-
-  return {
-    owned,
-    equipped: {
-      frame: ownedSet.has(equippedFrame) ? equippedFrame : BOT_DEFAULT_FRAME_ID,
-      background: ownedSet.has(equippedBackground) ? equippedBackground : BOT_DEFAULT_BACKGROUND_ID,
-      emoji: equippedEmoji
-    },
-    spentCoins: Math.max(0, budgetCoins - remainingCoins),
-    budgetCoins
-  };
-}
-
-function getDefaultSystemBotCosmetics(
-  botId,
-  personality = 'provocador',
-  strength = SYSTEM_BOT_STRENGTH_DEFAULT,
-  options = {}
-) {
-  const safeBotId = String(botId || SYSTEM_BOT_ID).trim() || SYSTEM_BOT_ID;
-  const safePersonality = normalizeBotPersonality(personality);
-  const safeStrength = normalizeSystemBotStrength(strength);
-  const passLevel = Math.max(0, Math.floor(Number(options?.passLevel || 0)));
-  const personalityEmoji = getBotProfileEmojiByPersonality(safePersonality);
-  const preferLegendary = safeStrength === 'forte';
-  const framePoolBase = preferLegendary && BOT_LEGENDARY_FRAME_IDS.length
-    ? BOT_LEGENDARY_FRAME_IDS
-    : BOT_RANDOM_FRAME_IDS;
-  const backgroundPoolBase = preferLegendary && BOT_LEGENDARY_BACKGROUND_IDS.length
-    ? BOT_LEGENDARY_BACKGROUND_IDS
-    : BOT_RANDOM_BACKGROUND_IDS;
-  const emojiPoolBase = preferLegendary && BOT_LEGENDARY_EMOJI_IDS.length
-    ? BOT_LEGENDARY_EMOJI_IDS
-    : BOT_RANDOM_EMOJI_IDS;
-  const framePool = filterBotCosmeticIdsByPassLevel(framePoolBase, passLevel);
-  const backgroundPool = filterBotCosmeticIdsByPassLevel(backgroundPoolBase, passLevel);
-  const emojiPool = filterBotCosmeticIdsByPassLevel(emojiPoolBase, passLevel);
-  return {
-    frame: pickDeterministicBotCosmeticId(
-      framePool,
-      `bot_cosmetic:frame:${safeBotId}`,
-      BOT_DEFAULT_FRAME_ID
-    ),
-    background: pickDeterministicBotCosmeticId(
-      backgroundPool,
-      `bot_cosmetic:bg:${safeBotId}`,
-      BOT_DEFAULT_BACKGROUND_ID
-    ),
-    emoji: pickDeterministicBotCosmeticId(
-      emojiPool,
-      `bot_cosmetic:emoji:${safeBotId}:${safePersonality}`,
-      personalityEmoji
-    )
-  };
-}
-
-function getDefaultSystemBotAvatar(
-  botId,
-  personality = 'provocador',
-  strength = SYSTEM_BOT_STRENGTH_DEFAULT,
-  fallbackAvatar = SYSTEM_BOT_DEFAULT_AVATAR
-) {
-  const safeBotId = String(botId || SYSTEM_BOT_ID).trim() || SYSTEM_BOT_ID;
-  const safePersonality = normalizeBotPersonality(personality);
-  const safeStrength = normalizeSystemBotStrength(strength);
-  const avatarPool = safeStrength === 'forte' && BOT_LEGENDARY_AVATAR_ICONS.length
-    ? BOT_LEGENDARY_AVATAR_ICONS
-    : BOT_RANDOM_AVATAR_ICONS;
-  return pickDeterministicBotCosmeticId(
-    avatarPool,
-    `bot_avatar:${safeBotId}:${safePersonality}`,
-    fallbackAvatar
-  );
 }
 
 function getSystemBotDefinition(botId = SYSTEM_BOT_ID) {
@@ -1591,6 +1343,22 @@ export function validateFullNameInput(value, options = {}) {
   };
 }
 
+// Inventário válido do bot para o nível/passe atuais (nunca item acima do nível).
+function resolveSystemBotLoadout(botId, statsRow = null) {
+  const stats = statsRow && typeof statsRow === 'object' ? statsRow : null;
+  const level = Math.max(1, Number(stats?.level || 1));
+  const passLevel = getBotEvolutionPassLevel(stats);
+  const hasCurrentInventory = !!stats
+    && Number(stats.bot_economy_version || 0) >= BOT_ECONOMY_VERSION
+    && stats.bot_inventory
+    && typeof stats.bot_inventory === 'object'
+    && Number(stats.bot_inventory.rev || 0) > 0;
+  if (hasCurrentInventory) {
+    return normalizeSystemBotInventory(stats.bot_inventory, level, passLevel);
+  }
+  return buildInitialSystemBotLoadout(botId).inventory;
+}
+
 function buildSystemBotUserPayload(
   botDef,
   current,
@@ -1603,54 +1371,13 @@ function buildSystemBotUserPayload(
   const def = botDef && typeof botDef === 'object' ? botDef : getSystemBotDefinition();
   const safePersonality = normalizeSystemBotPersonality(personality, def.default_personality || 'provocador');
   const safeStrength = normalizeSystemBotStrength(strength ?? def.default_strength ?? base.bot_strength);
-  const safePassLevel = getBotEvolutionPassLevel(botStats);
-  const shopSeed = getRandomSystemBotShopCosmetics(
-    def.id,
-    safePersonality,
-    {
-      passLevel: safePassLevel,
-      budgetCoins: BOT_INITIAL_SHOP_BUDGET_COINS
-    }
-  );
-  const fallbackCosmetics = getDefaultSystemBotCosmetics(
-    def.id,
-    safePersonality,
-    safeStrength,
-    { passLevel: safePassLevel }
-  );
-  const fallbackAvatar = getDefaultSystemBotAvatar(
-    def.id,
-    safePersonality,
-    safeStrength,
-    String(def.avatar || SYSTEM_BOT_DEFAULT_AVATAR)
-  );
-  const seededFrame = String(
-    shopSeed?.equipped?.frame
-    || fallbackCosmetics.frame
-    || BOT_DEFAULT_FRAME_ID
-  );
-  const seededBackground = String(
-    shopSeed?.equipped?.background
-    || fallbackCosmetics.background
-    || BOT_DEFAULT_BACKGROUND_ID
-  );
-  const seededEmoji = String(
-    shopSeed?.equipped?.emoji
-    || fallbackCosmetics.emoji
-    || getBotProfileEmojiByPersonality(safePersonality)
-  );
-  const equippedFrame = (
-    BOT_VALID_FRAME_ID_SET.has(seededFrame)
-    && isBotCosmeticUnlockedForPassLevel(seededFrame, safePassLevel)
-  ) ? seededFrame : BOT_DEFAULT_FRAME_ID;
-  const equippedBackground = (
-    BOT_VALID_BACKGROUND_ID_SET.has(seededBackground)
-    && isBotCosmeticUnlockedForPassLevel(seededBackground, safePassLevel)
-  ) ? seededBackground : BOT_DEFAULT_BACKGROUND_ID;
-  const equippedEmoji = (
-    BOT_VALID_EMOJI_ID_SET.has(seededEmoji)
-    && isBotCosmeticUnlockedForPassLevel(seededEmoji, safePassLevel)
-  ) ? seededEmoji : BOT_DEFAULT_EMOJI_ID;
+  // Visual = inventário do próprio bot (comprado com as moedas dele). Sem inventário
+  // salvo ainda, o visual inicial de um bot novo (emoji de assinatura + itens padrão).
+  const loadout = resolveSystemBotLoadout(def.id, botStats);
+  const equippedFrame = loadout.equipped.frame;
+  const equippedBackground = loadout.equipped.background;
+  const equippedEmoji = loadout.equipped.emoji;
+  const fallbackAvatar = String(def.avatar || SYSTEM_BOT_DEFAULT_AVATAR);
   const equippedEmojiItem = BOT_ITEM_META_BY_ID.get(equippedEmoji);
   const avatarByEquippedEmoji = String(equippedEmojiItem?.icon || '').trim();
   return {
@@ -1662,6 +1389,7 @@ function buildSystemBotUserPayload(
     equipped_frame: equippedFrame,
     equipped_background: equippedBackground,
     equipped_emoji: String(equippedEmoji),
+    bot_inventory_rev: Math.max(0, Number(loadout.rev || 0)),
     bot_gender: String(def.gender || base.bot_gender || 'neutral'),
     bot_personality: safePersonality,
     bot_strength: safeStrength,
@@ -1670,6 +1398,98 @@ function buildSystemBotUserPayload(
     created_at: base.created_at || nowIso,
     updated_at: nowIso
   };
+}
+
+// Perfil do bot quando o banco não tem a linha: depende só do id do bot, então
+// é igual em todos os aparelhos (nada de cache local).
+const systemBotFallbackProfileById = new Map();
+export function getSystemBotFallbackProfile(botId = SYSTEM_BOT_ID) {
+  const safeBotId = getSystemBotDefinition(botId).id;
+  if (!systemBotFallbackProfileById.has(safeBotId)) {
+    systemBotFallbackProfileById.set(safeBotId, buildGlobalFallbackBotSnapshot(safeBotId).profile);
+  }
+  return { ...systemBotFallbackProfileById.get(safeBotId) };
+}
+
+function pickValidBotCosmeticId(candidates = [], validSet, passLevel = 0, fallbackId = '', level = 1) {
+  for (const candidate of candidates) {
+    const safeId = String(candidate || '').trim();
+    if (!safeId || !validSet.has(safeId)) continue;
+    if (!isBotCosmeticUnlockedForPassLevel(safeId, passLevel)) continue;
+    // Nunca mostra num bot item acima do nível dele (raridade liberada por nível).
+    if (!isItemAllowedForBot(safeId, level, passLevel)) continue;
+    return safeId;
+  }
+  return fallbackId;
+}
+
+// Identidade pública de um bot (apelido, avatar e cosméticos) a partir das linhas
+// do banco: users/<botId>, user_shop/<botId> e user_stats/<botId>. Ranking,
+// partidas e salas usam esta função para que todo jogador veja o bot igual.
+function resolveSystemBotIdentity(botId, userRow = null, shopRow = null, statsRow = null) {
+  const fallback = getSystemBotFallbackProfile(botId);
+  const user = userRow && typeof userRow === 'object' ? userRow : {};
+  const shopEquipped = shopRow?.equipped && typeof shopRow.equipped === 'object' ? shopRow.equipped : {};
+  const passLevel = getBotEvolutionPassLevel(statsRow);
+  const level = Math.max(1, Number(statsRow?.level || 1));
+  const equippedEmoji = pickValidBotCosmeticId(
+    [shopEquipped.emoji, user.equipped_emoji, fallback.equipped_emoji],
+    BOT_VALID_EMOJI_ID_SET,
+    passLevel,
+    BOT_DEFAULT_EMOJI_ID,
+    level
+  );
+  const emojiIcon = String(BOT_ITEM_META_BY_ID.get(equippedEmoji)?.icon || '').trim();
+  return {
+    nickname: String(user.nickname || fallback.nickname).trim() || fallback.nickname,
+    // O avatar exibido acompanha o emoji equipado (que já passou pelo filtro de nível).
+    avatar: emojiIcon || String(user.avatar || fallback.avatar).trim() || fallback.avatar,
+    equipped_frame: pickValidBotCosmeticId(
+      [shopEquipped.frame, user.equipped_frame, fallback.equipped_frame],
+      BOT_VALID_FRAME_ID_SET,
+      passLevel,
+      BOT_DEFAULT_FRAME_ID,
+      level
+    ),
+    equipped_background: pickValidBotCosmeticId(
+      [shopEquipped.background, user.equipped_background, fallback.equipped_background],
+      BOT_VALID_BACKGROUND_ID_SET,
+      passLevel,
+      BOT_DEFAULT_BACKGROUND_ID,
+      level
+    ),
+    equipped_emoji: equippedEmoji
+  };
+}
+
+// Mesma coisa para jogadores: user_shop/<uid> primeiro, depois users/<uid>.
+function resolvePlayerIdentity(userRow = null, shopRow = null) {
+  const user = userRow && typeof userRow === 'object' ? userRow : {};
+  const shopEquipped = shopRow?.equipped && typeof shopRow.equipped === 'object' ? shopRow.equipped : {};
+  const pickEquipped = (shopId, profileId, validSet, fallbackId) => {
+    const safeId = String(shopId || profileId || fallbackId);
+    return validSet.has(safeId) ? safeId : fallbackId;
+  };
+  return {
+    nickname: String(user.nickname || 'Jogador'),
+    avatar: String(user.avatar || '🤓'),
+    equipped_frame: pickEquipped(shopEquipped.frame, user.equipped_frame, BOT_VALID_FRAME_ID_SET, BOT_DEFAULT_FRAME_ID),
+    equipped_background: pickEquipped(shopEquipped.background, user.equipped_background, BOT_VALID_BACKGROUND_ID_SET, BOT_DEFAULT_BACKGROUND_ID),
+    equipped_emoji: pickEquipped(shopEquipped.emoji, user.equipped_emoji, BOT_VALID_EMOJI_ID_SET, BOT_DEFAULT_EMOJI_ID)
+  };
+}
+
+// Desempate final dos rankings: sem ele, quem tem a mesma pontuação (ex.: vários
+// bots com 0 pts) fica na ordem em que cada navegador recebeu as linhas. Compara
+// por código de caractere (não por locale) para dar a mesma ordem em qualquer navegador.
+function compareRankingIdentity(a, b) {
+  const keysA = [String(a?.nickname || '').toLowerCase(), String(a?.user_id || '')];
+  const keysB = [String(b?.nickname || '').toLowerCase(), String(b?.user_id || '')];
+  for (let index = 0; index < keysA.length; index += 1) {
+    if (keysA[index] < keysB[index]) return -1;
+    if (keysA[index] > keysB[index]) return 1;
+  }
+  return 0;
 }
 
 function normalizeAchievementIds(value) {
@@ -1703,8 +1523,8 @@ function buildSystemBotStatsPayload(botDef, current, nowIso) {
   const base = current && typeof current === 'object' ? current : {};
   const def = botDef && typeof botDef === 'object' ? botDef : getSystemBotDefinition();
   const hasPersistedRow = current && typeof current === 'object';
-  const safeStrength = normalizeSystemBotStrength(def.default_strength ?? base.bot_strength);
-  const seededPvpPoints = getDefaultBotPvpPointsByStrength(safeStrength);
+  // Bot novo: recebe o crédito inicial de jogador e já o gasta no emoji de assinatura.
+  const initialLoadout = hasPersistedRow ? null : buildInitialSystemBotLoadout(def.id);
   const basePvpPointsRaw = Number(base.pvp_points);
   const hasBasePvpPoints = Number.isFinite(basePvpPointsRaw);
   const preservedPvpPoints = hasBasePvpPoints ? Math.max(0, basePvpPointsRaw) : 0;
@@ -1715,8 +1535,10 @@ function buildSystemBotStatsPayload(botDef, current, nowIso) {
     ranking_points: Math.max(0, Number(base.ranking_points || 0)),
     pvp_points: hasPersistedRow
       ? preservedPvpPoints
-      : seededPvpPoints,
-    coins: Math.max(0, Number(base.coins || BOT_INITIAL_SHOP_BUDGET_COINS)),
+      : BOT_INITIAL_PVP_POINTS,
+    coins: hasPersistedRow
+      ? Math.max(0, Number(base.coins ?? BOT_STARTING_COINS))
+      : initialLoadout.coins,
     pvp_battles: Math.max(0, Number(base.pvp_battles || 0)),
     pvp_wins: Math.max(0, Number(base.pvp_wins || 0)),
     pvp_losses: Math.max(0, Number(base.pvp_losses || 0)),
@@ -1733,8 +1555,91 @@ function buildSystemBotStatsPayload(botDef, current, nowIso) {
     quiz_best_stars: base.quiz_best_stars && typeof base.quiz_best_stars === 'object' ? base.quiz_best_stars : {},
     achievement_ids: normalizeAchievementIds(base.achievement_ids || base.achievements),
     quiz_rewarded: normalizeQuizRewardedMap(base.quiz_rewarded),
+    // Inventário próprio do bot (ver botProgression.js). Linha antiga sem a versão é
+    // migrada na próxima progressão; linha nova já nasce na economia atual.
+    ...(hasPersistedRow
+      ? pickSystemBotEconomyFields(base)
+      : { bot_economy_version: BOT_ECONOMY_VERSION, bot_inventory: initialLoadout.inventory }),
     is_system_bot: true,
     updated_at: nowIso
+  };
+}
+
+// Campos da economia do bot que toda escrita em user_stats/<bot> precisa preservar.
+function pickSystemBotEconomyFields(row = null) {
+  const safe = row && typeof row === 'object' ? row : {};
+  const next = {};
+  if (safe.bot_economy_version !== undefined) next.bot_economy_version = safe.bot_economy_version;
+  if (safe.bot_inventory && typeof safe.bot_inventory === 'object') next.bot_inventory = safe.bot_inventory;
+  return next;
+}
+
+// Espelha o inventário do bot (fonte: user_stats/<bot>.bot_inventory) na loja e no
+// perfil, só quando a versão do inventário é mais nova que a já gravada.
+async function syncSystemBotLoadout(botId, statsRow = null) {
+  const safeBotId = String(botId || '').trim();
+  if (!isSystemBotUserId(safeBotId) || !statsRow || typeof statsRow !== 'object') return false;
+  if (Number(statsRow.bot_economy_version || 0) < BOT_ECONOMY_VERSION) return false;
+  const level = Math.max(1, Number(statsRow.level || 1));
+  const passLevel = getBotEvolutionPassLevel(statsRow);
+  const inventory = normalizeSystemBotInventory(statsRow.bot_inventory, level, passLevel);
+  const rev = Math.max(0, Number(inventory.rev || 0));
+  if (rev <= 0) return false;
+  const nowMs = Date.now();
+  const nowIso = new Date(nowMs).toISOString();
+  await runTransaction(ref(firebaseDb, `user_shop/${safeBotId}`), (current) => {
+    const cur = current && typeof current === 'object' ? current : {};
+    if (Math.max(0, Number(cur.bot_inventory_rev || 0)) >= rev) return undefined;
+    // Sobrescreve (não mescla): item que o bot não tem mais sai da loja dele.
+    return {
+      owned: inventory.owned,
+      equipped: inventory.equipped,
+      bot_inventory_rev: rev,
+      updated_at: nowIso,
+      updated_at_ms: nowMs
+    };
+  }).catch(() => null);
+  await runTransaction(ref(firebaseDb, `users/${safeBotId}`), (current) => {
+    if (!current || typeof current !== 'object') return undefined;
+    if (Math.max(0, Number(current.bot_inventory_rev || 0)) >= rev) return undefined;
+    const emojiIcon = String(BOT_ITEM_META_BY_ID.get(inventory.equipped.emoji)?.icon || '').trim();
+    return {
+      ...current,
+      avatar: emojiIcon || String(current.avatar || SYSTEM_BOT_DEFAULT_AVATAR),
+      equipped_frame: inventory.equipped.frame,
+      equipped_background: inventory.equipped.background,
+      equipped_emoji: inventory.equipped.emoji,
+      bot_inventory_rev: rev,
+      updated_at: nowIso
+    };
+  }).catch(() => null);
+  return true;
+}
+
+// Depois de qualquer ganho (partida, quiz), o bot resgata o passe que cumpriu e faz
+// suas compras no próprio estilo. Também migra bots da economia antiga.
+export async function progressSystemBot(botId) {
+  const safeBotId = String(botId || '').trim();
+  if (!isSystemBotUserId(safeBotId)) return null;
+  let plan = null;
+  const tx = await runTransaction(ref(firebaseDb, `user_stats/${safeBotId}`), (current) => {
+    if (!current || typeof current !== 'object') return undefined;
+    plan = planSystemBotProgression(safeBotId, current);
+    if (!plan.changed) return undefined;
+    return {
+      ...plan.stats,
+      user_id: safeBotId,
+      is_system_bot: true,
+      updated_at: new Date().toISOString()
+    };
+  }).catch(() => null);
+  const statsRow = tx?.snapshot?.exists() ? tx.snapshot.val() : null;
+  if (statsRow) await syncSystemBotLoadout(safeBotId, statsRow).catch(() => null);
+  return {
+    committed: !!tx?.committed,
+    purchases: plan?.purchases || [],
+    claimedStages: plan?.claimedStages || [],
+    stats: statsRow
   };
 }
 
@@ -1839,8 +1744,10 @@ export async function ensureSystemBots(options = {}) {
       const statsTx = await runTransaction(ref(firebaseDb, `user_stats/${botDef.id}`), (current) => (
         buildSystemBotStatsPayload(botDef, current, nowIso)
       )).catch(() => null);
-      const statsRow = statsTx?.snapshot?.val();
-      const userTx = await runTransaction(ref(firebaseDb, `users/${botDef.id}`), (current) => (
+      // Migra/progride o bot (passe, compras no estilo dele) antes de montar o perfil.
+      const progressed = await progressSystemBot(botDef.id).catch(() => null);
+      const statsRow = progressed?.stats || statsTx?.snapshot?.val();
+      await runTransaction(ref(firebaseDb, `users/${botDef.id}`), (current) => (
         buildSystemBotUserPayload(
           botDef,
           current,
@@ -1850,46 +1757,8 @@ export async function ensureSystemBots(options = {}) {
           statsRow
         )
       )).catch(() => null);
-      const userRow = userTx?.snapshot?.val();
-      const shopSeed = getRandomSystemBotShopCosmetics(
-        botDef.id,
-        botConfig.personality,
-        {
-          passLevel: getBotEvolutionPassLevel(statsRow),
-          budgetCoins: BOT_INITIAL_SHOP_BUDGET_COINS
-        }
-      );
-      const equippedFrame = String(
-        userRow?.equipped_frame
-        || shopSeed?.equipped?.frame
-        || BOT_DEFAULT_FRAME_ID
-      );
-      const equippedBackground = String(
-        userRow?.equipped_background
-        || shopSeed?.equipped?.background
-        || BOT_DEFAULT_BACKGROUND_ID
-      );
-      const equippedEmoji = String(
-        userRow?.equipped_emoji
-        || shopSeed?.equipped?.emoji
-        || BOT_DEFAULT_EMOJI_ID
-      );
-      await saveUserShop(botDef.id, {
-        owned: [
-          ...(Array.isArray(shopSeed?.owned) ? shopSeed.owned : []),
-          BOT_DEFAULT_FRAME_ID,
-          BOT_DEFAULT_BACKGROUND_ID,
-          BOT_DEFAULT_EMOJI_ID,
-          equippedFrame,
-          equippedBackground,
-          equippedEmoji
-        ],
-        equipped: {
-          frame: equippedFrame,
-          background: equippedBackground,
-          emoji: equippedEmoji
-        }
-      }).catch(() => null);
+      // Loja do bot = inventário dele (sobrescreve o enxoval antigo de 600 moedas).
+      await syncSystemBotLoadout(botDef.id, statsRow).catch(() => null);
     }
 
     const snapshots = [];
@@ -1955,13 +1824,14 @@ export async function getSystemBotSnapshot(botId = SYSTEM_BOT_ID, options = {}) 
     void ensureSystemBots().catch(() => null);
   }
   const nowIso = new Date().toISOString();
-  const [profile, stats, config] = await Promise.all([
+  const [profile, stats, config, shopRow] = await Promise.all([
     getUserProfile(safeBotId).catch(() => null),
     getUserStats(safeBotId).catch(() => null),
     getPvpBotConfig(safeBotId, {
       waitForEnsure: false,
       preferLocal
-    }).catch(() => null)
+    }).catch(() => null),
+    getUserShop(safeBotId).catch(() => null)
   ]);
   const fallbackSeed = BOT_GLOBAL_SYNC_ONLY
     ? buildGlobalFallbackBotSnapshot(safeBotId)
@@ -1988,24 +1858,9 @@ export async function getSystemBotSnapshot(botId = SYSTEM_BOT_ID, options = {}) 
         ? cachedSnapshot.stats
         : fallbackSeed.stats
     );
-  const safePassLevel = getBotEvolutionPassLevel(safeStats);
-  const rawProfileFrame = String(safeProfile?.equipped_frame || BOT_DEFAULT_FRAME_ID);
-  const rawProfileBackground = String(safeProfile?.equipped_background || BOT_DEFAULT_BACKGROUND_ID);
-  const rawProfileEmoji = String(safeProfile?.equipped_emoji || BOT_DEFAULT_EMOJI_ID);
   const normalizedProfile = {
     ...safeProfile,
-    equipped_frame: (
-      BOT_VALID_FRAME_ID_SET.has(rawProfileFrame)
-      && isBotCosmeticUnlockedForPassLevel(rawProfileFrame, safePassLevel)
-    ) ? rawProfileFrame : BOT_DEFAULT_FRAME_ID,
-    equipped_background: (
-      BOT_VALID_BACKGROUND_ID_SET.has(rawProfileBackground)
-      && isBotCosmeticUnlockedForPassLevel(rawProfileBackground, safePassLevel)
-    ) ? rawProfileBackground : BOT_DEFAULT_BACKGROUND_ID,
-    equipped_emoji: (
-      BOT_VALID_EMOJI_ID_SET.has(rawProfileEmoji)
-      && isBotCosmeticUnlockedForPassLevel(rawProfileEmoji, safePassLevel)
-    ) ? rawProfileEmoji : BOT_DEFAULT_EMOJI_ID
+    ...resolveSystemBotIdentity(safeBotId, safeProfile, shopRow, safeStats)
   };
 
   const snapshotSource = (
@@ -2089,17 +1944,7 @@ export async function getPvpBotConfig(botId = SYSTEM_BOT_ID, options = {}) {
         await set(ref(firebaseDb, `pvp_bots_state/configs/${botDef.id}`), fallback).catch(() => null);
       }
     }
-    const seedSnapshot = localSnapshot || (
-      BOT_GLOBAL_SYNC_ONLY
-        ? buildGlobalFallbackBotSnapshot(botDef.id)
-        : buildSeedBotSnapshot(botDef.id, nowIso)
-    );
-    setCachedBotSnapshot({
-      bot_id: botDef.id,
-      profile: seedSnapshot.profile,
-      stats: seedSnapshot.stats,
-      config: fallback
-    }, localSnapshot ? 'local_cache' : (BOT_GLOBAL_SYNC_ONLY ? 'global_fallback' : 'local_seed'));
+    setCachedBotConfig(botDef.id, fallback);
     return fallback;
   }
   const normalized = {
@@ -2116,17 +1961,7 @@ export async function getPvpBotConfig(botId = SYSTEM_BOT_ID, options = {}) {
       await set(ref(firebaseDb, `pvp_bots_state/configs/${botDef.id}`), normalized).catch(() => null);
     }
   }
-  const seedSnapshot = localSnapshot || (
-    BOT_GLOBAL_SYNC_ONLY
-      ? buildGlobalFallbackBotSnapshot(botDef.id)
-      : buildSeedBotSnapshot(botDef.id, nowIso)
-  );
-  setCachedBotSnapshot({
-    bot_id: botDef.id,
-    profile: seedSnapshot.profile,
-    stats: seedSnapshot.stats,
-    config: normalized
-  }, 'remote');
+  setCachedBotConfig(botDef.id, normalized);
   return {
     ...normalized
   };
@@ -2163,18 +1998,7 @@ export async function updatePvpBotConfig(patch = {}, botId = SYSTEM_BOT_ID) {
       currentStats
     )
   ));
-  const seedSnapshot = getCachedBotSnapshot(botDef.id, BOT_LOCAL_CACHE_MAX_AGE_MS)
-    || (
-      BOT_GLOBAL_SYNC_ONLY
-        ? buildGlobalFallbackBotSnapshot(botDef.id)
-        : buildSeedBotSnapshot(botDef.id, nowIso)
-    );
-  setCachedBotSnapshot({
-    bot_id: botDef.id,
-    profile: seedSnapshot.profile,
-    stats: seedSnapshot.stats,
-    config: next
-  }, 'remote');
+  setCachedBotConfig(botDef.id, next);
   return next;
 }
 
@@ -2663,7 +2487,8 @@ async function cleanupOrphanBotBusyEntries(nowMs = Date.now()) {
 
   if (!busyRows || typeof busyRows !== 'object') return;
 
-  const activeMatchIds = new Set();
+  // Salas 2x2 / Um contra todos também prendem bots (busy.match_id = id da sala).
+  const activeMatchIds = await getActivePvpGroupBusyIds(nowMs).catch(() => new Set());
   if (matchRows && typeof matchRows === 'object') {
     Object.entries(matchRows).forEach(([matchId, row]) => {
       if (!row || typeof row !== 'object') return;
@@ -3823,7 +3648,8 @@ async function applyBotQuizOutcomeToStats(botId, assignment = {}) {
   await runTransaction(ref(firebaseDb, `user_stats/${safeBotId}`), (current) => {
     const prev = current && typeof current === 'object' ? current : {};
     const prevTotalXp = Math.max(0, Math.trunc(Number(prev.total_xp || 0)));
-    const prevCoins = Math.max(0, Math.trunc(Number(prev.coins || 20)));
+    // Saldo 0 é saldo 0 (só linha sem o campo usa o crédito inicial).
+    const prevCoins = Math.max(0, Math.trunc(Number(prev.coins ?? BOT_STARTING_COINS)));
     const prevTotalCorrect = Math.max(0, Math.trunc(Number(prev.total_correct || 0)));
     const prevTotalAnswered = Math.max(0, Math.trunc(Number(prev.total_answered || 0)));
     const prevQuizzes = Math.max(0, Math.trunc(Number(prev.quizzes_completed || 0)));
@@ -3904,9 +3730,11 @@ async function applyBotQuizOutcomeToStats(botId, assignment = {}) {
       },
       is_system_bot: true,
       progress_updated_at_ms: Math.max(nowMs, Number(prev.progress_updated_at_ms || 0)),
+      ...pickSystemBotEconomyFields(prev),
       updated_at: nowIso
     };
   }).catch(() => null);
+  await progressSystemBot(safeBotId).catch(() => null);
 
   await saveQuizResult(safeBotId, {
     language,
@@ -4867,29 +4695,13 @@ function buildGlobalRankingsList(usersMap, statsMap, userShopMap = {}, mode = 'p
   const seededStatsMap = {
     ...(statsMap && typeof statsMap === 'object' ? statsMap : {})
   };
+  // Bot sem linha de stats no banco entra com os stats de um bot recém-criado
+  // (determinísticos), nunca com o cache local de quem está olhando.
   SYSTEM_BOT_ROSTER.forEach((botDef) => {
     const botId = String(botDef?.id || '').trim();
     if (!botId) return;
     if (seededStatsMap[botId] && typeof seededStatsMap[botId] === 'object') return;
-    const seedSnapshot = getCachedBotSnapshot(botId, BOT_LOCAL_CACHE_MAX_AGE_MS)
-      || (
-        BOT_GLOBAL_SYNC_ONLY
-          ? buildGlobalFallbackBotSnapshot(botId)
-          : buildSeedBotSnapshot(botId)
-      );
-    seededStatsMap[botId] = seedSnapshot?.stats && typeof seedSnapshot.stats === 'object'
-      ? seedSnapshot.stats
-      : {
-        user_id: botId,
-        ranking_points: 0,
-        pvp_points: getDefaultBotPvpPointsByStrength(getSystemBotDefaultStrength(botId)),
-        pvp_wins: 0,
-        pvp_battles: 0,
-        level: 1,
-        total_correct: 0,
-        total_xp: 0,
-        is_system_bot: true
-      };
+    seededStatsMap[botId] = buildGlobalFallbackBotSnapshot(botId).stats;
   });
   const hasUserProfileIdentity = (row) => {
     const safe = row && typeof row === 'object' ? row : {};
@@ -4917,85 +4729,17 @@ function buildGlobalRankingsList(usersMap, statsMap, userShopMap = {}, mode = 'p
     const userId = resolveStatsUserId(statsKey, stats);
     if (!userId) return null;
     const isSystemBot = isSystemBotUserId(userId);
-    const botDef = isSystemBot ? getSystemBotDefinition(userId) : null;
     const user = users[userId] && typeof users[userId] === 'object' ? users[userId] : {};
     const hasIdentity = hasUserProfileIdentity(user);
     if (!isSystemBot && !hasIdentity) return null;
     const shopRow = shopRows[userId] && typeof shopRows[userId] === 'object' ? shopRows[userId] : {};
-    const shopEquipped = shopRow.equipped && typeof shopRow.equipped === 'object' ? shopRow.equipped : {};
-    const botPassLevel = isSystemBot ? getBotEvolutionPassLevel(stats) : 0;
-    const botSnapshot = isSystemBot ? getCachedBotSnapshot(userId, BOT_LOCAL_CACHE_MAX_AGE_MS) : null;
-    const botProfile = botSnapshot?.profile && typeof botSnapshot.profile === 'object'
-      ? botSnapshot.profile
-      : {};
-    const botPersonality = String(
-      user.bot_personality
-      || botProfile.bot_personality
-      || botDef?.default_personality
-      || 'provocador'
-    ).trim();
-    const botCosmeticsSeed = isSystemBot
-      ? getRandomSystemBotShopCosmetics(userId, botPersonality, {
-        passLevel: botPassLevel,
-        budgetCoins: BOT_INITIAL_SHOP_BUDGET_COINS
-      })
-      : null;
-    const seededEquipped = botCosmeticsSeed?.equipped && typeof botCosmeticsSeed.equipped === 'object'
-      ? botCosmeticsSeed.equipped
-      : {};
-
-    let frame = isSystemBot
-      ? String(
-        shopEquipped.frame
-        || botProfile.equipped_frame
-        || seededEquipped.frame
-        || user.equipped_frame
-        || 'frame_default'
-      )
-      : String(shopEquipped.frame || user.equipped_frame || 'frame_default');
-    let background = isSystemBot
-      ? String(
-        shopEquipped.background
-        || botProfile.equipped_background
-        || seededEquipped.background
-        || user.equipped_background
-        || 'bg_default'
-      )
-      : String(shopEquipped.background || user.equipped_background || 'bg_default');
-    let emoji = isSystemBot
-      ? String(
-        shopEquipped.emoji
-        || botProfile.equipped_emoji
-        || seededEquipped.emoji
-        || user.equipped_emoji
-        || 'emoji_profile'
-      )
-      : String(shopEquipped.emoji || user.equipped_emoji || 'emoji_profile');
-    if (!BOT_VALID_FRAME_ID_SET.has(frame)) frame = 'frame_default';
-    if (!BOT_VALID_BACKGROUND_ID_SET.has(background)) background = 'bg_default';
-    if (!BOT_VALID_EMOJI_ID_SET.has(emoji)) emoji = 'emoji_profile';
-    if (isSystemBot && !isBotCosmeticUnlockedForPassLevel(frame, botPassLevel)) {
-      frame = 'frame_default';
-    }
-    if (isSystemBot && !isBotCosmeticUnlockedForPassLevel(background, botPassLevel)) {
-      background = 'bg_default';
-    }
-    if (isSystemBot && !isBotCosmeticUnlockedForPassLevel(emoji, botPassLevel)) {
-      emoji = 'emoji_profile';
-    }
+    const identity = isSystemBot
+      ? resolveSystemBotIdentity(userId, user, shopRow, stats)
+      : resolvePlayerIdentity(user, shopRow);
 
     return {
       user_id: userId,
-      nickname: String(
-        user.nickname
-        || botProfile.nickname
-        || botDef?.nickname
-        || (hasIdentity ? 'Jogador' : '')
-      ),
-      avatar: String(user.avatar || botProfile.avatar || botDef?.avatar || '🤓'),
-      equipped_frame: frame,
-      equipped_background: background,
-      equipped_emoji: emoji,
+      ...identity,
       ranking_points: Math.max(0, Number(stats.ranking_points || 0)),
       pvp_points: Math.max(0, Number(stats.pvp_points || 0)),
       pvp_wins: Math.max(0, Number(stats.pvp_wins || 0)),
@@ -5039,13 +4783,15 @@ function buildGlobalRankingsList(usersMap, statsMap, userShopMap = {}, mode = 'p
         b.pvp_wins - a.pvp_wins ||
         a.pvp_battles - b.pvp_battles ||
         b.total_correct - a.total_correct ||
-        b.total_xp - a.total_xp
+        b.total_xp - a.total_xp ||
+        compareRankingIdentity(a, b)
       );
     }
     return (
       b.ranking_points - a.ranking_points ||
       b.total_correct - a.total_correct ||
-      b.total_xp - a.total_xp
+      b.total_xp - a.total_xp ||
+      compareRankingIdentity(a, b)
     );
   });
 
@@ -5068,13 +4814,15 @@ export function subscribeGlobalRankings(mode = 'pve', limit = 50, onChange, onEr
   let usersMap = {};
   let statsMap = {};
   let userShopMap = {};
+  const loaded = { users: false, stats: false, shop: false };
 
+  // Só emite com as três coleções do banco em mãos: uma lista parcial mostraria
+  // bots com dados de fallback e posições diferentes das que os outros veem.
   const emit = () => {
+    if (!loaded.users || !loaded.stats || !loaded.shop) return;
     onChange(buildGlobalRankingsList(usersMap, statsMap, userShopMap, mode, limit));
   };
-  ensureSystemBot().then(() => {
-    emit();
-  }).catch(() => null);
+  ensureSystemBot().catch(() => null);
 
   const usersRef = ref(firebaseDb, 'users');
   const statsRef = ref(firebaseDb, 'user_stats');
@@ -5084,6 +4832,7 @@ export function subscribeGlobalRankings(mode = 'pve', limit = 50, onChange, onEr
     usersRef,
     (snap) => {
       usersMap = snap.exists() ? (snap.val() || {}) : {};
+      loaded.users = true;
       emit();
     },
     (error) => {
@@ -5095,6 +4844,7 @@ export function subscribeGlobalRankings(mode = 'pve', limit = 50, onChange, onEr
     statsRef,
     (snap) => {
       statsMap = snap.exists() ? (snap.val() || {}) : {};
+      loaded.stats = true;
       emit();
     },
     (error) => {
@@ -5106,6 +4856,7 @@ export function subscribeGlobalRankings(mode = 'pve', limit = 50, onChange, onEr
     userShopRef,
     (snap) => {
       userShopMap = snap.exists() ? (snap.val() || {}) : {};
+      loaded.shop = true;
       emit();
     },
     (error) => {
@@ -5122,36 +4873,38 @@ export function subscribeGlobalRankings(mode = 'pve', limit = 50, onChange, onEr
 
 export async function getQuizRankings(language, topic, difficulty, limit = 50) {
   const key = `${String(language || '')}_${String(topic || '')}_${String(difficulty || '')}`;
-  const [rowsMap, usersMap] = await Promise.all([
+  const [rowsMap, usersMap, userShopMap, statsMap] = await Promise.all([
     getNode(`quiz_results/${key}`),
-    getNode('users')
+    getNode('users'),
+    getNode('user_shop').catch(() => null),
+    getNode('user_stats').catch(() => null)
   ]);
 
   if (!rowsMap || typeof rowsMap !== 'object') return [];
 
+  const pickRow = (map, userId) => (
+    map && typeof map === 'object' && map[userId] && typeof map[userId] === 'object' ? map[userId] : {}
+  );
   const list = Object.entries(rowsMap).map(([rowUserId, raw]) => {
     const row = raw && typeof raw === 'object' ? raw : {};
     const userId = String(row?.user_id || rowUserId || '').trim();
     if (!userId) return null;
     const isSystemBot = isSystemBotUserId(userId);
-    const botDef = isSystemBot ? getSystemBotDefinition(userId) : null;
-    const user = usersMap && typeof usersMap === 'object' && usersMap[userId] && typeof usersMap[userId] === 'object'
-      ? usersMap[userId]
-      : {};
+    const user = pickRow(usersMap, userId);
     const hasIdentity = Boolean(
       String(user.nickname || '').trim()
       || String(user.full_name || '').trim()
       || String(user.avatar || '').trim()
     );
     if (!isSystemBot && !hasIdentity) return null;
+    // Mesma identidade do ranking global (user_shop > users > fallback do bot).
+    const identity = isSystemBot
+      ? resolveSystemBotIdentity(userId, user, pickRow(userShopMap, userId), pickRow(statsMap, userId))
+      : resolvePlayerIdentity(user, pickRow(userShopMap, userId));
 
     return {
       user_id: userId,
-      nickname: String(user.nickname || botDef?.nickname || (hasIdentity ? 'Jogador' : '')),
-      avatar: String(user.avatar || botDef?.avatar || '🤓'),
-      equipped_frame: String(user.equipped_frame || 'frame_default'),
-      equipped_background: String(user.equipped_background || 'bg_default'),
-      equipped_emoji: String(user.equipped_emoji || 'emoji_profile'),
+      ...identity,
       correct_count: Math.max(0, Number(row.correct_count || 0)),
       score_pct: Math.max(0, Number(row.score_pct || 0)),
       total_questions: Math.max(1, Number(row.total_questions || 1)),
@@ -5179,7 +4932,11 @@ export async function getQuizRankings(language, topic, difficulty, limit = 50) {
   });
   const dedupedList = Array.from(uniqueByUserId.values());
 
-  dedupedList.sort((a, b) => b.correct_count - a.correct_count || b.score_pct - a.score_pct);
+  dedupedList.sort((a, b) => (
+    b.correct_count - a.correct_count
+    || b.score_pct - a.score_pct
+    || compareRankingIdentity(a, b)
+  ));
   return dedupedList.slice(0, Math.max(1, Number(limit || 50)));
 }
 
@@ -5900,6 +5657,194 @@ export function subscribeRoundAnswers(matchId, roundNo, onChange, onError = null
 
 const PVP_TEAM_ROOM_SIDE_CAPACITY = 2;
 
+// ---------------------------------------------------------------------------
+// Salas e partidas em grupo (Batalha 2x2 e Um contra todos): presença dos
+// jogadores humanos na sala, anfitrião sempre humano e transações condicionais.
+// ---------------------------------------------------------------------------
+
+// Cada humano no lobby renova member_seen_at_ms/<uid> periodicamente. Quem passa
+// desse tempo sem sinal é tratado como desconectado (sai da sala e perde a liderança).
+export const PVP_GROUP_ROOM_PRESENCE_STALE_MS = 30000;
+// Sala de lobby sem nenhum humano com sinal por esse tempo foi abandonada (mais folga
+// que a expulsão por inatividade, para aba em segundo plano não perder a sala).
+export const PVP_GROUP_ROOM_ABANDONED_MS = 90000;
+// Partida em grupo sem nenhuma escrita por esse tempo foi abandonada por todos.
+export const PVP_GROUP_MATCH_STALE_MS = 120000;
+const PVP_GROUP_ROOM_REMOVED_NOTICE_LIMIT = 12;
+
+function getPvpGroupRoomMemberIdsAny(roomRow = null) {
+  const safe = roomRow && typeof roomRow === 'object' ? roomRow : {};
+  const ids = [
+    ...normalizePvpTeamRoomMembers(safe.red_members),
+    ...normalizePvpTeamRoomMembers(safe.blue_members),
+    ...normalizePvpEliminationMembers(safe.members)
+  ]
+    .map((member) => String(member?.user_id || '').trim())
+    .filter(Boolean);
+  return Array.from(new Set(ids));
+}
+
+function getPvpGroupRoomMemberJoinedAtMs(roomRow = null, userId = '') {
+  const safe = roomRow && typeof roomRow === 'object' ? roomRow : {};
+  const safeUserId = String(userId || '').trim();
+  const member = [
+    ...normalizePvpTeamRoomMembers(safe.red_members),
+    ...normalizePvpTeamRoomMembers(safe.blue_members),
+    ...normalizePvpEliminationMembers(safe.members)
+  ].find((entry) => String(entry?.user_id || '').trim() === safeUserId);
+  return Math.max(0, Number(member?.joined_at_ms || 0));
+}
+
+function sanitizePvpGroupMemberSeenMap(value = {}, memberIds = []) {
+  const source = value && typeof value === 'object' ? value : {};
+  const next = {};
+  (Array.isArray(memberIds) ? memberIds : []).forEach((entry) => {
+    const userId = String(entry || '').trim();
+    if (!userId || isSystemBotUserId(userId)) return;
+    const seenAtMs = Math.max(0, Number(source[userId] || 0));
+    if (seenAtMs > 0) next[userId] = seenAtMs;
+  });
+  return next;
+}
+
+function sanitizePvpGroupRemovedNotices(value = {}, memberIds = []) {
+  const source = value && typeof value === 'object' ? value : {};
+  const members = new Set((Array.isArray(memberIds) ? memberIds : []).map((entry) => String(entry || '').trim()));
+  return Object.entries(source)
+    .map(([userId, entry]) => {
+      const safeUserId = String(userId || '').trim();
+      const safeEntry = entry && typeof entry === 'object' ? entry : {};
+      const reason = String(safeEntry.reason || '').trim();
+      const atMs = Math.max(0, Number(safeEntry.at_ms || 0));
+      if (!safeUserId || !reason || members.has(safeUserId) || isSystemBotUserId(safeUserId)) return null;
+      return [safeUserId, { reason, at_ms: atMs }];
+    })
+    .filter(Boolean)
+    .sort((a, b) => b[1].at_ms - a[1].at_ms)
+    .slice(0, PVP_GROUP_ROOM_REMOVED_NOTICE_LIMIT)
+    .reduce((acc, [userId, entry]) => {
+      acc[userId] = entry;
+      return acc;
+    }, {});
+}
+
+function stampPvpGroupRoomMembers(list = [], nowMs = Date.now()) {
+  return (Array.isArray(list) ? list : [])
+    .filter((entry) => entry && typeof entry === 'object')
+    .map((entry) => ({
+      ...entry,
+      joined_at_ms: Math.max(0, Number(entry.joined_at_ms || 0)) || nowMs,
+      joined_at: entry.joined_at || new Date(Math.max(0, Number(entry.joined_at_ms || 0)) || nowMs).toISOString()
+    }));
+}
+
+function buildPvpGroupRoomSeenMap(members = [], nowMs = Date.now()) {
+  return (Array.isArray(members) ? members : []).reduce((acc, member) => {
+    const userId = String(member?.user_id || '').trim();
+    if (userId && !isSystemBotUserId(userId)) acc[userId] = nowMs;
+    return acc;
+  }, {});
+}
+
+// O anfitrião (quem controla bots, aceite e início) precisa ser humano. Se o atual
+// saiu, a liderança passa para o humano mais antigo da sala.
+function pickPvpGroupRoomHostUserId(currentHostUserId = '', memberIds = []) {
+  const humans = (Array.isArray(memberIds) ? memberIds : [])
+    .map((entry) => String(entry || '').trim())
+    .filter((entry) => entry && !isSystemBotUserId(entry));
+  const currentHost = String(currentHostUserId || '').trim();
+  if (currentHost && humans.includes(currentHost)) return currentHost;
+  return humans[0] || '';
+}
+
+export function getPvpGroupRoomMemberLastSeenMs(roomRow = null, userId = '') {
+  const safeUserId = String(userId || '').trim();
+  if (!safeUserId) return 0;
+  const seenMap = roomRow?.member_seen_at_ms && typeof roomRow.member_seen_at_ms === 'object'
+    ? roomRow.member_seen_at_ms
+    : {};
+  return Math.max(
+    Math.max(0, Number(seenMap[safeUserId] || 0)),
+    getPvpGroupRoomMemberJoinedAtMs(roomRow, safeUserId)
+  );
+}
+
+export function isPvpGroupRoomMemberFresh(roomRow = null, userId = '', nowMs = Date.now(), staleMs = PVP_GROUP_ROOM_PRESENCE_STALE_MS) {
+  const safeUserId = String(userId || '').trim();
+  if (!safeUserId) return false;
+  if (isSystemBotUserId(safeUserId)) return true;
+  const lastSeenMs = getPvpGroupRoomMemberLastSeenMs(roomRow, safeUserId);
+  if (!lastSeenMs) return false;
+  return (Math.max(0, Number(nowMs || Date.now())) - lastSeenMs) < Math.max(1000, Number(staleMs || PVP_GROUP_ROOM_PRESENCE_STALE_MS));
+}
+
+// Sala de lobby "viva" = existe ao menos um humano com sinal recente.
+export function isPvpGroupRoomAlive(roomRow = null, nowMs = Date.now(), staleMs = PVP_GROUP_ROOM_PRESENCE_STALE_MS) {
+  const room = roomRow && typeof roomRow === 'object' ? roomRow : null;
+  if (!room) return false;
+  const status = String(room.status || '').trim().toLowerCase();
+  if (status === 'finished') return false;
+  if (status === 'active') return true;
+  return getPvpGroupRoomMemberIdsAny(room)
+    .filter((userId) => !isSystemBotUserId(userId))
+    .some((userId) => isPvpGroupRoomMemberFresh(room, userId, nowMs, staleMs));
+}
+
+export function getPvpGroupMatchLastTouchedMs(matchRow = null) {
+  const row = matchRow && typeof matchRow === 'object' ? matchRow : {};
+  return Math.max(
+    0,
+    Number(row.battle_started_at_ms || 0),
+    Number(row.round_result_until_ms || 0),
+    Number(row.elimination_until_ms || 0),
+    toMillis(row.updated_at || row.created_at)
+  );
+}
+
+export function isPvpGroupMatchStale(matchRow = null, nowMs = Date.now(), staleMs = PVP_GROUP_MATCH_STALE_MS) {
+  const row = matchRow && typeof matchRow === 'object' ? matchRow : null;
+  if (!row) return false;
+  const status = String(row.status || '').trim().toLowerCase();
+  if (status === 'finished') return false;
+  const lastTouchedMs = getPvpGroupMatchLastTouchedMs(row);
+  if (!lastTouchedMs) return true;
+  return (Math.max(0, Number(nowMs || Date.now())) - lastTouchedMs) >= Math.max(30000, Number(staleMs || PVP_GROUP_MATCH_STALE_MS));
+}
+
+// Ids (das salas) que mantêm bots ocupados: lobby com humano conectado ou sala com
+// partida em andamento que não foi abandonada.
+async function getActivePvpGroupBusyIds(nowMs = Date.now()) {
+  const [teamRooms, teamMatches, eliminationRooms, eliminationMatches] = await Promise.all([
+    getNode('pvp_team_rooms').catch(() => null),
+    getNode('pvp_team_matches').catch(() => null),
+    getNode('pvp_elimination_rooms').catch(() => null),
+    getNode('pvp_elimination_matches').catch(() => null)
+  ]);
+  const ids = new Set();
+  const collect = (roomRows, matchRows) => {
+    const matches = matchRows && typeof matchRows === 'object' ? matchRows : {};
+    Object.entries(roomRows && typeof roomRows === 'object' ? roomRows : {}).forEach(([roomId, row]) => {
+      if (!roomId || !row || typeof row !== 'object') return;
+      const status = String(row.status || '').trim().toLowerCase();
+      if (status === 'finished') return;
+      if (status === 'active') {
+        const matchId = String(row.match_id || '').trim();
+        const match = matchId ? matches[matchId] : null;
+        if (!match || typeof match !== 'object') return;
+        if (String(match.status || '').trim().toLowerCase() === 'finished') return;
+        if (isPvpGroupMatchStale(match, nowMs)) return;
+        ids.add(String(roomId));
+        if (matchId) ids.add(matchId);
+        return;
+      }
+      if (isPvpGroupRoomAlive({ id: roomId, ...row }, nowMs, PVP_GROUP_ROOM_ABANDONED_MS)) ids.add(String(roomId));
+    });
+  };
+  collect(teamRooms, teamMatches);
+  collect(eliminationRooms, eliminationMatches);
+  return ids;
+}
+
 function normalizePvpTeamRoomStatus(value) {
   const key = String(value || '').trim().toLowerCase();
   if (key === 'active' || key === 'finished') return key;
@@ -6039,6 +5984,9 @@ function sanitizePvpTeamRoomRow(row, options = {}) {
     blue_members: blueMembers,
     ready_member_ids: sanitizePvpTeamRoomReadyMemberIds(safe.ready_member_ids, memberIds),
     lobby_notice: sanitizePvpTeamRoomNotice(safe.lobby_notice),
+    member_seen_at_ms: sanitizePvpGroupMemberSeenMap(safe.member_seen_at_ms, memberIds),
+    removed_member_notices: sanitizePvpGroupRemovedNotices(safe.removed_member_notices, memberIds),
+    membership_changed_at_ms: Math.max(0, Number(safe.membership_changed_at_ms || 0)),
     created_by_user_id: String(safe.created_by_user_id || '').trim(),
     match_id: String(safe.match_id || '').trim() || null
   });
@@ -6109,7 +6057,9 @@ function sanitizePvpTeamMatchRow(row) {
     next_battle_no: safe.next_battle_no === null || safe.next_battle_no === undefined
       ? null
       : (Number.isFinite(Number(safe.next_battle_no)) ? Math.max(1, Number(safe.next_battle_no || 1)) : null),
-    result_battle_correct_answer_idx: Number.isFinite(Number(safe.result_battle_correct_answer_idx))
+    result_battle_correct_answer_idx: safe.result_battle_correct_answer_idx !== null
+      && safe.result_battle_correct_answer_idx !== undefined
+      && Number.isFinite(Number(safe.result_battle_correct_answer_idx))
       ? Number(safe.result_battle_correct_answer_idx)
       : null,
     winner_side: ['red', 'blue', 'draw'].includes(String(safe.winner_side || '').trim().toLowerCase())
@@ -6119,6 +6069,9 @@ function sanitizePvpTeamMatchRow(row) {
     blue_members: blueMembers,
     battle_schedule: normalizePvpTeamBattleSchedule(safe.battle_schedule),
     member_scores: sanitizePvpTeamMemberScores(safe.member_scores, allowedIds),
+    // Humanos que abandonaram: seus confrontos restantes contam como sem resposta.
+    left_member_ids: sanitizePvpEliminationUserIdList(safe.left_member_ids, allowedIds, PVP_TEAM_ROOM_SIDE_CAPACITY * 2)
+      .filter((userId) => !isSystemBotUserId(userId)),
     room_id: String(safe.room_id || '').trim(),
     knowledge_area: String(safe.knowledge_area || '').trim()
   });
@@ -6133,15 +6086,20 @@ export async function createPvpTeamRoom(roomPayload) {
   const roomNameKey = normalizePvpTeamRoomNameCompareKey(requestedName);
   if (!roomNameKey) return null;
 
+  const createdAtMs = Date.now();
+  const redMembers = stampPvpGroupRoomMembers(roomPayload?.red_members, createdAtMs);
+  const blueMembers = stampPvpGroupRoomMembers(roomPayload?.blue_members, createdAtMs);
   const payload = sanitizePvpTeamRoomRow({
     ...roomPayload,
     id,
     name: requestedName,
     status: roomPayload?.status || 'lobby',
-    red_members: roomPayload?.red_members || [],
-    blue_members: roomPayload?.blue_members || [],
+    red_members: redMembers,
+    blue_members: blueMembers,
     ready_member_ids: roomPayload?.ready_member_ids || [],
     lobby_notice: roomPayload?.lobby_notice || null,
+    member_seen_at_ms: buildPvpGroupRoomSeenMap([...redMembers, ...blueMembers], createdAtMs),
+    membership_changed_at_ms: createdAtMs,
     max_side_size: PVP_TEAM_ROOM_SIDE_CAPACITY,
     created_at: roomPayload?.created_at || nowIso,
     updated_at: roomPayload?.updated_at || nowIso
@@ -6293,7 +6251,9 @@ export async function joinPvpTeamRoom(roomId, memberPayload, options = {}) {
         ...currentBlue.map((member) => String(member?.user_id || '').trim())
       ]
     );
-    if (!wasMember && safeCurrent.has_password) {
+    // Bots entram pelo cliente do anfitrião, que já está dentro da sala.
+    const joiningAsBot = options?.asBot === true && isSystemBotUserId(userId);
+    if (!wasMember && safeCurrent.has_password && !joiningAsBot) {
       const expectedHash = String(safeCurrent.password_hash || '').trim();
       if (!expectedHash || expectedHash !== passwordHashAttempt) return current;
     }
@@ -6335,15 +6295,20 @@ export async function joinPvpTeamRoom(roomId, memberPayload, options = {}) {
       ...redMembers.map((member) => String(member?.user_id || '').trim()),
       ...blueMembers.map((member) => String(member?.user_id || '').trim())
     ].filter(Boolean);
-    const nextHostUserId = remainingIds.includes(String(safeCurrent.created_by_user_id || '').trim())
-      ? String(safeCurrent.created_by_user_id || '').trim()
-      : (remainingIds[0] || userId);
+    const nextHostUserId = pickPvpGroupRoomHostUserId(safeCurrent.created_by_user_id, remainingIds);
+    if (!nextHostUserId) return current;
+    const nextReadyIds = new Set(currentReadyIds);
+    if (options?.ready === true || joiningAsBot) nextReadyIds.add(userId);
+    const nextSeenMap = { ...(safeCurrent.member_seen_at_ms || {}) };
+    if (!isSystemBotUserId(userId)) nextSeenMap[userId] = nowMs;
 
     return sanitizePvpTeamRoomRow({
       ...safeCurrent,
       red_members: redMembers,
       blue_members: blueMembers,
-      ready_member_ids: currentReadyIds,
+      ready_member_ids: Array.from(nextReadyIds),
+      member_seen_at_ms: nextSeenMap,
+      membership_changed_at_ms: wasMember ? Math.max(0, Number(safeCurrent.membership_changed_at_ms || 0)) : nowMs,
       created_by_user_id: nextHostUserId,
       updated_at: nowIso
     }, { includeSecrets: true });
@@ -6353,38 +6318,99 @@ export async function joinPvpTeamRoom(roomId, memberPayload, options = {}) {
   return sanitizePvpTeamRoomRow(tx.snapshot.val());
 }
 
-export async function leavePvpTeamRoom(roomId, userId) {
+// Remove membros da sala. A liderança fica sempre com um humano; se nenhum humano
+// sobrar, a sala é apagada e os bots que estavam nela voltam em botIds para quem
+// chamou liberar. O motivo fica registrado para o humano removido saber por que saiu.
+export async function removePvpTeamRoomMembers(roomId, userIds = [], options = {}) {
   const safeRoomId = String(roomId || '').trim();
-  const safeUserId = String(userId || '').trim();
-  if (!safeRoomId || !safeUserId) return null;
-  const nowIso = new Date().toISOString();
+  const targetIds = new Set(
+    (Array.isArray(userIds) ? userIds : [userIds])
+      .map((entry) => String(entry || '').trim())
+      .filter(Boolean)
+  );
+  if (!safeRoomId || !targetIds.size) return { room: null, deleted: false, botIds: [], removedIds: [] };
+  const reason = String(options?.reason || '').trim();
+  const nowMs = Date.now();
+  const nowIso = new Date(nowMs).toISOString();
+  let removedIds = [];
+  let previousMemberIds = [];
 
   const tx = await runTransaction(ref(firebaseDb, `pvp_team_rooms/${safeRoomId}`), (current) => {
     const safeCurrent = sanitizePvpTeamRoomRow(current, { includeSecrets: true });
-    if (!safeCurrent) return current;
+    if (!safeCurrent) return undefined;
+    previousMemberIds = getPvpTeamRoomMemberIds(safeCurrent);
+    removedIds = previousMemberIds.filter((memberId) => targetIds.has(memberId));
+    if (!removedIds.length) return undefined;
     const redMembers = normalizePvpTeamRoomMembers(safeCurrent.red_members)
-      .filter((member) => String(member?.user_id || '').trim() !== safeUserId);
+      .filter((member) => !targetIds.has(String(member?.user_id || '').trim()));
     const blueMembers = normalizePvpTeamRoomMembers(safeCurrent.blue_members)
-      .filter((member) => String(member?.user_id || '').trim() !== safeUserId);
+      .filter((member) => !targetIds.has(String(member?.user_id || '').trim()));
     const remainingIds = [
       ...redMembers.map((member) => String(member?.user_id || '').trim()),
       ...blueMembers.map((member) => String(member?.user_id || '').trim())
     ].filter(Boolean);
-    if (!remainingIds.length) return null;
-    const nextHostUserId = remainingIds.includes(String(safeCurrent.created_by_user_id || '').trim())
-      ? String(safeCurrent.created_by_user_id || '').trim()
-      : remainingIds[0];
+    const nextHostUserId = pickPvpGroupRoomHostUserId(safeCurrent.created_by_user_id, remainingIds);
+    if (!nextHostUserId) return null;
+    const removedNotices = { ...(safeCurrent.removed_member_notices || {}) };
+    if (reason) {
+      removedIds.forEach((memberId) => {
+        if (!isSystemBotUserId(memberId)) removedNotices[memberId] = { reason, at_ms: nowMs };
+      });
+    }
     return sanitizePvpTeamRoomRow({
       ...safeCurrent,
       red_members: redMembers,
       blue_members: blueMembers,
+      removed_member_notices: removedNotices,
+      membership_changed_at_ms: nowMs,
       created_by_user_id: nextHostUserId,
       updated_at: nowIso
     }, { includeSecrets: true });
   });
 
+  const exists = !!tx?.snapshot?.exists();
+  const room = exists ? sanitizePvpTeamRoomRow({ id: safeRoomId, ...tx.snapshot.val() }) : null;
+  const deleted = !!tx?.committed && !exists;
+  const remainingIds = room ? getPvpTeamRoomMemberIds(room) : [];
+  const botIds = deleted
+    ? previousMemberIds.filter((memberId) => isSystemBotUserId(memberId))
+    : removedIds.filter((memberId) => isSystemBotUserId(memberId) && !remainingIds.includes(memberId));
+  return { room, deleted, botIds: tx?.committed ? botIds : [], removedIds: tx?.committed ? removedIds : [] };
+}
+
+export async function leavePvpTeamRoom(roomId, userId) {
+  const result = await removePvpTeamRoomMembers(roomId, [userId]);
+  return result.room;
+}
+
+// Renova o sinal de presença do humano na sala (em transação para nunca recriar
+// uma sala que acabou de ser apagada).
+async function touchPvpGroupRoomPresence(collection, sanitizeFn, roomId, userId) {
+  const safeRoomId = String(roomId || '').trim();
+  const safeUserId = String(userId || '').trim();
+  if (!safeRoomId || !safeUserId || isSystemBotUserId(safeUserId)) return null;
+  const nowMs = Date.now();
+  const tx = await runTransaction(ref(firebaseDb, `${collection}/${safeRoomId}`), (current) => {
+    if (!current || typeof current !== 'object') return undefined;
+    const safeCurrent = sanitizeFn(current, { includeSecrets: true });
+    if (!safeCurrent || !getPvpGroupRoomMemberIdsAny(safeCurrent).includes(safeUserId)) return undefined;
+    const seenMap = current.member_seen_at_ms && typeof current.member_seen_at_ms === 'object'
+      ? current.member_seen_at_ms
+      : {};
+    return {
+      ...current,
+      member_seen_at_ms: {
+        ...seenMap,
+        [safeUserId]: nowMs
+      }
+    };
+  });
   if (!tx?.snapshot?.exists()) return null;
-  return sanitizePvpTeamRoomRow(tx.snapshot.val());
+  return sanitizeFn({ id: safeRoomId, ...tx.snapshot.val() });
+}
+
+export async function touchPvpTeamRoomPresence(roomId, userId) {
+  return touchPvpGroupRoomPresence('pvp_team_rooms', sanitizePvpTeamRoomRow, roomId, userId);
 }
 
 export async function setPvpTeamRoomMemberReady(roomId, userId, isReady = false) {
@@ -6477,6 +6503,33 @@ export async function getPvpTeamMatch(matchId) {
   return sanitizePvpTeamMatchRow({ id: safeMatchId, ...row });
 }
 
+// Transição condicional de uma partida em grupo: buildPatch recebe a linha atual
+// (sanitizada) e devolve o patch ou null para não mexer. Roda dentro da transação,
+// então vários clientes podem disputar a mesma transição sem aplicá-la duas vezes.
+async function transactPvpGroupMatch(collection, sanitizeFn, matchId, buildPatch) {
+  const safeMatchId = String(matchId || '').trim();
+  if (!safeMatchId || typeof buildPatch !== 'function') return { committed: false, row: null };
+  const tx = await runTransaction(ref(firebaseDb, `${collection}/${safeMatchId}`), (current) => {
+    if (!current || typeof current !== 'object') return undefined;
+    const safeCurrent = sanitizeFn({ id: safeMatchId, ...current });
+    if (!safeCurrent) return undefined;
+    const patch = buildPatch(safeCurrent);
+    if (!patch || typeof patch !== 'object') return undefined;
+    return stripUndefinedDeep({
+      ...current,
+      ...patch,
+      id: safeMatchId,
+      updated_at: new Date().toISOString()
+    });
+  });
+  const row = tx?.snapshot?.exists() ? sanitizeFn({ id: safeMatchId, ...tx.snapshot.val() }) : null;
+  return { committed: !!tx?.committed, row };
+}
+
+export async function transactPvpTeamMatch(matchId, buildPatch) {
+  return transactPvpGroupMatch('pvp_team_matches', sanitizePvpTeamMatchRow, matchId, buildPatch);
+}
+
 export async function findOpenPvpTeamMatchForUser(userId) {
   const safeUserId = String(userId || '').trim();
   if (!safeUserId) return null;
@@ -6489,11 +6542,13 @@ export async function findOpenPvpTeamMatchForUser(userId) {
     const safeRow = sanitizePvpTeamMatchRow({ id: matchId, ...(row && typeof row === 'object' ? row : {}) });
     if (!safeRow) return;
     if (safeRow.status !== 'active' && safeRow.status !== 'round_result') return;
+    if (isPvpGroupMatchStale(safeRow)) return;
     const memberIds = [
       ...safeRow.red_members.map((member) => String(member?.user_id || '').trim()),
       ...safeRow.blue_members.map((member) => String(member?.user_id || '').trim())
     ].filter(Boolean);
     if (!memberIds.includes(safeUserId)) return;
+    if ((safeRow.left_member_ids || []).includes(safeUserId)) return;
     const updatedAtMs = toMillis(safeRow.updated_at || safeRow.created_at);
     if (!best || updatedAtMs >= bestUpdatedAtMs) {
       best = safeRow;
@@ -6813,6 +6868,9 @@ function sanitizePvpEliminationRoomRow(row, options = {}) {
     accept_reject_at_ms: Math.max(0, Number(safe.accept_reject_at_ms || 0)),
     accept_bot_decision_at_ms: acceptBotDecisionAtMs,
     accept_bot_will_reject: acceptBotWillReject,
+    member_seen_at_ms: sanitizePvpGroupMemberSeenMap(safe.member_seen_at_ms, memberIds),
+    removed_member_notices: sanitizePvpGroupRemovedNotices(safe.removed_member_notices, memberIds),
+    membership_changed_at_ms: Math.max(0, Number(safe.membership_changed_at_ms || 0)),
     created_by_user_id: String(safe.created_by_user_id || '').trim(),
     match_id: String(safe.match_id || '').trim() || null
   });
@@ -6863,13 +6921,15 @@ function sanitizePvpEliminationMatchRow(row) {
   if (!safe) return null;
   const members = normalizePvpEliminationMembers(safe.members);
   const allMemberIds = members.map((member) => String(member?.user_id || '').trim()).filter(Boolean);
-  const activeMemberIds = sanitizePvpEliminationUserIdList(
-    safe.active_member_ids && Array.isArray(safe.active_member_ids) && safe.active_member_ids.length
-      ? safe.active_member_ids
-      : allMemberIds,
-    allMemberIds,
-    PVP_ELIMINATION_ROOM_CAPACITY
-  );
+  // Lista vazia é válida (partida encerrada sem sobrevivente); só linhas antigas sem o
+  // campo usam todos os membros.
+  const activeMemberIds = Array.isArray(safe.active_member_ids) && !safe.active_member_ids.length
+    ? []
+    : sanitizePvpEliminationUserIdList(
+      Array.isArray(safe.active_member_ids) ? safe.active_member_ids : allMemberIds,
+      allMemberIds,
+      PVP_ELIMINATION_ROOM_CAPACITY
+    );
   const spectatorMemberIds = sanitizePvpEliminationUserIdList(
     safe.spectator_member_ids,
     allMemberIds,
@@ -6925,7 +6985,9 @@ function sanitizePvpEliminationMatchRow(row) {
     next_pair_no: safe.next_pair_no === null || safe.next_pair_no === undefined
       ? null
       : (Number.isFinite(Number(safe.next_pair_no)) ? Math.max(1, Number(safe.next_pair_no || 1)) : null),
-    result_battle_correct_answer_idx: Number.isFinite(Number(safe.result_battle_correct_answer_idx))
+    result_battle_correct_answer_idx: safe.result_battle_correct_answer_idx !== null
+      && safe.result_battle_correct_answer_idx !== undefined
+      && Number.isFinite(Number(safe.result_battle_correct_answer_idx))
       ? Number(safe.result_battle_correct_answer_idx)
       : null,
     result_battle_winner_user_id: String(safe.result_battle_winner_user_id || '').trim() || null,
@@ -6943,12 +7005,16 @@ export async function createPvpEliminationRoom(roomPayload) {
   const roomNameKey = normalizePvpEliminationRoomNameCompareKey(requestedName);
   if (!roomNameKey) return null;
 
+  const createdAtMs = Date.now();
+  const members = stampPvpGroupRoomMembers(roomPayload?.members, createdAtMs);
   const payload = sanitizePvpEliminationRoomRow({
     ...roomPayload,
     id,
     name: requestedName,
     status: roomPayload?.status || 'lobby',
-    members: roomPayload?.members || [],
+    members,
+    member_seen_at_ms: buildPvpGroupRoomSeenMap(members, createdAtMs),
+    membership_changed_at_ms: createdAtMs,
     ready_member_ids: roomPayload?.ready_member_ids || [],
     lobby_notice: roomPayload?.lobby_notice || null,
     accept_member_states: roomPayload?.accept_member_states || {},
@@ -7103,7 +7169,8 @@ export async function joinPvpEliminationRoom(roomId, memberPayload, options = {}
       safeCurrent.ready_member_ids,
       currentMembers.map((member) => String(member?.user_id || '').trim())
     );
-    if (!wasMember && safeCurrent.has_password) {
+    const joiningAsBot = options?.asBot === true && isSystemBotUserId(userId);
+    if (!wasMember && safeCurrent.has_password && !joiningAsBot) {
       const expectedHash = String(safeCurrent.password_hash || '').trim();
       if (!expectedHash || expectedHash !== passwordHashAttempt) return current;
     }
@@ -7124,14 +7191,17 @@ export async function joinPvpEliminationRoom(roomId, memberPayload, options = {}
     ));
 
     const remainingIds = nextMembers.map((member) => String(member?.user_id || '').trim()).filter(Boolean);
-    const nextHostUserId = remainingIds.includes(String(safeCurrent.created_by_user_id || '').trim())
-      ? String(safeCurrent.created_by_user_id || '').trim()
-      : (remainingIds[0] || userId);
+    const nextHostUserId = pickPvpGroupRoomHostUserId(safeCurrent.created_by_user_id, remainingIds);
+    if (!nextHostUserId) return current;
+    const nextSeenMap = { ...(safeCurrent.member_seen_at_ms || {}) };
+    if (!isSystemBotUserId(userId)) nextSeenMap[userId] = nowMs;
 
     return sanitizePvpEliminationRoomRow({
       ...safeCurrent,
       members: nextMembers,
       ready_member_ids: currentReadyIds,
+      member_seen_at_ms: nextSeenMap,
+      membership_changed_at_ms: wasMember ? Math.max(0, Number(safeCurrent.membership_changed_at_ms || 0)) : nowMs,
       created_by_user_id: nextHostUserId,
       updated_at: nowIso
     }, { includeSecrets: true });
@@ -7141,33 +7211,154 @@ export async function joinPvpEliminationRoom(roomId, memberPayload, options = {}
   return sanitizePvpEliminationRoomRow({ id: safeRoomId, ...tx.snapshot.val() });
 }
 
-export async function leavePvpEliminationRoom(roomId, userId) {
+// Igual a removePvpTeamRoomMembers. Se a sala estava no aceite, ela volta para o
+// lobby (o aceite só vale com o grupo completo).
+export async function removePvpEliminationRoomMembers(roomId, userIds = [], options = {}) {
   const safeRoomId = String(roomId || '').trim();
-  const safeUserId = String(userId || '').trim();
-  if (!safeRoomId || !safeUserId) return null;
-  const nowIso = new Date().toISOString();
+  const targetIds = new Set(
+    (Array.isArray(userIds) ? userIds : [userIds])
+      .map((entry) => String(entry || '').trim())
+      .filter(Boolean)
+  );
+  if (!safeRoomId || !targetIds.size) return { room: null, deleted: false, botIds: [], removedIds: [] };
+  const reason = String(options?.reason || '').trim();
+  const nowMs = Date.now();
+  const nowIso = new Date(nowMs).toISOString();
+  let removedIds = [];
+  let previousMemberIds = [];
 
   const tx = await runTransaction(ref(firebaseDb, `pvp_elimination_rooms/${safeRoomId}`), (current) => {
     const safeCurrent = sanitizePvpEliminationRoomRow(current, { includeSecrets: true });
-    if (!safeCurrent) return current;
+    if (!safeCurrent) return undefined;
+    previousMemberIds = getPvpEliminationRoomMemberIds(safeCurrent);
+    removedIds = previousMemberIds.filter((memberId) => targetIds.has(memberId));
+    if (!removedIds.length) return undefined;
     const nextMembers = normalizePvpEliminationMembers(safeCurrent.members)
-      .filter((member) => String(member?.user_id || '').trim() !== safeUserId);
+      .filter((member) => !targetIds.has(String(member?.user_id || '').trim()));
     const remainingIds = nextMembers.map((member) => String(member?.user_id || '').trim()).filter(Boolean);
-    if (!remainingIds.length) return null;
-    const nextHostUserId = remainingIds.includes(String(safeCurrent.created_by_user_id || '').trim())
-      ? String(safeCurrent.created_by_user_id || '').trim()
-      : remainingIds[0];
+    const nextHostUserId = pickPvpGroupRoomHostUserId(safeCurrent.created_by_user_id, remainingIds);
+    if (!nextHostUserId) return null;
+    const removedNotices = { ...(safeCurrent.removed_member_notices || {}) };
+    if (reason) {
+      removedIds.forEach((memberId) => {
+        if (!isSystemBotUserId(memberId)) removedNotices[memberId] = { reason, at_ms: nowMs };
+      });
+    }
+    const backToLobby = safeCurrent.status === 'pending_accept';
     return sanitizePvpEliminationRoomRow({
       ...safeCurrent,
       members: nextMembers,
       ready_member_ids: sanitizePvpEliminationRoomReadyMemberIds(safeCurrent.ready_member_ids, remainingIds),
+      removed_member_notices: removedNotices,
+      membership_changed_at_ms: nowMs,
       created_by_user_id: nextHostUserId,
+      ...(backToLobby
+        ? {
+          status: 'lobby',
+          accept_member_states: {},
+          accept_started_at_ms: 0,
+          accept_deadline_ms: 0,
+          accept_start_countdown_ms: 0,
+          accept_reject_at_ms: 0,
+          accept_bot_decision_at_ms: {},
+          accept_bot_will_reject: {}
+        }
+        : {}),
       updated_at: nowIso
     }, { includeSecrets: true });
   });
 
-  if (!tx?.snapshot?.exists()) return null;
-  return sanitizePvpEliminationRoomRow({ id: safeRoomId, ...tx.snapshot.val() });
+  const exists = !!tx?.snapshot?.exists();
+  const room = exists ? sanitizePvpEliminationRoomRow({ id: safeRoomId, ...tx.snapshot.val() }) : null;
+  const deleted = !!tx?.committed && !exists;
+  const remainingIds = room ? getPvpEliminationRoomMemberIds(room) : [];
+  const botIds = deleted
+    ? previousMemberIds.filter((memberId) => isSystemBotUserId(memberId))
+    : removedIds.filter((memberId) => isSystemBotUserId(memberId) && !remainingIds.includes(memberId));
+  return { room, deleted, botIds: tx?.committed ? botIds : [], removedIds: tx?.committed ? removedIds : [] };
+}
+
+export async function leavePvpEliminationRoom(roomId, userId) {
+  const result = await removePvpEliminationRoomMembers(roomId, [userId]);
+  return result.room;
+}
+
+export async function touchPvpEliminationRoomPresence(roomId, userId) {
+  return touchPvpGroupRoomPresence('pvp_elimination_rooms', sanitizePvpEliminationRoomRow, roomId, userId);
+}
+
+// Assume a liderança se o anfitrião atual não é humano conectado, e tira da sala os
+// humanos sem sinal há mais de staleMs. Só o próprio solicitante precisa estar ativo.
+async function reconcilePvpGroupRoomPresence(collection, sanitizeFn, getIdsFn, removeFn, roomId, actorUserId, options = {}) {
+  const safeRoomId = String(roomId || '').trim();
+  const safeActorId = String(actorUserId || '').trim();
+  if (!safeRoomId || !safeActorId || isSystemBotUserId(safeActorId)) return { room: null, changed: false, removal: null };
+  const staleMs = Math.max(5000, Number(options?.staleMs || PVP_GROUP_ROOM_PRESENCE_STALE_MS));
+  const nowMs = Date.now();
+  const row = await getNode(`${collection}/${safeRoomId}`).catch(() => null);
+  const room = row && typeof row === 'object' ? sanitizeFn({ id: safeRoomId, ...row }) : null;
+  if (!room) return { room: null, changed: false, removal: null };
+  if (room.status !== 'lobby' && room.status !== 'pending_accept') return { room, changed: false, removal: null };
+  const memberIds = getIdsFn(room);
+  if (!memberIds.includes(safeActorId)) return { room, changed: false, removal: null };
+
+  const staleHumanIds = memberIds.filter((memberId) => (
+    memberId !== safeActorId
+    && !isSystemBotUserId(memberId)
+    && !isPvpGroupRoomMemberFresh(room, memberId, nowMs, staleMs)
+  ));
+  let latestRoom = room;
+  let removal = null;
+  if (staleHumanIds.length) {
+    removal = await removeFn(safeRoomId, staleHumanIds, { reason: 'inactive' }).catch(() => null);
+    if (removal?.room) latestRoom = removal.room;
+  }
+
+  const hostUserId = String(latestRoom?.created_by_user_id || '').trim();
+  const hostIsValid = !!hostUserId
+    && !isSystemBotUserId(hostUserId)
+    && getIdsFn(latestRoom).includes(hostUserId)
+    && isPvpGroupRoomMemberFresh(latestRoom, hostUserId, nowMs, staleMs);
+  if (!hostIsValid && latestRoom) {
+    const tx = await runTransaction(ref(firebaseDb, `${collection}/${safeRoomId}`), (current) => {
+      const safeCurrent = sanitizeFn(current, { includeSecrets: true });
+      if (!safeCurrent || !getIdsFn(safeCurrent).includes(safeActorId)) return undefined;
+      if (String(safeCurrent.created_by_user_id || '').trim() === safeActorId) return undefined;
+      return {
+        ...current,
+        created_by_user_id: safeActorId,
+        updated_at: new Date().toISOString()
+      };
+    }).catch(() => null);
+    if (tx?.committed && tx?.snapshot?.exists()) {
+      latestRoom = sanitizeFn({ id: safeRoomId, ...tx.snapshot.val() });
+    }
+  }
+  return { room: latestRoom, changed: latestRoom !== room, removal };
+}
+
+export async function reconcilePvpTeamRoomPresence(roomId, actorUserId, options = {}) {
+  return reconcilePvpGroupRoomPresence(
+    'pvp_team_rooms',
+    sanitizePvpTeamRoomRow,
+    getPvpTeamRoomMemberIds,
+    removePvpTeamRoomMembers,
+    roomId,
+    actorUserId,
+    options
+  );
+}
+
+export async function reconcilePvpEliminationRoomPresence(roomId, actorUserId, options = {}) {
+  return reconcilePvpGroupRoomPresence(
+    'pvp_elimination_rooms',
+    sanitizePvpEliminationRoomRow,
+    getPvpEliminationRoomMemberIds,
+    removePvpEliminationRoomMembers,
+    roomId,
+    actorUserId,
+    options
+  );
 }
 
 export async function setPvpEliminationRoomMemberReady(roomId, userId, isReady = false) {
@@ -7302,6 +7493,68 @@ export async function getPvpEliminationMatch(matchId) {
   return sanitizePvpEliminationMatchRow({ id: safeMatchId, ...row });
 }
 
+export async function transactPvpEliminationMatch(matchId, buildPatch) {
+  return transactPvpGroupMatch('pvp_elimination_matches', sanitizePvpEliminationMatchRow, matchId, buildPatch);
+}
+
+export async function getPvpTeamMatchesSnapshot() {
+  const rows = await getNode('pvp_team_matches').catch(() => null);
+  if (!rows || typeof rows !== 'object') return [];
+  return Object.entries(rows)
+    .filter(([id, row]) => !!id && row && typeof row === 'object')
+    .map(([id, row]) => sanitizePvpTeamMatchRow({ id, ...row }))
+    .filter(Boolean);
+}
+
+export async function getPvpEliminationMatchesSnapshot() {
+  const rows = await getNode('pvp_elimination_matches').catch(() => null);
+  if (!rows || typeof rows !== 'object') return [];
+  return Object.entries(rows)
+    .filter(([id, row]) => !!id && row && typeof row === 'object')
+    .map(([id, row]) => sanitizePvpEliminationMatchRow({ id, ...row }))
+    .filter(Boolean);
+}
+
+// Fecha a sala quando a partida dela termina (sem recriar sala já apagada).
+async function markPvpGroupRoomFinished(collection, roomId, matchId) {
+  const safeRoomId = String(roomId || '').trim();
+  const safeMatchId = String(matchId || '').trim();
+  if (!safeRoomId) return false;
+  const tx = await runTransaction(ref(firebaseDb, `${collection}/${safeRoomId}`), (current) => {
+    if (!current || typeof current !== 'object') return undefined;
+    if (String(current.status || '').trim().toLowerCase() === 'finished') return undefined;
+    if (safeMatchId && String(current.match_id || '').trim() && String(current.match_id || '').trim() !== safeMatchId) return undefined;
+    return {
+      ...current,
+      status: 'finished',
+      updated_at: new Date().toISOString()
+    };
+  });
+  return !!tx?.committed;
+}
+
+export async function markPvpTeamRoomFinished(roomId, matchId = '') {
+  return markPvpGroupRoomFinished('pvp_team_rooms', roomId, matchId);
+}
+
+export async function markPvpEliminationRoomFinished(roomId, matchId = '') {
+  return markPvpGroupRoomFinished('pvp_elimination_rooms', roomId, matchId);
+}
+
+export async function deletePvpTeamRoom(roomId) {
+  const safeRoomId = String(roomId || '').trim();
+  if (!safeRoomId) return false;
+  await set(ref(firebaseDb, `pvp_team_rooms/${safeRoomId}`), null);
+  return true;
+}
+
+export async function deletePvpEliminationRoom(roomId) {
+  const safeRoomId = String(roomId || '').trim();
+  if (!safeRoomId) return false;
+  await set(ref(firebaseDb, `pvp_elimination_rooms/${safeRoomId}`), null);
+  return true;
+}
+
 export async function markPvpEliminationMatchParticipantOptOut(matchId, userId) {
   const safeMatchId = String(matchId || '').trim();
   const safeUserId = String(userId || '').trim();
@@ -7348,10 +7601,10 @@ export async function findOpenPvpEliminationMatchForUser(userId) {
       ? safeRow.opt_out_member_ids.map((entry) => String(entry || '').trim()).filter(Boolean)
       : [];
     if (optedOutIds.includes(safeUserId)) return;
-    const activeIds = Array.isArray(safeRow.active_member_ids)
-      ? safeRow.active_member_ids.map((entry) => String(entry || '').trim()).filter(Boolean)
-      : [];
-    if (!activeIds.includes(safeUserId)) return;
+    if (isPvpGroupMatchStale(safeRow)) return;
+    // Eliminado que ainda não saiu continua na partida como espectador.
+    const memberIds = safeRow.members.map((member) => String(member?.user_id || '').trim()).filter(Boolean);
+    if (!memberIds.includes(safeUserId)) return;
     const updatedAtMs = toMillis(safeRow.updated_at || safeRow.created_at);
     if (!best || updatedAtMs >= bestUpdatedAtMs) {
       best = safeRow;
@@ -7582,7 +7835,7 @@ export async function applyPvpOutcomeToUserStats(userId, payload = {}) {
       level: Math.max(1, Number(xpState.level || 1)),
       ranking_points: Math.max(0, Number(prev.ranking_points || 0)),
       pvp_points: Math.max(0, Math.trunc(Number(prev.pvp_points || 0)) + pointsDelta),
-      coins: Math.max(0, Math.trunc(Number(prev.coins || 20)) + coinsDelta),
+      coins: Math.max(0, Math.trunc(Number(prev.coins ?? BOT_STARTING_COINS)) + coinsDelta),
       pvp_battles: prevBattles + battlesDelta,
       pvp_wins: prevWins + (isWin ? battlesDelta : 0),
       pvp_losses: prevLosses + (isLoss ? battlesDelta : 0),
@@ -7601,10 +7854,15 @@ export async function applyPvpOutcomeToUserStats(userId, payload = {}) {
       quiz_rewarded: normalizeQuizRewardedMap(prev.quiz_rewarded),
       is_system_bot: prev.is_system_bot === true || isSystemBotUserId(uid),
       progress_updated_at_ms: Math.max(0, Number(prev.progress_updated_at_ms || Date.now())),
+      ...pickSystemBotEconomyFields(prev),
       updated_at: nowIso
     };
   });
 
+  if (isSystemBotUserId(uid)) {
+    // Bot gasta/resgata no próprio estilo depois de cada partida.
+    await progressSystemBot(uid).catch(() => null);
+  }
   return getUserStats(uid);
 }
 

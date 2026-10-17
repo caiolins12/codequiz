@@ -2,9 +2,9 @@ import { normalizeDifficulty } from './utils';
 
 export const PVP_ROUNDS_PER_MATCH = 5;
 export const PVP_ROUND_SECONDS = {
-  easy: 20,
-  medium: 18,
-  hard: 15
+  easy: 22,
+  medium: 20,
+  hard: 17
 };
 
 export function buildMatchId(userA, userB) {

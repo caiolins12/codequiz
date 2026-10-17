@@ -197,15 +197,16 @@ function DuelPanel({ vm }) {
     );
   }
 
+  const searching = shouldKeepQueueButtonPressed && !queueActionBusy;
   return (
-    <div className={styles.layout}>
+    <div className={cx(styles.layout, searching ? styles.layoutSearching : '')}>
       <Card padding="lg" className={styles.config}>
         <DifficultyPicker value={pvpSelectedDifficulty} onChoose={choosePvpDifficulty} disabled={pvpAreaSelectionLocked} label="Dificuldade da fila" />
         <AreaPicker value={pvpKnowledgeArea} onChoose={chooseKnowledgeAreaForPvp} disabled={pvpAreaSelectionLocked} />
       </Card>
       <div className={styles.side}>
         <QueuePanel
-          searching={shouldKeepQueueButtonPressed && !queueActionBusy}
+          searching={searching}
           timeLabel={pvpQueueTimeLabel}
           action={arenaPrimaryAction}
         />
@@ -224,6 +225,7 @@ function TeamPanel({ vm }) {
     openPvpTeamRoomCreate,
     openPvpTeamRoomLobby,
     pvpTeamActionBusy,
+    pvpTeamAutoStartPending,
     pvpTeamCurrentUserReady,
     pvpTeamMySide,
     pvpTeamRoom,
@@ -296,6 +298,12 @@ function TeamPanel({ vm }) {
 
   const isHost = String(pvpTeamRoomHostUserId || '').trim() === selfId;
   const roomDifficulty = normalizeDifficulty(pvpTeamRoom?.difficulty || 'easy');
+  const openSlots = Math.max(
+    0,
+    (PVP_TEAM_ROOM_SIDE_CAPACITY * 2)
+      - getPvpTeamMembersBySide(pvpTeamRoom, 'red').length
+      - getPvpTeamMembersBySide(pvpTeamRoom, 'blue').length
+  );
 
   return (
     <>
@@ -371,9 +379,25 @@ function TeamPanel({ vm }) {
 
       <div className={styles.roomActions}>
         {isHost ? (
-          <Button size="xl" variant="success" block loading={pvpTeamActionBusy} onClick={() => startPvpTeamBattle()}>
-            Iniciar batalha
-          </Button>
+          <>
+            <Button
+              size="xl"
+              variant="success"
+              block
+              loading={pvpTeamActionBusy || pvpTeamAutoStartPending}
+              disabled={pvpTeamAutoStartPending}
+              onClick={() => startPvpTeamBattle()}
+            >
+              {pvpTeamAutoStartPending ? 'Completando a sala...' : 'Iniciar batalha'}
+            </Button>
+            {openSlots > 0 ? (
+              <p className={styles.muted} role="status">
+                {pvpTeamAutoStartPending
+                  ? 'Jogadores entrando nas vagas abertas. A batalha começa quando a sala lotar.'
+                  : `${openSlots === 1 ? '1 vaga aberta' : `${openSlots} vagas abertas`}. Ao iniciar, outros jogadores completam a sala.`}
+              </p>
+            ) : null}
+          </>
         ) : (
           <Button
             size="xl"
@@ -418,8 +442,9 @@ function EliminationPanel({ vm }) {
   const members = (Array.isArray(pvpEliminationAcceptMembers) ? pvpEliminationAcceptMembers : [])
     .map((member) => buildPlayerView(member, buildCosmeticSnapshot));
 
+  const eliminationSearching = pvpEliminationQueueing && !pvpEliminationActionBusy && !pvpEliminationHasLiveMatch;
   return (
-    <div className={styles.layout}>
+    <div className={cx(styles.layout, eliminationSearching ? styles.layoutSearching : '')}>
       {!pvpEliminationPendingAccept ? (
         <Card padding="lg" className={styles.config}>
           <DifficultyPicker value={pvpSelectedDifficulty} onChoose={choosePvpDifficulty} disabled={pvpEliminationAreaSelectionLocked} label="Dificuldade da fila" />
@@ -463,7 +488,7 @@ function EliminationPanel({ vm }) {
       )}
       <div className={styles.side}>
         <QueuePanel
-          searching={pvpEliminationQueueing && !pvpEliminationActionBusy && !pvpEliminationHasLiveMatch}
+          searching={eliminationSearching}
           timeLabel={pvpEliminationQueueTimeLabel}
           action={pvpEliminationPrimaryAction}
           title="Montando o grupo"

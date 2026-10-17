@@ -7,9 +7,10 @@ import { buildPlayerView } from './shared/players';
 import QuestionCard from './shared/QuestionCard';
 import team from './shared/TeamBattle.module.css';
 
-function TeamPanel({ side, label, members, score, activeUserId, mine, buildCosmeticSnapshot, memberScores }) {
+function TeamPanel({ side, label, members, score, activeUserId, mine, buildCosmeticSnapshot, memberScores, leftMemberIds = [] }) {
   return (
     <section className={cx(team.team, side === 'blue' ? team.blue : '', side === 'blue' ? team.teamBlue : team.teamRed, mine ? team.mine : '')}>
+      {mine ? <span className={team.youTag} aria-hidden="true">Seu time</span> : null}
       <div className={team.teamHead}>
         <span className={team.teamName}>Time {label}{mine ? ' (você)' : ''}</span>
         <span className={team.teamScore}>{score}</span>
@@ -18,12 +19,16 @@ function TeamPanel({ side, label, members, score, activeUserId, mine, buildCosme
         {members.map((member) => {
           const player = buildPlayerView(member, buildCosmeticSnapshot);
           const memberScore = Math.max(0, Number(memberScores?.[player.userId] || 0));
+          const left = leftMemberIds.includes(player.userId);
           return (
             <li key={`${side}_${player.userId}`} className={cx(team.member, activeUserId === player.userId ? team.memberActive : '')}>
               <Avatar avatar={player.avatar} frameClass={player.frameClass} frameStyle={player.frameStyle} size="xs" />
               <span className={team.memberText}>
                 <span className={team.memberName}>{player.nickname}</span>
-                <span className={team.memberMeta}>{memberScore} acerto{memberScore === 1 ? '' : 's'}{activeUserId === player.userId ? ' · duelando' : ''}</span>
+                <span className={team.memberMeta}>
+                  {memberScore} acerto{memberScore === 1 ? '' : 's'}
+                  {left ? ' · saiu da partida' : (activeUserId === player.userId ? ' · duelando' : '')}
+                </span>
               </span>
             </li>
           );
@@ -48,7 +53,9 @@ export default function PvpTeamScreen({ vm }) {
     pvpTeamBlueMembers,
     pvpTeamCurrentBattleLabel,
     pvpTeamCurrentPairLabel,
+    pvpTeamAnswerWindowOpen,
     pvpTeamIsActivePlayer,
+    pvpTeamLeftMemberIds,
     pvpTeamMatch,
     pvpTeamMySide,
     pvpTeamQuestion,
@@ -66,7 +73,8 @@ export default function PvpTeamScreen({ vm }) {
   } = vm;
 
   const isRoundResult = pvpTeamBattleStatus === 'round_result';
-  const locked = pvpTeamSubmitted || isRoundResult || !pvpTeamIsActivePlayer;
+  const locked = pvpTeamSubmitted || isRoundResult || !pvpTeamIsActivePlayer || pvpTeamAnswerWindowOpen === false;
+  const leftIds = Array.isArray(pvpTeamLeftMemberIds) ? pvpTeamLeftMemberIds : [];
   const selected = Number(pvpTeamSelectedIndex);
   const hasSelection = Number.isFinite(selected) && selected >= 0 && pvpTeamSelectedIndex !== null;
   const redScore = Math.max(0, Number(pvpTeamMatch?.red_score || 0));
@@ -103,6 +111,7 @@ export default function PvpTeamScreen({ vm }) {
             mine={pvpTeamMySide === 'red'}
             buildCosmeticSnapshot={buildCosmeticSnapshot}
             memberScores={pvpTeamMatch?.member_scores}
+            leftMemberIds={leftIds}
           />
           <TeamPanel
             side="blue"
@@ -113,6 +122,7 @@ export default function PvpTeamScreen({ vm }) {
             mine={pvpTeamMySide === 'blue'}
             buildCosmeticSnapshot={buildCosmeticSnapshot}
             memberScores={pvpTeamMatch?.member_scores}
+            leftMemberIds={leftIds}
           />
         </div>
 
@@ -129,7 +139,7 @@ export default function PvpTeamScreen({ vm }) {
             disabled={locked}
             keyPrefix={`team${pvpTeamBattleNo}`}
           />
-          <footer className={styles.footer}>
+          <footer className={cx(styles.footer, !pvpTeamIsActivePlayer && pvpTeamBattleStatus === 'active' ? styles.footerIdle : '')}>
             <Button
               size="xl"
               variant="success"

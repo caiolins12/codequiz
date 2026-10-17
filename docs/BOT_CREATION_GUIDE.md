@@ -18,10 +18,21 @@ O bot deve obedecer as mesmas regras de dados, ranking e partida que um usuario 
 - Total oficial: `9` bots.
 - Todos os bots oficiais estao com classe/forca travada em `forte`.
 - Cada bot tem personalidade valida (`provocador`, `analitico`, `calmo`).
-- Cada bot tem emoji de perfil comum equipado automaticamente por personalidade:
-  - `provocador` -> `emoji_common_smart`
-  - `analitico` -> `emoji_common_focus`
-  - `calmo` -> `emoji_common_happy`
+- Economia e visual individual (`src/codequiz/lib/botProgression.js`):
+  - todo bot nasce como jogador novo: nivel 1, 20 moedas e itens padrao; gasta as 20
+    moedas no seu emoji de assinatura (um diferente por bot), entao ja nasce distinto;
+  - depois so evolui com o que ganha jogando (PvP, 2x2, Um contra todos, quizzes):
+    resgata as etapas do passe quando cumpre as metas (recebe XP, moedas e itens do
+    passe) e compra itens da loja com as proprias moedas;
+  - cada bot tem estilo proprio (`SYSTEM_BOT_STYLES`): lista de desejos, jeito de gastar
+    (impulsivo, poupador, equilibrado, colecionador), reserva de moedas e se mantem o
+    emoji de assinatura; equipa a peca mais avancada da sua lista de cada tipo;
+  - nunca tem item acima do nivel: raridade comprada so a partir do nivel
+    (comum 1, incomum 3, raro 5, epico 8, lendario 12) e item do passe so com a etapa;
+  - o inventario fica em `user_stats/<botId>.bot_inventory` e e espelhado em
+    `user_shop/<botId>` e no perfil; a exibicao tambem filtra por nivel;
+  - bots da economia antiga (600 moedas de presente) sao migrados na proxima progressao:
+    perdem as moedas de presente e os itens que nunca compraram, mantendo nivel, XP e PvP.
 
 ## Regras recentes obrigatorias (atual)
 - Bots devem se passar por jogadores:
@@ -198,7 +209,9 @@ O bot deve obedecer as mesmas regras de dados, ranking e partida que um usuario 
 3. Garantir seed de config:
    - `pvp_bots_state/configs/<botId>` com personalidade valida e `strength=forte`.
 4. Garantir seed de perfil:
-   - `users/<botId>` com moldura/fundo padrao e emoji comum por personalidade.
+   - `users/<botId>` com moldura/fundo padrao e o emoji de assinatura do estilo do bot.
+   - adicionar o estilo do bot em `SYSTEM_BOT_STYLES` (`src/codequiz/lib/botProgression.js`)
+     com um emoji de assinatura que nenhum outro bot use.
 5. Garantir seed de stats:
    - `user_stats/<botId>` com estado inicial completo.
 6. Confirmar matchmaking:

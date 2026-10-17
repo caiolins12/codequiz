@@ -57,6 +57,7 @@ import {
   pushPvpEmojiEvent,
   getQueueEntryByUser,
   getQuizRankings,
+  getSystemBotFallbackProfile,
   getSystemBotSnapshot,
   clearBotBusy,
   isSystemBotUserId,
@@ -64,7 +65,6 @@ import {
   runBotArenaAutomationTick,
   setBotBusy,
   SYSTEM_BOT_ID,
-  SYSTEM_BOT_NICKNAME,
   getUserProfile,
   getUserShop,
   getUserStats,
@@ -114,8 +114,34 @@ import {
   upsertPvpAnswer,
   upsertPvpTeamAnswer,
   upsertQueueEntry,
-  upsertStatsFromProgress
+  upsertStatsFromProgress,
+  isPvpGroupRoomAlive,
+  reconcilePvpEliminationRoomPresence,
+  reconcilePvpTeamRoomPresence,
+  touchPvpEliminationRoomPresence,
+  touchPvpTeamRoomPresence
 } from './lib/repository';
+import {
+  PVP_GROUP_MODE_ELIMINATION,
+  PVP_GROUP_MODE_TEAM,
+  PVP_GROUP_PRESENCE_HEARTBEAT_MS,
+  advancePvpGroupMatch,
+  applyPvpGroupMatchBotRewards,
+  finalizePvpGroupBattle,
+  getPvpGroupBattleTiming,
+  getPvpGroupForfeitOutcome,
+  getPvpGroupMatchGoneIds,
+  getPvpGroupMatchOutcomeForUser,
+  getPvpGroupPendingBotAnswerPlans,
+  getPvpTeamRoomBotFillDelayMs,
+  isPvpEliminationBattleReadyToFinalize,
+  isPvpTeamBattleReadyToFinalize,
+  leavePvpGroupMatch,
+  releasePvpGroupBots,
+  removePvpGroupRoomMembers,
+  submitPvpGroupBotAnswer,
+  sweepStalePvpGroupState
+} from './app/pvpGroupMatch';
 import {
   applyEvolutionPassRewards,
   applyQuizOutcome,
@@ -204,6 +230,7 @@ import {
   PVP_ELIMINATION_QUEUE_RETRY_MS,
   PVP_ELIMINATION_REJECT_RESOLVE_DELAY_MS,
   PVP_ELIMINATION_ROOM_CAPACITY,
+  PVP_TEAM_ROOM_SIDE_CAPACITY,
   PVP_ELIMINATION_ROUNDS_PER_CYCLE,
   PVP_EMOJI_PICKER_OPTIONS,
   PVP_EMOJI_SPAM_BURST_LIMIT,
@@ -635,6 +662,8 @@ export default function CodeQuizApp() {
   const [pvpTeamResult, setPvpTeamResult] = useState('');
   const [pvpTeamResultReward, setPvpTeamResultReward] = useState(null);
   const [pvpTeamRewardCollecting, setPvpTeamRewardCollecting] = useState(false);
+  // Anfitrião pediu para iniciar com vaga aberta: a sala está sendo completada.
+  const [pvpTeamAutoStartPending, setPvpTeamAutoStartPending] = useState(false);
   const [pvpEliminationRooms, setPvpEliminationRooms] = useState([]);
   const [pvpEliminationRoomsLoading, setPvpEliminationRoomsLoading] = useState(false);
   const [pvpEliminationRoomId, setPvpEliminationRoomId] = useState('');
@@ -719,6 +748,20 @@ export default function CodeQuizApp() {
   const seenPvpEliminationRoomNoticeIdsRef = useRef(new Set());
   const dismissedPvpEliminationExitPromptIdsRef = useRef(new Set());
   const ignoredPvpEliminationMatchIdsRef = useRef(new Set());
+  // Modos em grupo: estado local do anfitrião (bots completando a sala 2x2), presença,
+  // salas recusadas na fila do Um contra todos e a partida mais recente para timers.
+  const pvpTeamBotFillRef = useRef({ roomId: '', membershipKey: '', dueAtMs: 0, busy: false });
+  const pvpTeamAutoStartRoomIdRef = useRef('');
+  const pvpTeamLobbyTickBusyRef = useRef(false);
+  const pvpTeamLobbyTickFnRef = useRef(null);
+  const pvpGroupPresenceTouchRef = useRef({ key: '', atMs: 0 });
+  const pvpGroupReconcileAtMsRef = useRef(0);
+  const pvpGroupAdvanceBusyRef = useRef(false);
+  const pvpEliminationExcludedRoomIdsRef = useRef(new Map());
+  const pvpGroupBotRewardAttemptsRef = useRef(new Set());
+  const pvpTeamMatchRef = useRef(null);
+  const pvpTeamRoomRef = useRef(null);
+  const pvpEliminationMatchRef = useRef(null);
   const pvpSequenceCursorRef = useRef({});
   const pvpSequenceRecentStartsRef = useRef({});
   const leagueSnapshotRef = useRef({ userId: '', pveKey: '', pvpKey: '' });
@@ -1325,15 +1368,76 @@ export default function CodeQuizApp() {
   }, [pvpEliminationQueueState]);
 
   useEffect(() => {
+    pvpTeamMatchRef.current = pvpTeamMatch;
+  }, [pvpTeamMatch]);
+
+  useEffect(() => {
+    pvpTeamRoomRef.current = pvpTeamRoom;
+  }, [pvpTeamRoom]);
+
+  // Sinal de presença enquanto espero no lobby (2x2) ou na fila/aceite (Um contra
+  // todos). Sem ele, a sala me considera desconectado em ~30s e libera a vaga.
+  useEffect(() => {
+    const myUserId = String(authUser?.uid || '').trim();
+    const teamRoomStatus = String(pvpTeamRoom?.status || '').trim().toLowerCase();
+    const eliminationRoomStatus = String(pvpEliminationRoom?.status || '').trim().toLowerCase();
+    const teamRoomId = pvpMode === PVP_MODE_TEAM_BATTLE && teamRoomStatus === 'lobby'
+      ? String(pvpTeamRoomId || '').trim()
+      : '';
+    const eliminationRoomId = pvpMode === PVP_MODE_ELIMINATION
+      && (eliminationRoomStatus === 'lobby' || eliminationRoomStatus === 'pending_accept')
+      ? String(pvpEliminationRoomId || '').trim()
+      : '';
+    if (!myUserId || (!teamRoomId && !eliminationRoomId) || typeof window === 'undefined') return undefined;
+    const touch = () => {
+      if (teamRoomId) touchPvpTeamRoomPresence(teamRoomId, myUserId).catch(() => null);
+      if (eliminationRoomId) touchPvpEliminationRoomPresence(eliminationRoomId, myUserId).catch(() => null);
+    };
+    const touchKey = `${teamRoomId}|${eliminationRoomId}`;
+    if (pvpGroupPresenceTouchRef.current.key !== touchKey
+      || (Date.now() - pvpGroupPresenceTouchRef.current.atMs) >= PVP_GROUP_PRESENCE_HEARTBEAT_MS) {
+      pvpGroupPresenceTouchRef.current = { key: touchKey, atMs: Date.now() };
+      touch();
+    }
+    const timer = window.setInterval(() => {
+      pvpGroupPresenceTouchRef.current = { key: touchKey, atMs: Date.now() };
+      touch();
+    }, PVP_GROUP_PRESENCE_HEARTBEAT_MS);
+    return () => window.clearInterval(timer);
+  }, [pvpMode, pvpTeamRoomId, pvpTeamRoom?.status, pvpEliminationRoomId, pvpEliminationRoom?.status, authUser?.uid]);
+
+  // Lobby 2x2: presença/liderança e, no líder, vagas sendo completadas.
+  useEffect(() => {
+    if (pvpMode !== PVP_MODE_TEAM_BATTLE || !authUser?.uid) return undefined;
+    if (!String(pvpTeamRoomId || '').trim()) return undefined;
+    if (String(pvpTeamRoom?.status || '').trim().toLowerCase() !== 'lobby') return undefined;
+    if (typeof window === 'undefined') return undefined;
+    // Sempre a versão mais recente do tick (o intervalo não fica preso a um render antigo).
+    const tick = () => Promise.resolve(pvpTeamLobbyTickFnRef.current?.()).catch(() => null);
+    tick();
+    const timer = window.setInterval(tick, 700);
+    return () => window.clearInterval(timer);
+  }, [pvpMode, pvpTeamRoomId, pvpTeamRoom?.status, authUser?.uid]);
+
+  useEffect(() => {
+    pvpEliminationMatchRef.current = pvpEliminationMatch;
+  }, [pvpEliminationMatch]);
+
+  useEffect(() => {
     if (pvpMode !== PVP_MODE_TEAM_BATTLE || pvpTeamRoomId || pvpTeamMatchId) return;
     setPvpTeamRoomsLoading(true);
+    sweepStalePvpGroupState().catch(() => null);
     const unsubscribe = subscribePvpTeamRooms(
       (rows) => {
         const safeUserId = String(authUser?.uid || '').trim();
+        const nowMs = Date.now();
+        // Só salas com alguém conectado; sala encerrada some da lista.
         const visibleRooms = (Array.isArray(rows) ? rows : []).filter((row) => {
           const status = String(row?.status || '').trim().toLowerCase();
-          if (status === 'lobby') return true;
-          return !!getPvpTeamUserSide(row, safeUserId);
+          if (status === 'finished') return false;
+          const mine = !!getPvpTeamUserSide(row, safeUserId);
+          if (status === 'lobby') return mine || isPvpGroupRoomAlive(row, nowMs);
+          return mine;
         });
         setPvpTeamRooms(visibleRooms);
         setPvpTeamRoomsLoading(false);
@@ -1371,13 +1475,35 @@ export default function CodeQuizApp() {
     const unsubscribe = subscribePvpTeamRoom(
       roomId,
       (row) => {
-        setPvpTeamRoom(row);
+        const myUserId = String(authUser?.uid || '').trim();
+        const inMatchFlow = !!String(pvpTeamMatchRef.current?.id || '').trim();
         if (!row) {
+          setPvpTeamRoom(null);
           setPvpTeamRoomId('');
+          if (!inMatchFlow) {
+            setPvpTeamAutoStartPending(false);
+            showToast('A sala foi encerrada.');
+          }
           return;
         }
+        const status = String(row.status || '').trim().toLowerCase();
+        if (status === 'lobby' && myUserId && !getPvpTeamUserSide(row, myUserId) && !inMatchFlow) {
+          // Fui removido da sala (ex.: fiquei sem conexão e perdi a vaga).
+          const removedReason = String(row?.removed_member_notices?.[myUserId]?.reason || '').trim();
+          setPvpTeamRoom(null);
+          setPvpTeamRoomId('');
+          setPvpTeamAutoStartPending(false);
+          showToast(removedReason === 'inactive'
+            ? 'Você saiu da sala por inatividade.'
+            : 'Você não está mais nesta sala.');
+          return;
+        }
+        setPvpTeamRoom(row);
         const matchId = String(row.match_id || '').trim();
-        if (matchId && String(row.status || '').trim().toLowerCase() === 'active') {
+        const knownMatchFinished = String(pvpTeamMatchRef.current?.id || '') === matchId
+          && String(pvpTeamMatchRef.current?.status || '').trim().toLowerCase() === 'finished';
+        if (matchId && status === 'active' && !knownMatchFinished) {
+          setPvpTeamAutoStartPending(false);
           setPvpTeamMatchId(matchId);
           setScreen('pvp-team');
         }
@@ -1455,57 +1581,50 @@ export default function CodeQuizApp() {
     return () => unsubscribe();
   }, [pvpTeamMatch?.id, pvpTeamMatch?.battle_no, pvpTeamMatch?.result_battle_no, pvpTeamMatch?.status, pvpTeamMatchId, authUser?.uid]);
 
+  // Respostas dos bots da dupla atual. Todo humano presente agenda o mesmo instante e a
+  // mesma resposta (sorteio fixo por partida/bot/confronto); o banco grava só a primeira.
   useEffect(() => {
     const match = pvpTeamMatch;
-    const status = String(match?.status || '').trim().toLowerCase();
-    if (status !== 'active') return;
+    if (String(match?.status || '').trim().toLowerCase() !== 'active' || !match?.id) return undefined;
+    const myUserId = String(authUser?.uid || '').trim();
+    if (!myUserId || getPvpGroupMatchGoneIds(match, PVP_GROUP_MODE_TEAM).includes(myUserId)) return undefined;
+    const plans = getPvpGroupPendingBotAnswerPlans(match, PVP_GROUP_MODE_TEAM, pvpTeamAnswers);
+    if (!plans.length || typeof window === 'undefined') return undefined;
+    const timers = plans.map((plan) => window.setTimeout(() => {
+      const live = pvpTeamMatchRef.current;
+      if (String(live?.id || '') !== String(match.id)) return;
+      if (String(live?.status || '').trim().toLowerCase() !== 'active') return;
+      if (Math.max(1, Number(live?.battle_no || 1)) !== plan.battleNo) return;
+      submitPvpGroupBotAnswer(PVP_GROUP_MODE_TEAM, live, plan).catch(() => null);
+    }, Math.max(60, plan.dueAtMs - Date.now())));
+    return () => timers.forEach((timerId) => window.clearTimeout(timerId));
+  }, [pvpTeamMatch?.id, pvpTeamMatch?.battle_no, pvpTeamMatch?.status, pvpTeamAnswers, authUser?.uid]);
+
+  useEffect(() => {
+    const match = pvpTeamMatch;
+    if (String(match?.status || '').trim().toLowerCase() !== 'active') return;
     if (!match?.id || pvpTeamFinalizeBusyRef.current) return;
-    const battleNo = Math.max(1, Number(match.battle_no || 1));
-    const activePair = getPvpTeamBattleEntry(match, battleNo);
-    if (!activePair?.red_user_id || !activePair?.blue_user_id) return;
-
-    const battleDurationMs = Math.max(
-      1000,
-      Number(getRoundDurationSeconds(match?.difficulty || pvpConfig.difficulty) || 20) * 1000
-      + PVP_ROUND_EXTRA_ANSWER_MS
-    );
-    const startedAtMs = Math.max(
-      0,
-      Number(match?.battle_started_at_ms || toMillis(match?.battle_started_at) || 0)
-    );
-    const answersByUser = new Map(
-      (Array.isArray(pvpTeamAnswers) ? pvpTeamAnswers : [])
-        .map((row) => [String(row?.user_id || '').trim(), row])
-    );
-    const bothAnswered = [activePair.red_user_id, activePair.blue_user_id].every((userId) => answersByUser.has(String(userId)));
-    const timeExpired = startedAtMs > 0 && pvpClockMs >= (startedAtMs + battleDurationMs);
-    if (!bothAnswered && !timeExpired) return;
-    finalizePvpTeamBattle(match).catch(() => null);
-  }, [pvpTeamMatch?.id, pvpTeamMatch?.updated_at, pvpTeamAnswers, pvpClockMs, pvpConfig.difficulty]);
+    if (!isPvpTeamBattleReadyToFinalize(match, pvpTeamAnswers, pvpClockMs)) return;
+    pvpTeamFinalizeBusyRef.current = true;
+    finalizePvpGroupBattle(PVP_GROUP_MODE_TEAM, match, pvpTeamAnswers)
+      .catch((error) => console.error('finalize team battle failed:', error))
+      .finally(() => {
+        pvpTeamFinalizeBusyRef.current = false;
+      });
+  }, [pvpTeamMatch?.id, pvpTeamMatch?.updated_at, pvpTeamAnswers, pvpClockMs]);
 
   useEffect(() => {
     const match = pvpTeamMatch;
-    const status = String(match?.status || '').trim().toLowerCase();
-    if (status !== 'round_result') return;
+    if (String(match?.status || '').trim().toLowerCase() !== 'round_result' || !match?.id) return;
     const roundUntilMs = Math.max(0, Number(match?.round_result_until_ms || 0));
-    if (!roundUntilMs) {
-      updatePvpTeamMatch(match.id, {
-        round_result_until_ms: Date.now() + PVP_ROUND_RESULT_DURATION_MS
-      }).catch(() => null);
-      return;
-    }
-    if (pvpClockMs < roundUntilMs) return;
-
-    updatePvpTeamMatch(match.id, {
-      status: 'active',
-      battle_no: Math.max(1, Number(match?.next_battle_no || (Number(match?.battle_no || 1) + 1))),
-      battle_started_at_ms: Date.now(),
-      battle_started_at: nowIso(),
-      result_battle_no: null,
-      result_battle_correct_answer_idx: null,
-      next_battle_no: null,
-      round_result_until_ms: null
-    }).catch(() => null);
+    if (roundUntilMs && pvpClockMs < roundUntilMs) return;
+    if (pvpGroupAdvanceBusyRef.current) return;
+    pvpGroupAdvanceBusyRef.current = true;
+    advancePvpGroupMatch(PVP_GROUP_MODE_TEAM, match)
+      .catch((error) => console.error('advance team battle failed:', error))
+      .finally(() => {
+        pvpGroupAdvanceBusyRef.current = false;
+      });
   }, [pvpTeamMatch?.id, pvpTeamMatch?.updated_at, pvpTeamMatch?.status, pvpClockMs]);
 
   useEffect(() => {
@@ -1523,10 +1642,13 @@ export default function CodeQuizApp() {
     const unsubscribe = subscribePvpEliminationRooms(
       (rows) => {
         const safeUserId = String(authUser?.uid || '').trim();
+        const nowMs = Date.now();
         const visibleRooms = (Array.isArray(rows) ? rows : []).filter((row) => {
           const status = String(row?.status || '').trim().toLowerCase();
-          if (status === 'lobby') return true;
-          return !!getPvpEliminationMemberById(row, safeUserId);
+          if (status === 'finished') return false;
+          const mine = !!getPvpEliminationMemberById(row, safeUserId);
+          if (status === 'lobby') return mine || isPvpGroupRoomAlive(row, nowMs);
+          return mine;
         });
         setPvpEliminationRooms(visibleRooms);
         setPvpEliminationRoomsLoading(false);
@@ -1547,9 +1669,9 @@ export default function CodeQuizApp() {
         const safeMatchId = String(row?.id || '').trim();
         if (cancelled || !safeMatchId) return;
         if (ignoredPvpEliminationMatchIdsRef.current.has(safeMatchId)) return;
+        // Vale também para quem já foi eliminado e ainda assiste (não saiu da partida).
         const myUserId = String(authUser?.uid || '').trim();
-        const activeIds = getPvpEliminationActiveMemberIds(row);
-        if (!myUserId || !activeIds.includes(myUserId)) return;
+        if (!myUserId || !getPvpEliminationMemberById(row, myUserId)) return;
         if (String(row?.room_id || '').trim()) {
           setPvpEliminationRoomId(String(row.room_id).trim());
         }
@@ -1575,11 +1697,46 @@ export default function CodeQuizApp() {
     const unsubscribe = subscribePvpEliminationRoom(
       roomId,
       (row) => {
-        setPvpEliminationRoom(row);
+        const myUserId = String(authUser?.uid || '').trim();
+        const queueing = String(pvpEliminationQueueStateRef.current?.status || '').trim().toLowerCase() === 'queueing';
+        const inMatchFlow = !!String(pvpEliminationMatchRef.current?.id || '').trim();
         if (!row) {
+          // Sala desfeita: quem ainda está na fila volta a procurar outro grupo.
+          setPvpEliminationRoom(null);
           setPvpEliminationRoomId('');
           return;
         }
+        const rowStatus = String(row.status || '').trim().toLowerCase();
+        if (
+          queueing
+          && !inMatchFlow
+          && myUserId
+          && (rowStatus === 'lobby' || rowStatus === 'pending_accept')
+          && !getPvpEliminationMemberById(row, myUserId)
+        ) {
+          const removedReason = String(row?.removed_member_notices?.[myUserId]?.reason || '').trim();
+          pvpEliminationExcludedRoomIdsRef.current.set(String(row.id || roomId), Date.now() + 60000);
+          setPvpEliminationRoom(null);
+          setPvpEliminationRoomId('');
+          if (removedReason === 'accept_timeout') {
+            setPvpEliminationQueueState({
+              status: 'idle',
+              joinedAtMs: 0,
+              sessionId: '',
+              message: ''
+            });
+            showToast('Você não confirmou a partida a tempo e saiu da fila.');
+            playSfx('notify');
+          } else {
+            setPvpEliminationQueueState((prev) => (
+              String(prev?.status || '').trim().toLowerCase() === 'queueing'
+                ? { ...prev, message: 'Procurando outro grupo...' }
+                : prev
+            ));
+          }
+          return;
+        }
+        setPvpEliminationRoom(row);
         const matchId = String(row.match_id || '').trim();
         if (matchId && String(row.status || '').trim().toLowerCase() === 'active') {
           const roomMemberIds = getPvpEliminationMembers(row).map((member) => String(member?.user_id || '').trim()).filter(Boolean);
@@ -1673,9 +1830,11 @@ export default function CodeQuizApp() {
         const myUserId = String(authUser?.uid || '').trim();
         const blockedByIgnore = rowMatchId && ignoredPvpEliminationMatchIdsRef.current.has(rowMatchId);
         const blockedByOptOut = !!myUserId && optedOutIds.includes(myUserId);
-        const activeIds = getPvpEliminationActiveMemberIds(row);
-        const blockedByInactiveMember = !!myUserId && !activeIds.includes(myUserId);
-        if (blockedByIgnore || blockedByOptOut || blockedByInactiveMember) {
+        // Eliminado continua recebendo a partida para assistir até sair.
+        const blockedByNotMember = !!myUserId && !getPvpEliminationMemberById(row, myUserId);
+        if (blockedByIgnore || blockedByOptOut || blockedByNotMember) {
+          // Na tela de resultado (saí recebendo a colocação) a partida fica congelada.
+          if (screen === 'pvp-elimination-result') return;
           setPvpEliminationMatch(null);
           setPvpEliminationMatchId('');
           return;
@@ -1728,9 +1887,10 @@ export default function CodeQuizApp() {
       ? pvpEliminationMatch.opt_out_member_ids.map((entry) => String(entry || '').trim()).filter(Boolean)
       : [];
     if (!ignoredPvpEliminationMatchIdsRef.current.has(matchId) && (!myUserId || !optedOutIds.includes(myUserId))) return;
+    if (screen === 'pvp-elimination-result') return;
     setPvpEliminationMatchId('');
     setPvpEliminationMatch(null);
-  }, [pvpMode, pvpEliminationMatch?.id, pvpEliminationMatch?.opt_out_member_ids, pvpEliminationMatchId, authUser?.uid]);
+  }, [pvpMode, pvpEliminationMatch?.id, pvpEliminationMatch?.opt_out_member_ids, pvpEliminationMatchId, authUser?.uid, screen]);
 
   useEffect(() => {
     const match = pvpEliminationMatch;
@@ -1782,65 +1942,53 @@ export default function CodeQuizApp() {
     authUser?.uid
   ]);
 
+  // Respostas dos bots da dupla em duelo (mesma lógica da Batalha 2x2). Espectadores
+  // humanos também agendam, então a partida segue mesmo com só bots duelando.
   useEffect(() => {
     const match = pvpEliminationMatch;
-    const status = String(match?.status || '').trim().toLowerCase();
-    if (status !== 'active') return;
+    if (String(match?.status || '').trim().toLowerCase() !== 'active' || !match?.id) return undefined;
+    const myUserId = String(authUser?.uid || '').trim();
+    if (!myUserId || getPvpGroupMatchGoneIds(match, PVP_GROUP_MODE_ELIMINATION).includes(myUserId)) return undefined;
+    const plans = getPvpGroupPendingBotAnswerPlans(match, PVP_GROUP_MODE_ELIMINATION, pvpEliminationAnswers);
+    if (!plans.length || typeof window === 'undefined') return undefined;
+    const timers = plans.map((plan) => window.setTimeout(() => {
+      const live = pvpEliminationMatchRef.current;
+      if (String(live?.id || '') !== String(match.id)) return;
+      if (String(live?.status || '').trim().toLowerCase() !== 'active') return;
+      if (Math.max(1, Number(live?.battle_no || 1)) !== plan.battleNo) return;
+      submitPvpGroupBotAnswer(PVP_GROUP_MODE_ELIMINATION, live, plan).catch(() => null);
+    }, Math.max(60, plan.dueAtMs - Date.now())));
+    return () => timers.forEach((timerId) => window.clearTimeout(timerId));
+  }, [pvpEliminationMatch?.id, pvpEliminationMatch?.battle_no, pvpEliminationMatch?.status, pvpEliminationAnswers, authUser?.uid]);
+
+  useEffect(() => {
+    const match = pvpEliminationMatch;
+    if (String(match?.status || '').trim().toLowerCase() !== 'active') return;
     if (!match?.id || pvpEliminationFinalizeBusyRef.current) return;
-    const activePair = getPvpEliminationActivePair(match);
-    const user1Id = String(activePair?.user1 || '').trim();
-    const user2Id = String(activePair?.user2 || '').trim();
-    if (!user1Id || !user2Id) return;
-
-    const battleDurationMs = Math.max(
-      1000,
-      Number(getRoundDurationSeconds(match?.difficulty || pvpConfig.difficulty) || 20) * 1000
-      + PVP_ROUND_EXTRA_ANSWER_MS
-    );
-    const startedAtMs = Math.max(
-      0,
-      Number(match?.battle_started_at_ms || toMillis(match?.battle_started_at) || 0)
-    );
-    const introActive = startedAtMs > 0 && pvpClockMs < (startedAtMs + PVP_ELIMINATION_BATTLE_INTRO_MS);
-    if (introActive) return;
-    const answersByUser = new Map(
-      (Array.isArray(pvpEliminationAnswers) ? pvpEliminationAnswers : [])
-        .map((row) => [String(row?.user_id || '').trim(), row])
-    );
-    const bothAnswered = [user1Id, user2Id].every((userId) => answersByUser.has(String(userId)));
-    const timeExpired = startedAtMs > 0 && pvpClockMs >= (startedAtMs + battleDurationMs);
-    if (!bothAnswered && !timeExpired) return;
-    finalizePvpEliminationBattle(match).catch(() => null);
-  }, [pvpEliminationMatch?.id, pvpEliminationMatch?.updated_at, pvpEliminationAnswers, pvpClockMs, pvpConfig.difficulty]);
+    if (!isPvpEliminationBattleReadyToFinalize(match, pvpEliminationAnswers, pvpClockMs)) return;
+    pvpEliminationFinalizeBusyRef.current = true;
+    finalizePvpGroupBattle(PVP_GROUP_MODE_ELIMINATION, match, pvpEliminationAnswers)
+      .catch((error) => console.error('finalize elimination battle failed:', error))
+      .finally(() => {
+        pvpEliminationFinalizeBusyRef.current = false;
+      });
+  }, [pvpEliminationMatch?.id, pvpEliminationMatch?.updated_at, pvpEliminationAnswers, pvpClockMs]);
 
   useEffect(() => {
     const match = pvpEliminationMatch;
     const status = String(match?.status || '').trim().toLowerCase();
-    if (status !== 'round_result') return;
-    const roundUntilMs = Math.max(0, Number(match?.round_result_until_ms || 0));
-    if (!roundUntilMs) {
-      updatePvpEliminationMatch(match.id, {
-        round_result_until_ms: Date.now() + PVP_ROUND_RESULT_DURATION_MS
-      }).catch(() => null);
-      return;
-    }
-    if (pvpClockMs < roundUntilMs) return;
-    advancePvpEliminationAfterRoundResult(match).catch(() => null);
-  }, [pvpEliminationMatch?.id, pvpEliminationMatch?.updated_at, pvpEliminationMatch?.status, pvpClockMs]);
-
-  useEffect(() => {
-    const match = pvpEliminationMatch;
-    const status = String(match?.status || '').trim().toLowerCase();
-    if (status !== 'elimination_result') return;
-    const eliminationUntilMs = Math.max(0, Number(match?.elimination_until_ms || 0));
-    if (!eliminationUntilMs) {
-      updatePvpEliminationMatch(match.id, {
-        elimination_until_ms: Date.now() + PVP_ROUND_RESULT_DURATION_MS
-      }).catch(() => null);
-      return;
-    }
-    if (pvpClockMs < eliminationUntilMs) return;
-    advancePvpEliminationAfterEliminationResult(match).catch(() => null);
+    if ((status !== 'round_result' && status !== 'elimination_result') || !match?.id) return;
+    const untilMs = Math.max(0, Number(
+      status === 'round_result' ? match?.round_result_until_ms : match?.elimination_until_ms
+    ) || 0);
+    if (untilMs && pvpClockMs < untilMs) return;
+    if (pvpGroupAdvanceBusyRef.current) return;
+    pvpGroupAdvanceBusyRef.current = true;
+    advancePvpGroupMatch(PVP_GROUP_MODE_ELIMINATION, match)
+      .catch((error) => console.error('advance elimination failed:', error))
+      .finally(() => {
+        pvpGroupAdvanceBusyRef.current = false;
+      });
   }, [pvpEliminationMatch?.id, pvpEliminationMatch?.updated_at, pvpEliminationMatch?.status, pvpClockMs]);
 
   useEffect(() => {
@@ -1850,6 +1998,9 @@ export default function CodeQuizApp() {
     const myUserId = String(authUser?.uid || '').trim();
     const eliminatedUserId = String(match?.eliminated_user_id || '').trim();
     if (status !== 'elimination_result' || !matchId || !myUserId || eliminatedUserId !== myUserId) return;
+    // Eliminação final (vice): a tela de resultado já abre em instantes.
+    if (String(match?.next_status || '').trim().toLowerCase() === 'finished') return;
+    if (String(match?.eliminated_reason || '').trim().toLowerCase() === 'exit') return;
     if (pvpEliminationResultReward) return;
     if (dismissedPvpEliminationExitPromptIdsRef.current.has(matchId)) return;
     const placement = getPvpEliminationPlacementForUser(match, myUserId);
@@ -4932,7 +5083,8 @@ export default function CodeQuizApp() {
         setPvpMode('');
         setScreen('home');
         if (roomId && userId) {
-          leavePvpTeamRoom(roomId, userId).catch(() => null);
+          // Os bots já foram liberados ao aplicar o resultado da partida.
+          removePvpGroupRoomMembers(PVP_GROUP_MODE_TEAM, roomId, [userId], { releaseBots: false }).catch(() => null);
         }
         showToast('Recompensas da equipe coletadas.');
         playSfx('success');
@@ -4967,10 +5119,17 @@ export default function CodeQuizApp() {
         setPvpMode('');
         setScreen('home');
         if (matchId && userId) {
-          markPvpEliminationMatchParticipantOptOut(matchId, userId).catch(() => null);
+          leavePvpGroupMatch(PVP_GROUP_MODE_ELIMINATION, matchId, userId)
+            .then((result) => {
+              if (String(result?.row?.status || '').trim().toLowerCase() === 'finished') {
+                return applyPvpGroupMatchBotRewards(PVP_GROUP_MODE_ELIMINATION, result.row);
+              }
+              return null;
+            })
+            .catch(() => null);
         }
         if (roomId && userId) {
-          leavePvpEliminationRoom(roomId, userId).catch(() => null);
+          removePvpGroupRoomMembers(PVP_GROUP_MODE_ELIMINATION, roomId, [userId], { releaseBots: false }).catch(() => null);
         }
         showToast('Recompensas da eliminatória coletadas.');
         playSfx('success');
@@ -6228,6 +6387,9 @@ export default function CodeQuizApp() {
   function resetPvpTeamState() {
     pvpTeamRoomAccessHashRef.current = {};
     pvpTeamFinalizeBusyRef.current = false;
+    pvpTeamBotFillRef.current = { roomId: '', membershipKey: '', dueAtMs: 0, busy: false };
+    pvpTeamAutoStartRoomIdRef.current = '';
+    setPvpTeamAutoStartPending(false);
     handledPvpTeamMatchIdsRef.current = new Set();
     seenPvpTeamRoomNoticeIdsRef.current = new Set();
     setPvpTeamRooms([]);
@@ -6411,15 +6573,18 @@ export default function CodeQuizApp() {
     const botStats = safeSnapshot.stats && typeof safeSnapshot.stats === 'object'
       ? safeSnapshot.stats
       : {};
+    // Campo ausente usa o fallback do próprio bot (igual em todo aparelho),
+    // e não o apelido/visual do bot principal.
+    const fallbackProfile = getSystemBotFallbackProfile(safeBotId);
     return {
       user_id: safeBotId,
-      nickname: String(botProfile.nickname || SYSTEM_BOT_NICKNAME).trim() || SYSTEM_BOT_NICKNAME,
-      avatar: String(botProfile.avatar || '\uD83E\uDD16'),
+      nickname: String(botProfile.nickname || fallbackProfile.nickname).trim() || fallbackProfile.nickname,
+      avatar: String(botProfile.avatar || fallbackProfile.avatar),
       level: Math.max(1, Number(botStats.level || 1)),
       pvp_points: Math.max(0, Number(botStats.pvp_points || 0)),
-      equipped_frame: String(botProfile.equipped_frame || 'frame_default'),
-      equipped_background: String(botProfile.equipped_background || 'bg_default'),
-      equipped_emoji: String(botProfile.equipped_emoji || 'emoji_profile')
+      equipped_frame: String(botProfile.equipped_frame || fallbackProfile.equipped_frame),
+      equipped_background: String(botProfile.equipped_background || fallbackProfile.equipped_background),
+      equipped_emoji: String(botProfile.equipped_emoji || fallbackProfile.equipped_emoji)
     };
   }
 
@@ -6511,187 +6676,6 @@ export default function CodeQuizApp() {
     return markPvpEliminationMatchParticipantOptOut(matchId, userId).catch(() => null);
   }
 
-  async function continuePvpEliminationAfterPlayerExit(matchInput = null, userIdInput = '') {
-    const safeUserId = String(userIdInput || authUser?.uid || '').trim();
-    const fallbackMatch = matchInput && typeof matchInput === 'object' ? matchInput : null;
-    const safeMatchId = String(fallbackMatch?.id || pvpEliminationMatchId || '').trim();
-    if (!safeUserId || !safeMatchId) return null;
-
-    const latestMatch = await getPvpEliminationMatch(safeMatchId).catch(() => null);
-    const match = latestMatch && typeof latestMatch === 'object' ? latestMatch : fallbackMatch;
-    if (!match) return null;
-
-    const status = String(match?.status || '').trim().toLowerCase();
-    if (status === 'finished') return match;
-
-    const members = getPvpEliminationMembers(match);
-    const memberIds = members.map((member) => String(member?.user_id || '').trim()).filter(Boolean);
-    if (!memberIds.includes(safeUserId)) return match;
-
-    const activeIds = getPvpEliminationActiveMemberIds(match);
-    const survivors = activeIds.filter((userId) => userId !== safeUserId);
-    const spectatorIds = Array.from(new Set(
-      [...(Array.isArray(match?.spectator_member_ids) ? match.spectator_member_ids : []), safeUserId]
-        .map((entry) => String(entry || '').trim())
-        .filter(Boolean)
-    ));
-    const eliminationOrder = Array.from(new Set(
-      [...(Array.isArray(match?.elimination_order) ? match.elimination_order : []), safeUserId]
-        .map((entry) => String(entry || '').trim())
-        .filter(Boolean)
-    ));
-    const optOutIds = Array.from(new Set(
-      [...(Array.isArray(match?.opt_out_member_ids) ? match.opt_out_member_ids : []), safeUserId]
-        .map((entry) => String(entry || '').trim())
-        .filter(Boolean)
-    ));
-
-    if (!activeIds.includes(safeUserId)) {
-      return updatePvpEliminationMatch(safeMatchId, {
-        opt_out_member_ids: optOutIds,
-        spectator_member_ids: spectatorIds,
-        elimination_order: eliminationOrder
-      }).catch(() => null);
-    }
-
-    if (survivors.length <= 1) {
-      const winnerUserId = String(survivors[0] || '').trim() || null;
-      const updated = await updatePvpEliminationMatch(safeMatchId, {
-        status: 'finished',
-        winner_user_id: winnerUserId,
-        active_member_ids: survivors,
-        spectator_member_ids: spectatorIds,
-        elimination_order: eliminationOrder,
-        eliminated_user_id: safeUserId,
-        opt_out_member_ids: optOutIds,
-        elimination_until_ms: null,
-        round_result_until_ms: null,
-        ended_reason: 'player_exit',
-        ended_by_user_id: safeUserId,
-        ended_at: nowIso()
-      }).catch(() => null);
-      const roomId = String(match?.room_id || '').trim();
-      if (roomId) {
-        updatePvpEliminationRoom(roomId, {
-          status: 'finished'
-        }).catch(() => null);
-      }
-      return updated;
-    }
-
-    const survivorsHumans = survivors.filter((userId) => !isSystemBotUserId(userId));
-    if (!survivorsHumans.length) {
-      const scoreMap = match?.member_scores && typeof match.member_scores === 'object'
-        ? match.member_scores
-        : {};
-      const botRankingAsc = [...survivors].sort((idA, idB) => {
-        const scoreA = Math.max(0, Number(scoreMap[idA] || 0));
-        const scoreB = Math.max(0, Number(scoreMap[idB] || 0));
-        if (scoreA !== scoreB) return scoreA - scoreB;
-        return String(idA || '').localeCompare(String(idB || ''));
-      });
-      const winnerUserId = String(botRankingAsc[botRankingAsc.length - 1] || '').trim() || null;
-      const botEliminationOrder = botRankingAsc
-        .slice(0, Math.max(0, botRankingAsc.length - 1))
-        .map((entry) => String(entry || '').trim())
-        .filter(Boolean);
-      const finalEliminationOrder = Array.from(new Set([
-        ...eliminationOrder,
-        ...botEliminationOrder
-      ]));
-      const finalSpectatorIds = Array.from(new Set([
-        ...spectatorIds,
-        ...survivors.filter((entry) => String(entry || '').trim() && String(entry || '').trim() !== winnerUserId)
-      ]));
-      const updated = await updatePvpEliminationMatch(safeMatchId, {
-        status: 'finished',
-        winner_user_id: winnerUserId,
-        active_member_ids: winnerUserId ? [winnerUserId] : [],
-        spectator_member_ids: finalSpectatorIds,
-        elimination_order: finalEliminationOrder,
-        eliminated_user_id: safeUserId,
-        opt_out_member_ids: optOutIds,
-        elimination_until_ms: null,
-        round_result_until_ms: null,
-        next_status: null,
-        ended_reason: 'player_exit_bots_auto_resolved',
-        ended_by_user_id: safeUserId,
-        ended_at: nowIso()
-      }).catch(() => null);
-      const roomId = String(match?.room_id || '').trim();
-      if (roomId) {
-        updatePvpEliminationRoom(roomId, {
-          status: 'finished'
-        }).catch(() => null);
-      }
-      return updated;
-    }
-
-    if (status === 'elimination_result') {
-      return updatePvpEliminationMatch(safeMatchId, {
-        active_member_ids: survivors,
-        spectator_member_ids: spectatorIds,
-        elimination_order: eliminationOrder,
-        eliminated_user_id: safeUserId,
-        opt_out_member_ids: optOutIds
-      }).catch(() => null);
-    }
-
-    const nextCycleRounds = buildPvpEliminationCycleRounds(survivors);
-    const nextCyclePair = getPvpEliminationNextPlayablePair(nextCycleRounds, 1, 1);
-    if (!nextCyclePair?.player1_user_id || !nextCyclePair?.player2_user_id) {
-      const updated = await updatePvpEliminationMatch(safeMatchId, {
-        status: 'finished',
-        winner_user_id: String(survivors[0] || '').trim() || null,
-        active_member_ids: survivors,
-        spectator_member_ids: spectatorIds,
-        elimination_order: eliminationOrder,
-        eliminated_user_id: safeUserId,
-        opt_out_member_ids: optOutIds,
-        elimination_until_ms: null,
-        round_result_until_ms: null,
-        ended_reason: 'player_exit',
-        ended_by_user_id: safeUserId,
-        ended_at: nowIso()
-      }).catch(() => null);
-      const roomId = String(match?.room_id || '').trim();
-      if (roomId) {
-        updatePvpEliminationRoom(roomId, {
-          status: 'finished'
-        }).catch(() => null);
-      }
-      return updated;
-    }
-
-    const nextCycleNo = Math.max(1, Number(match?.cycle_no || 1) + 1);
-    const nowMs = Date.now();
-    return updatePvpEliminationMatch(safeMatchId, {
-      status: 'elimination_result',
-      active_member_ids: survivors,
-      spectator_member_ids: spectatorIds,
-      elimination_order: eliminationOrder,
-      eliminated_user_id: safeUserId,
-      opt_out_member_ids: optOutIds,
-      cycle_member_scores: buildPvpEliminationCycleScoreMap(survivors),
-      result_battle_no: Math.max(1, Number(match?.result_battle_no || match?.battle_no || 1)),
-      result_battle_correct_answer_idx: null,
-      result_battle_winner_user_id: null,
-      next_status: 'active',
-      next_battle_no: Math.max(1, Number(match?.battle_no || 1) + 1),
-      next_cycle_no: nextCycleNo,
-      next_round_in_cycle: Math.max(1, Number(nextCyclePair?.round_in_cycle || 1)),
-      next_pair_no: Math.max(1, Number(nextCyclePair?.pair_no || 1)),
-      next_cycle_rounds: nextCycleRounds,
-      next_cycle_member_scores: buildPvpEliminationCycleScoreMap(survivors),
-      next_active_pair_user_ids: [
-        String(nextCyclePair.player1_user_id || '').trim(),
-        String(nextCyclePair.player2_user_id || '').trim()
-      ],
-      elimination_until_ms: nowMs + PVP_ROUND_RESULT_DURATION_MS,
-      round_result_until_ms: null
-    }).catch(() => null);
-  }
-
   function keepWatchingPvpElimination() {
     const matchId = String(pvpEliminationExitPrompt?.matchId || pvpEliminationMatch?.id || '').trim();
     if (matchId) {
@@ -6713,8 +6697,14 @@ export default function CodeQuizApp() {
     rememberIgnoredPvpEliminationMatch(matchId);
     dismissedPvpEliminationExitPromptIdsRef.current.add(matchId);
     setPvpEliminationExitPrompt(null);
-    await markPvpEliminationMatchOptOut(match, myUserId).catch(() => null);
-    await handlePvpEliminationMatchFinished(match, {
+    // Registra a saída; se eu era o último humano acompanhando, a partida termina aqui
+    // pela classificação atual (os bots não ficam jogando sozinhos).
+    const exitResult = await leavePvpGroupMatch(PVP_GROUP_MODE_ELIMINATION, matchId, myUserId).catch(() => null);
+    const latestMatch = exitResult?.row || match;
+    if (String(latestMatch?.status || '').trim().toLowerCase() === 'finished') {
+      applyPvpGroupMatchBotRewards(PVP_GROUP_MODE_ELIMINATION, latestMatch).catch(() => null);
+    }
+    await handlePvpEliminationMatchFinished(latestMatch, {
       forcePlacement: placement,
       allowEarly: true
     });
@@ -6829,15 +6819,12 @@ export default function CodeQuizApp() {
     });
     setPvpEliminationInviteBusy(false);
     try {
-      const myUserId = String(authUser?.uid || '').trim();
-      const amHost = myUserId && myUserId === String(getPvpEliminationRoomHostUserId(room) || '').trim();
-      if (room?.id && amHost) {
-        await removePvpEliminationBotsFromLobbyRoom(room, {
-          reason: 'queue_cancelled_by_host'
-        }).catch(() => null);
-      }
+      // Os bots continuam com os outros humanos da sala (a liderança passa para um
+      // deles); se ninguém sobrar, a sala é desfeita e os bots liberados.
       if (roomId && authUser?.uid) {
-        await leavePvpEliminationRoom(roomId, authUser.uid).catch(() => null);
+        await removePvpGroupRoomMembers(PVP_GROUP_MODE_ELIMINATION, roomId, [authUser.uid], {
+          reason: 'queue_cancelled'
+        }).catch(() => null);
       }
       setPvpEliminationRoomId('');
       setPvpEliminationRoom(null);
@@ -6965,10 +6952,20 @@ export default function CodeQuizApp() {
     if (String(room?.status || '').trim().toLowerCase() !== 'pending_accept') return;
     setPvpEliminationInviteBusy(true);
     try {
-      const updated = await setPvpEliminationRoomAcceptState(roomId, userId, 'rejected');
-      if (updated?.id) {
-        setPvpEliminationRoom(updated);
-      }
+      // Quem recusa sai deste grupo (que volta a procurar jogadores) e entra na fila de
+      // novo, sem cair neste mesmo grupo no próximo minuto.
+      await setPvpEliminationRoomAcceptState(roomId, userId, 'rejected').catch(() => null);
+      pvpEliminationExcludedRoomIdsRef.current.set(roomId, Date.now() + 60000);
+      setPvpEliminationRoomId('');
+      setPvpEliminationRoom(null);
+      setPvpEliminationQueueState((prev) => (
+        String(prev?.status || '').trim().toLowerCase() === 'queueing'
+          ? { ...prev, joinedAtMs: Date.now(), message: 'Partida recusada. Procurando outro grupo...' }
+          : prev
+      ));
+      await removePvpGroupRoomMembers(PVP_GROUP_MODE_ELIMINATION, roomId, [userId], {
+        reason: 'match_refused'
+      }).catch(() => null);
       showToast('Partida recusada. Retornando para a fila...');
       playSfx('notify');
     } catch (error) {
@@ -7051,11 +7048,10 @@ export default function CodeQuizApp() {
         continue;
       }
 
-      const botSnapshot = pickedBot?.profile
-        ? pickedBot
-        : await getSystemBotSnapshot(selectedBotId, {
-          preferLocal: true
-        }).catch(() => null);
+      const freshSnapshot = await getSystemBotSnapshot(selectedBotId, {
+        preferLocal: false
+      }).catch(() => null);
+      const botSnapshot = freshSnapshot?.profile ? freshSnapshot : pickedBot;
       const botMember = buildPvpEliminationBotMemberSnapshot(selectedBotId, botSnapshot);
       if (!botMember?.user_id) {
         await clearBotBusy(selectedBotId, roomId).catch(() => null);
@@ -7063,7 +7059,7 @@ export default function CodeQuizApp() {
         continue;
       }
 
-      const joinedRoom = await joinPvpEliminationRoom(roomId, botMember).catch(() => null);
+      const joinedRoom = await joinPvpEliminationRoom(roomId, botMember, { asBot: true }).catch(() => null);
       const botEntry = getPvpEliminationMemberById(joinedRoom, selectedBotId);
       if (!joinedRoom?.id || !botEntry?.user_id) {
         await clearBotBusy(selectedBotId, roomId).catch(() => null);
@@ -7080,6 +7076,73 @@ export default function CodeQuizApp() {
       setPvpEliminationRoom(latestRoom);
     }
     return latestRoom;
+  }
+
+  // Reserva o próximo bot livre da fila para a sala (marcado como ocupado pelo id da
+  // sala). Devolve o bot e o snapshot de membro, ou null se nenhum estiver livre.
+  async function reservePvpGroupBotMember(roomId = '', difficulty = 'easy', excludeIds = [], reason = 'group_room_lobby') {
+    const safeRoomId = String(roomId || '').trim();
+    if (!safeRoomId) return null;
+    const excludedBotIds = new Set(
+      (Array.isArray(excludeIds) ? excludeIds : [])
+        .map((entry) => String(entry || '').trim())
+        .filter((entry) => isSystemBotUserId(entry))
+    );
+    const safeDifficulty = normalizeDifficulty(difficulty || 'easy');
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      const pickedBot = await getNextBotForUserMatch(safeDifficulty, {
+        excludeBotIds: Array.from(excludedBotIds),
+        waitForEnsure: false,
+        preferLocal: attempt === 0
+      }).catch(() => null);
+      const botId = String(pickedBot?.bot_id || pickedBot?.profile?.id || '').trim();
+      if (!botId || !isSystemBotUserId(botId) || excludedBotIds.has(botId)) {
+        if (attempt === 0) continue;
+        return null;
+      }
+      excludedBotIds.add(botId);
+      const busyMarked = await setBotBusy(botId, {
+        reason,
+        source: 'user',
+        match_id: safeRoomId
+      }).catch(() => null);
+      if (!busyMarked) continue;
+      // Visual atual do bot no banco (o que ele comprou/equipou), não o do cache local.
+      const freshSnapshot = await getSystemBotSnapshot(botId, { preferLocal: false }).catch(() => null);
+      const botSnapshot = freshSnapshot?.profile ? freshSnapshot : pickedBot;
+      const member = buildPvpEliminationBotMemberSnapshot(botId, botSnapshot);
+      if (!member?.user_id) {
+        await clearBotBusy(botId, safeRoomId).catch(() => null);
+        continue;
+      }
+      return { botId, member };
+    }
+    return null;
+  }
+
+  // Um bot entra na vaga aberta de uma sala 2x2 (no time com menos gente).
+  async function addBotToPvpTeamRoom(roomRow = null) {
+    const room = roomRow && typeof roomRow === 'object' ? roomRow : null;
+    const roomId = String(room?.id || '').trim();
+    if (!roomId || String(room?.status || '').trim().toLowerCase() !== 'lobby') return null;
+    const redMembers = getPvpTeamMembersBySide(room, 'red');
+    const blueMembers = getPvpTeamMembersBySide(room, 'blue');
+    const redOpen = PVP_TEAM_ROOM_SIDE_CAPACITY - redMembers.length;
+    const blueOpen = PVP_TEAM_ROOM_SIDE_CAPACITY - blueMembers.length;
+    if (redOpen <= 0 && blueOpen <= 0) return null;
+    let side = 'red';
+    if (redOpen <= 0) side = 'blue';
+    else if (blueOpen > 0 && (blueOpen > redOpen || (blueOpen === redOpen && Math.random() < 0.5))) side = 'blue';
+    const memberIds = [...redMembers, ...blueMembers].map((member) => String(member?.user_id || '').trim());
+    const reserved = await reservePvpGroupBotMember(roomId, room?.difficulty || pvpConfig?.difficulty, memberIds, 'team_room_lobby');
+    if (!reserved) return null;
+    const joined = await joinPvpTeamRoom(roomId, reserved.member, { side, asBot: true }).catch(() => null);
+    if (!joined?.id || !getPvpTeamUserSide(joined, reserved.botId)) {
+      await clearBotBusy(reserved.botId, roomId).catch(() => null);
+      return null;
+    }
+    setPvpTeamRoom(joined);
+    return joined;
   }
 
   async function resolvePvpEliminationRoomBotRefusals(roomRow = null) {
@@ -7172,11 +7235,17 @@ export default function CodeQuizApp() {
         || resolveKnowledgeAreaByLanguageId(safeConfig.language || '')
         || 'programming'
       ).trim();
+      const excludedRoomIds = pvpEliminationExcludedRoomIdsRef.current;
+      excludedRoomIds.forEach((untilMs, excludedRoomId) => {
+        if (untilMs <= nowMs) excludedRoomIds.delete(excludedRoomId);
+      });
       const openRooms = (Array.isArray(pvpEliminationRooms) ? pvpEliminationRooms : [])
         .filter((room) => {
           if (!room || typeof room !== 'object') return false;
           if (String(room?.status || '').trim().toLowerCase() !== 'lobby') return false;
           if (room?.has_password) return false;
+          if (excludedRoomIds.has(String(room?.id || '').trim())) return false;
+          if (!isPvpGroupRoomAlive(room, nowMs)) return false;
           const members = getPvpEliminationMembers(room);
           return members.length < PVP_ELIMINATION_ROOM_CAPACITY;
         });
@@ -7277,7 +7346,18 @@ export default function CodeQuizApp() {
     const queueElapsedMs = queueJoinedAtMs > 0
       ? Math.max(0, nowMs - queueJoinedAtMs)
       : 0;
-    const roomHostUserId = String(getPvpEliminationRoomHostUserId(room) || '').trim();
+    let liveRoom = room;
+    // A cada 5s: tira da sala quem perdeu a conexão e, se o líder sumiu, assume a liderança.
+    if ((nowMs - pvpGroupReconcileAtMsRef.current) >= 5000) {
+      pvpGroupReconcileAtMsRef.current = nowMs;
+      const reconciled = await reconcilePvpEliminationRoomPresence(roomId, userId).catch(() => null);
+      if (reconciled?.room?.id) {
+        liveRoom = reconciled.room;
+        setPvpEliminationRoom(reconciled.room);
+      }
+      sweepStalePvpGroupState().catch(() => null);
+    }
+    const roomHostUserId = String(getPvpEliminationRoomHostUserId(liveRoom) || '').trim();
     const isHost = !!roomHostUserId && roomHostUserId === userId;
     const setQueueMessage = (message = '') => {
       const safeMessage = String(message || '').trim();
@@ -7291,7 +7371,7 @@ export default function CodeQuizApp() {
       });
     };
 
-    let roomState = room;
+    let roomState = liveRoom;
     if (roomStatus === 'lobby') {
       const members = getPvpEliminationMembers(roomState);
       const memberCount = members.length;
@@ -7446,11 +7526,16 @@ export default function CodeQuizApp() {
           Number((roomState?.accept_reject_at_ms || nowMs))
         );
         if (nowMs >= (effectiveRejectAtMs + PVP_ELIMINATION_REJECT_RESOLVE_DELAY_MS)) {
+          // Quem recusou sai do grupo (bots voltam para a fila) e a sala volta a
+          // procurar jogadores com quem aceitou.
           setPvpEliminationActionBusy(true);
           try {
-            const updated = await resetPvpEliminationRoomAfterDecline(roomState, 'match_refused');
-            if (updated?.id) {
-              roomState = updated;
+            const removal = await removePvpGroupRoomMembers(PVP_GROUP_MODE_ELIMINATION, roomId, rejectedIds, {
+              reason: 'match_refused'
+            }).catch(() => null);
+            if (removal?.room?.id) {
+              roomState = removal.room;
+              setPvpEliminationRoom(removal.room);
             }
           } finally {
             setPvpEliminationActionBusy(false);
@@ -7505,14 +7590,15 @@ export default function CodeQuizApp() {
           .map((member) => String(member?.user_id || '').trim())
           .filter((memberId) => normalizePvpEliminationAcceptState(acceptStateMap[memberId]) === 'pending');
         if (pendingMembers.length) {
+          // Quem não confirmou a tempo sai do grupo e da fila; os demais seguem buscando.
           setPvpEliminationActionBusy(true);
           try {
-            for (const memberId of pendingMembers) {
-              const updated = await setPvpEliminationRoomAcceptState(roomId, memberId, 'rejected').catch(() => null);
-              if (updated?.id) {
-                roomState = updated;
-                setPvpEliminationRoom(updated);
-              }
+            const removal = await removePvpGroupRoomMembers(PVP_GROUP_MODE_ELIMINATION, roomId, pendingMembers, {
+              reason: 'accept_timeout'
+            }).catch(() => null);
+            if (removal?.room?.id) {
+              roomState = removal.room;
+              setPvpEliminationRoom(removal.room);
             }
           } catch (error) {
             console.error('resolve elimination pending timeout failed:', error);
@@ -7808,7 +7894,12 @@ export default function CodeQuizApp() {
     if (!roomId || !authUser?.uid || pvpTeamActionBusy) return;
     setPvpTeamActionBusy(true);
     try {
-      await leavePvpTeamRoom(roomId, authUser.uid).catch(() => null);
+      // Sem humano sobrando a sala é desfeita e os bots voltam para a fila.
+      await removePvpGroupRoomMembers(PVP_GROUP_MODE_TEAM, roomId, [authUser.uid], {
+        reason: 'left_room'
+      }).catch(() => null);
+      pvpTeamAutoStartRoomIdRef.current = '';
+      setPvpTeamAutoStartPending(false);
       setPvpTeamRoomId('');
       setPvpTeamRoom(null);
       delete pvpTeamRoomAccessHashRef.current[roomId];
@@ -7819,8 +7910,75 @@ export default function CodeQuizApp() {
     }
   }
 
-  async function startPvpTeamBattle() {
-    const room = pvpTeamRoom && typeof pvpTeamRoom === 'object' ? pvpTeamRoom : null;
+  // Tick do lobby 2x2 (roda em todo humano da sala): presença, troca de líder e, no
+  // líder, jogadores completando as vagas abertas e o início automático pedido.
+  async function runPvpTeamLobbyTick() {
+    if (pvpTeamLobbyTickBusyRef.current) return;
+    const myUserId = String(authUser?.uid || '').trim();
+    const room = pvpTeamRoomRef.current;
+    if (!myUserId || !room?.id) return;
+    if (String(room?.status || '').trim().toLowerCase() !== 'lobby') return;
+    if (!getPvpTeamUserSide(room, myUserId)) return;
+    pvpTeamLobbyTickBusyRef.current = true;
+    try {
+      const nowMs = Date.now();
+      let latest = room;
+      if ((nowMs - pvpGroupReconcileAtMsRef.current) >= 5000) {
+        pvpGroupReconcileAtMsRef.current = nowMs;
+        const reconciled = await reconcilePvpTeamRoomPresence(room.id, myUserId).catch(() => null);
+        if (reconciled?.room?.id) {
+          latest = reconciled.room;
+          setPvpTeamRoom(reconciled.room);
+        }
+        sweepStalePvpGroupState().catch(() => null);
+      }
+      if (String(getPvpTeamRoomHostUserId(latest) || '').trim() !== myUserId) return;
+      if (String(latest?.status || '').trim().toLowerCase() !== 'lobby') return;
+
+      const launchCheck = getPvpTeamRoomLaunchCheck(latest);
+      if (launchCheck.isFull) {
+        if (pvpTeamAutoStartRoomIdRef.current === String(latest.id)) {
+          pvpTeamAutoStartRoomIdRef.current = '';
+          setPvpTeamAutoStartPending(false);
+          await startPvpTeamBattle({ roomOverride: latest, fromAutoStart: true });
+        }
+        return;
+      }
+
+      const memberIds = [
+        ...getPvpTeamMembersBySide(latest, 'red'),
+        ...getPvpTeamMembersBySide(latest, 'blue')
+      ].map((member) => String(member?.user_id || '').trim());
+      const membershipKey = `${[...memberIds].sort().join('|')}:${Number(latest?.membership_changed_at_ms || 0)}`;
+      const autoStartRequested = pvpTeamAutoStartRoomIdRef.current === String(latest.id);
+      const fill = pvpTeamBotFillRef.current;
+      if (fill.roomId !== String(latest.id) || fill.membershipKey !== membershipKey) {
+        const newestMember = [...getPvpTeamMembersBySide(latest, 'red'), ...getPvpTeamMembersBySide(latest, 'blue')]
+          .sort((a, b) => Number(b?.joined_at_ms || 0) - Number(a?.joined_at_ms || 0))[0] || null;
+        const lastJoinWasBot = isSystemBotUserId(String(newestMember?.user_id || '').trim());
+        const changedAtMs = Math.max(0, Number(latest?.membership_changed_at_ms || 0)) || nowMs;
+        const dueAtMs = (autoStartRequested || lastJoinWasBot)
+          ? nowMs + getPvpTeamRoomBotFillDelayMs(latest, true)
+          : Math.max(nowMs + 800, changedAtMs + getPvpTeamRoomBotFillDelayMs(latest, false));
+        pvpTeamBotFillRef.current = { roomId: String(latest.id), membershipKey, dueAtMs, busy: false };
+        return;
+      }
+      if (nowMs < fill.dueAtMs) return;
+      pvpTeamBotFillRef.current = { ...fill, dueAtMs: nowMs + getPvpTeamRoomBotFillDelayMs(latest, true) };
+      await addBotToPvpTeamRoom(latest);
+    } catch (error) {
+      console.error('team lobby tick failed:', error);
+    } finally {
+      pvpTeamLobbyTickBusyRef.current = false;
+    }
+  }
+
+  pvpTeamLobbyTickFnRef.current = runPvpTeamLobbyTick;
+
+  async function startPvpTeamBattle(options = {}) {
+    const room = options?.roomOverride && typeof options.roomOverride === 'object'
+      ? options.roomOverride
+      : (pvpTeamRoom && typeof pvpTeamRoom === 'object' ? pvpTeamRoom : null);
     if (!room?.id || pvpTeamActionBusy) return;
     if (String(getPvpTeamRoomHostUserId(room) || '') !== String(authUser?.uid || '')) {
       showToast('Somente o criador da sala pode iniciar.');
@@ -7828,6 +7986,15 @@ export default function CodeQuizApp() {
       return;
     }
     const launchCheck = getPvpTeamRoomLaunchCheck(room);
+    if (!launchCheck.isFull && !options?.fromAutoStart) {
+      // Vaga aberta: outros jogadores entram para completar e a batalha começa sozinha.
+      pvpTeamAutoStartRoomIdRef.current = String(room.id);
+      pvpTeamBotFillRef.current = { ...pvpTeamBotFillRef.current, roomId: '', membershipKey: '' };
+      setPvpTeamAutoStartPending(true);
+      showToast('Procurando jogadores para completar a sala...');
+      playSfx('click');
+      return;
+    }
     if (!launchCheck.canStart) {
       const notice = buildPvpTeamRoomStartBlockedNotice(room);
       publishPvpTeamRoomNotice(room.id, notice).catch(() => null);
@@ -7941,7 +8108,8 @@ export default function CodeQuizApp() {
     try {
       const members = getPvpEliminationMembers(room);
       const activeIds = members.map((member) => String(member?.user_id || '').trim()).filter(Boolean);
-      const cycleRounds = buildPvpEliminationCycleRounds(activeIds);
+      const matchId = buildPvpEliminationMatchId(room.id);
+      const cycleRounds = buildPvpEliminationCycleRounds(activeIds, `${matchId}:1`);
       const firstPair = getPvpEliminationNextPlayablePair(cycleRounds, 1, 1);
       if (
         members.length !== PVP_ELIMINATION_ROOM_CAPACITY
@@ -7952,7 +8120,6 @@ export default function CodeQuizApp() {
         throw new Error('elimination_room_invalid_setup');
       }
 
-      const matchId = buildPvpEliminationMatchId(room.id);
       const questionSequence = resolvePvpMatchQuestionSequence({
         areaId: room.knowledge_area || pvpKnowledgeArea,
         difficulty: room.difficulty || pvpConfig.difficulty,
@@ -8022,361 +8189,6 @@ export default function CodeQuizApp() {
       playSfx('error');
     } finally {
       setPvpEliminationActionBusy(false);
-    }
-  }
-
-  function resolvePvpEliminationLowestPlayerId(matchRow = null, activeIds = []) {
-    const safeActiveIds = Array.from(new Set(
-      (Array.isArray(activeIds) ? activeIds : [])
-        .map((entry) => String(entry || '').trim())
-        .filter(Boolean)
-    ));
-    if (!safeActiveIds.length) return '';
-    const cycleScores = matchRow?.cycle_member_scores && typeof matchRow.cycle_member_scores === 'object'
-      ? matchRow.cycle_member_scores
-      : {};
-    const totalScores = matchRow?.member_scores && typeof matchRow.member_scores === 'object'
-      ? matchRow.member_scores
-      : {};
-    let lowestUserId = safeActiveIds[0];
-    let lowestCycleScore = Math.max(0, Number(cycleScores[lowestUserId] || 0));
-    let lowestTotalScore = Math.max(0, Number(totalScores[lowestUserId] || 0));
-    safeActiveIds.slice(1).forEach((userId) => {
-      const nextCycleScore = Math.max(0, Number(cycleScores[userId] || 0));
-      const nextTotalScore = Math.max(0, Number(totalScores[userId] || 0));
-      if (nextCycleScore < lowestCycleScore) {
-        lowestUserId = userId;
-        lowestCycleScore = nextCycleScore;
-        lowestTotalScore = nextTotalScore;
-        return;
-      }
-      if (nextCycleScore === lowestCycleScore && nextTotalScore < lowestTotalScore) {
-        lowestUserId = userId;
-        lowestCycleScore = nextCycleScore;
-        lowestTotalScore = nextTotalScore;
-      }
-    });
-    return String(lowestUserId || '').trim();
-  }
-
-  async function finalizePvpEliminationBattle(matchInput) {
-    if (pvpEliminationFinalizeBusyRef.current) return;
-    if (!authUser?.uid) return;
-
-    const matchId = String(matchInput?.id || pvpEliminationMatch?.id || '').trim();
-    const battleNo = Math.max(1, Number(matchInput?.battle_no || pvpEliminationMatch?.battle_no || 1));
-    const status = String(matchInput?.status || '').trim().toLowerCase();
-    if (!matchId || status !== 'active') return;
-
-    pvpEliminationFinalizeBusyRef.current = true;
-    const lockAcquired = await tryAcquireRoundFinalizeLock(matchId, battleNo, authUser.uid, 7000).catch(() => false);
-    if (!lockAcquired) {
-      pvpEliminationFinalizeBusyRef.current = false;
-      return;
-    }
-
-    try {
-      const latestMatch = await getPvpEliminationMatch(matchId).catch(() => null);
-      const latestStatus = String(latestMatch?.status || '').trim().toLowerCase();
-      if (!latestMatch || latestStatus !== 'active') return;
-      if (Math.max(1, Number(latestMatch?.battle_no || 1)) !== battleNo) return;
-
-      const activePair = getPvpEliminationActivePair(latestMatch);
-      const user1Id = String(activePair?.user1 || '').trim();
-      const user2Id = String(activePair?.user2 || '').trim();
-      if (!user1Id || !user2Id || user1Id === user2Id) return;
-
-      const liveBattleAnswers = (Array.isArray(pvpEliminationAnswers) ? pvpEliminationAnswers : [])
-        .filter((row) => Math.max(0, Number(row?.battle_no || 0)) === battleNo);
-      const liveBattleAnswerMap = new Map(
-        liveBattleAnswers.map((answer) => [String(answer?.user_id || '').trim(), answer])
-      );
-      const liveReady = [user1Id, user2Id].every((userId) => liveBattleAnswerMap.has(userId));
-      const answers = liveReady
-        ? liveBattleAnswers
-        : await getPvpEliminationBattleAnswers(matchId, battleNo).catch(() => []);
-      const answersByUser = new Map(
-        (Array.isArray(answers) ? answers : []).map((answer) => [String(answer?.user_id || '').trim(), answer])
-      );
-
-      const question = latestMatch?.question_set?.[battleNo - 1];
-      if (!question) return;
-
-      const fallbackAnsweredAt = Date.now();
-      const answerUser1 = answersByUser.get(user1Id) || {
-        user_id: user1Id,
-        answer_idx: -1,
-        is_correct: false,
-        answered_at_ms: fallbackAnsweredAt
-      };
-      const answerUser2 = answersByUser.get(user2Id) || {
-        user_id: user2Id,
-        answer_idx: -1,
-        is_correct: false,
-        answered_at_ms: fallbackAnsweredAt
-      };
-      const battleCorrectIndex = resolvePvpCorrectIndex(
-        [answerUser1, answerUser2],
-        Number(question?.answer ?? -1)
-      );
-      const outcome = resolveRoundOutcome({
-        question,
-        answerPlayer1: answerUser1,
-        answerPlayer2: answerUser2,
-        player1Id: user1Id,
-        player2Id: user2Id
-      });
-
-      const activeMemberIds = getPvpEliminationActiveMemberIds(latestMatch);
-      const nextMemberScores = {
-        ...(latestMatch?.member_scores && typeof latestMatch.member_scores === 'object'
-          ? latestMatch.member_scores
-          : {})
-      };
-      const nextCycleScores = {
-        ...(latestMatch?.cycle_member_scores && typeof latestMatch.cycle_member_scores === 'object'
-          ? latestMatch.cycle_member_scores
-          : buildPvpEliminationCycleScoreMap(activeMemberIds))
-      };
-      nextMemberScores[user1Id] = Math.max(0, Number(nextMemberScores[user1Id] || 0) + Number(outcome.player1_delta || 0));
-      nextMemberScores[user2Id] = Math.max(0, Number(nextMemberScores[user2Id] || 0) + Number(outcome.player2_delta || 0));
-      nextCycleScores[user1Id] = Math.max(0, Number(nextCycleScores[user1Id] || 0) + Number(outcome.player1_delta || 0));
-      nextCycleScores[user2Id] = Math.max(0, Number(nextCycleScores[user2Id] || 0) + Number(outcome.player2_delta || 0));
-
-      const currentRoundInCycle = Math.max(1, Number(latestMatch?.round_in_cycle || 1));
-      const currentPairNo = Math.max(1, Number(latestMatch?.pair_no || 1));
-      const currentRoundEntry = getPvpEliminationRoundEntry(latestMatch, currentRoundInCycle);
-      const currentPairs = Array.isArray(currentRoundEntry?.pairs) ? currentRoundEntry.pairs : [];
-      const hasMorePairs = currentPairNo < currentPairs.length;
-      const hasMoreRoundsInCycle = currentRoundInCycle < PVP_ELIMINATION_ROUNDS_PER_CYCLE;
-      const nowMs = Date.now();
-
-      if (hasMorePairs || hasMoreRoundsInCycle) {
-        const nextRoundInCycle = hasMorePairs ? currentRoundInCycle : (currentRoundInCycle + 1);
-        const nextPairNo = hasMorePairs ? (currentPairNo + 1) : 1;
-        const nextPair = getPvpEliminationPairFromRounds(latestMatch?.cycle_rounds, nextRoundInCycle, nextPairNo);
-        await updatePvpEliminationMatch(matchId, {
-          status: 'round_result',
-          member_scores: nextMemberScores,
-          cycle_member_scores: nextCycleScores,
-          result_battle_no: battleNo,
-          result_battle_correct_answer_idx: battleCorrectIndex,
-          result_battle_winner_user_id: outcome.winner_user_id || null,
-          next_battle_no: battleNo + 1,
-          next_round_in_cycle: nextRoundInCycle,
-          next_pair_no: nextPairNo,
-          next_active_pair_user_ids: nextPair
-            ? [String(nextPair.player1_user_id || '').trim(), String(nextPair.player2_user_id || '').trim()]
-            : null,
-          round_result_until_ms: nowMs + PVP_ROUND_RESULT_DURATION_MS,
-          elimination_until_ms: null,
-          eliminated_user_id: null
-        }).catch(() => null);
-        return;
-      }
-
-      const eliminatedUserId = resolvePvpEliminationLowestPlayerId(
-        {
-          ...latestMatch,
-          member_scores: nextMemberScores,
-          cycle_member_scores: nextCycleScores
-        },
-        activeMemberIds
-      );
-      if (!eliminatedUserId) return;
-
-      const survivors = activeMemberIds.filter((entry) => String(entry || '').trim() !== eliminatedUserId);
-      const eliminationOrder = Array.isArray(latestMatch?.elimination_order) ? latestMatch.elimination_order : [];
-      const spectatorIds = Array.isArray(latestMatch?.spectator_member_ids) ? latestMatch.spectator_member_ids : [];
-      const nextEliminationOrder = Array.from(new Set(
-        [...eliminationOrder, eliminatedUserId]
-          .map((entry) => String(entry || '').trim())
-          .filter(Boolean)
-      ));
-      const nextSpectatorIds = Array.from(new Set(
-        [...spectatorIds, eliminatedUserId]
-          .map((entry) => String(entry || '').trim())
-          .filter(Boolean)
-      ));
-
-      if (survivors.length <= 1) {
-        const winnerUserId = String(survivors[0] || '').trim() || null;
-        await updatePvpEliminationMatch(matchId, {
-          status: 'elimination_result',
-          member_scores: nextMemberScores,
-          cycle_member_scores: buildPvpEliminationCycleScoreMap(survivors),
-          active_member_ids: survivors,
-          spectator_member_ids: nextSpectatorIds,
-          elimination_order: nextEliminationOrder,
-          winner_user_id: winnerUserId,
-          eliminated_user_id: eliminatedUserId,
-          result_battle_no: battleNo,
-          result_battle_correct_answer_idx: battleCorrectIndex,
-          result_battle_winner_user_id: outcome.winner_user_id || null,
-          next_status: 'finished',
-          elimination_until_ms: nowMs + PVP_ROUND_RESULT_DURATION_MS,
-          round_result_until_ms: null
-        }).catch(() => null);
-        return;
-      }
-
-      const nextCycleNo = Math.max(1, Number(latestMatch?.cycle_no || 1) + 1);
-      const nextCycleRounds = buildPvpEliminationCycleRounds(survivors);
-      const nextCyclePair = getPvpEliminationNextPlayablePair(nextCycleRounds, 1, 1);
-      if (!nextCyclePair?.player1_user_id || !nextCyclePair?.player2_user_id) {
-        throw new Error('elimination_next_cycle_missing_pair');
-      }
-
-      await updatePvpEliminationMatch(matchId, {
-        status: 'elimination_result',
-        member_scores: nextMemberScores,
-        cycle_member_scores: nextCycleScores,
-        active_member_ids: survivors,
-        spectator_member_ids: nextSpectatorIds,
-        elimination_order: nextEliminationOrder,
-        eliminated_user_id: eliminatedUserId,
-        result_battle_no: battleNo,
-        result_battle_correct_answer_idx: battleCorrectIndex,
-        result_battle_winner_user_id: outcome.winner_user_id || null,
-        next_status: 'active',
-        next_battle_no: battleNo + 1,
-        next_cycle_no: nextCycleNo,
-        next_round_in_cycle: Number(nextCyclePair.round_in_cycle || 1),
-        next_pair_no: Number(nextCyclePair.pair_no || 1),
-        next_cycle_rounds: nextCycleRounds,
-        next_cycle_member_scores: buildPvpEliminationCycleScoreMap(survivors),
-        next_active_pair_user_ids: [
-          String(nextCyclePair.player1_user_id || '').trim(),
-          String(nextCyclePair.player2_user_id || '').trim()
-        ],
-        elimination_until_ms: nowMs + PVP_ROUND_RESULT_DURATION_MS,
-        round_result_until_ms: null
-      }).catch(() => null);
-    } catch (error) {
-      console.error('finalize elimination battle failed:', error);
-    } finally {
-      await releaseRoundFinalizeLock(matchId, battleNo, authUser.uid).catch(() => null);
-      pvpEliminationFinalizeBusyRef.current = false;
-    }
-  }
-
-  async function advancePvpEliminationAfterRoundResult(matchInput) {
-    if (!authUser?.uid) return;
-    const matchId = String(matchInput?.id || '').trim();
-    const battleNo = Math.max(1, Number(matchInput?.result_battle_no || matchInput?.battle_no || 1));
-    const lockNo = Math.max(1, (battleNo * 10) + 1);
-    if (!matchId) return;
-    const lockAcquired = await tryAcquireRoundFinalizeLock(matchId, lockNo, authUser.uid, 5000).catch(() => false);
-    if (!lockAcquired) return;
-    try {
-      const latestMatch = await getPvpEliminationMatch(matchId).catch(() => null);
-      const latestStatus = String(latestMatch?.status || '').trim().toLowerCase();
-      if (!latestMatch || latestStatus !== 'round_result') return;
-
-      const nextBattleNo = Math.max(1, Number(latestMatch?.next_battle_no || (Number(latestMatch?.battle_no || 1) + 1)));
-      const nextRoundInCycle = Math.max(1, Number(latestMatch?.next_round_in_cycle || latestMatch?.round_in_cycle || 1));
-      const nextPairNo = Math.max(1, Number(latestMatch?.next_pair_no || latestMatch?.pair_no || 1));
-      const nextPair = Array.isArray(latestMatch?.next_active_pair_user_ids)
-        && latestMatch.next_active_pair_user_ids.length >= 2
-        ? {
-          player1_user_id: String(latestMatch.next_active_pair_user_ids[0] || '').trim(),
-          player2_user_id: String(latestMatch.next_active_pair_user_ids[1] || '').trim()
-        }
-        : getPvpEliminationPairFromRounds(latestMatch?.cycle_rounds, nextRoundInCycle, nextPairNo);
-      if (!nextPair?.player1_user_id || !nextPair?.player2_user_id) return;
-
-      await updatePvpEliminationMatch(matchId, {
-        status: 'active',
-        battle_no: nextBattleNo,
-        round_in_cycle: nextRoundInCycle,
-        pair_no: nextPairNo,
-        active_pair_user_ids: [nextPair.player1_user_id, nextPair.player2_user_id],
-        battle_started_at_ms: Date.now(),
-        battle_started_at: nowIso(),
-        result_battle_no: null,
-        result_battle_correct_answer_idx: null,
-        result_battle_winner_user_id: null,
-        next_battle_no: null,
-        next_round_in_cycle: null,
-        next_pair_no: null,
-        next_active_pair_user_ids: null,
-        round_result_until_ms: null
-      }).catch(() => null);
-    } finally {
-      await releaseRoundFinalizeLock(matchId, lockNo, authUser.uid).catch(() => null);
-    }
-  }
-
-  async function advancePvpEliminationAfterEliminationResult(matchInput) {
-    if (!authUser?.uid) return;
-    const matchId = String(matchInput?.id || '').trim();
-    const battleNo = Math.max(1, Number(matchInput?.result_battle_no || matchInput?.battle_no || 1));
-    const lockNo = Math.max(1, (battleNo * 10) + 2);
-    if (!matchId) return;
-    const lockAcquired = await tryAcquireRoundFinalizeLock(matchId, lockNo, authUser.uid, 5000).catch(() => false);
-    if (!lockAcquired) return;
-    try {
-      const latestMatch = await getPvpEliminationMatch(matchId).catch(() => null);
-      const latestStatus = String(latestMatch?.status || '').trim().toLowerCase();
-      if (!latestMatch || latestStatus !== 'elimination_result') return;
-      const activeIds = getPvpEliminationActiveMemberIds(latestMatch);
-      const nextStatus = String(latestMatch?.next_status || '').trim().toLowerCase();
-      const shouldFinish = nextStatus === 'finished' || activeIds.length <= 1;
-      if (shouldFinish) {
-        const winnerUserId = String(latestMatch?.winner_user_id || activeIds[0] || '').trim() || null;
-        await updatePvpEliminationMatch(matchId, {
-          status: 'finished',
-          winner_user_id: winnerUserId,
-          elimination_until_ms: null,
-          next_status: null,
-          ended_at: nowIso()
-        }).catch(() => null);
-        if (String(latestMatch?.room_id || '').trim()) {
-          updatePvpEliminationRoom(String(latestMatch.room_id), {
-            status: 'finished'
-          }).catch(() => null);
-        }
-        return;
-      }
-
-      const nextCycleRounds = Array.isArray(latestMatch?.next_cycle_rounds) && latestMatch.next_cycle_rounds.length
-        ? latestMatch.next_cycle_rounds
-        : latestMatch.cycle_rounds;
-      const nextRoundInCycle = Math.max(1, Number(latestMatch?.next_round_in_cycle || 1));
-      const nextPairNo = Math.max(1, Number(latestMatch?.next_pair_no || 1));
-      const nextPair = Array.isArray(latestMatch?.next_active_pair_user_ids)
-        && latestMatch.next_active_pair_user_ids.length >= 2
-        ? {
-          player1_user_id: String(latestMatch.next_active_pair_user_ids[0] || '').trim(),
-          player2_user_id: String(latestMatch.next_active_pair_user_ids[1] || '').trim()
-        }
-        : getPvpEliminationPairFromRounds(nextCycleRounds, nextRoundInCycle, nextPairNo);
-      if (!nextPair?.player1_user_id || !nextPair?.player2_user_id) return;
-
-      await updatePvpEliminationMatch(matchId, {
-        status: 'active',
-        battle_no: Math.max(1, Number(latestMatch?.next_battle_no || (Number(latestMatch?.battle_no || 1) + 1))),
-        cycle_no: Math.max(1, Number(latestMatch?.next_cycle_no || latestMatch?.cycle_no || 1)),
-        round_in_cycle: nextRoundInCycle,
-        pair_no: nextPairNo,
-        cycle_rounds: nextCycleRounds,
-        cycle_member_scores: latestMatch?.next_cycle_member_scores || buildPvpEliminationCycleScoreMap(activeIds),
-        active_pair_user_ids: [nextPair.player1_user_id, nextPair.player2_user_id],
-        battle_started_at_ms: Date.now(),
-        battle_started_at: nowIso(),
-        eliminated_user_id: null,
-        elimination_until_ms: null,
-        next_status: null,
-        next_battle_no: null,
-        next_cycle_no: null,
-        next_round_in_cycle: null,
-        next_pair_no: null,
-        next_cycle_rounds: null,
-        next_cycle_member_scores: null,
-        next_active_pair_user_ids: null
-      }).catch(() => null);
-    } finally {
-      await releaseRoundFinalizeLock(matchId, lockNo, authUser.uid).catch(() => null);
     }
   }
 
@@ -10079,6 +9891,7 @@ export default function CodeQuizApp() {
     const match = pvpTeamMatch;
     const status = String(match?.status || '').trim().toLowerCase();
     if (status !== 'active' || pvpTeamSubmitted) return;
+    if (Date.now() > getPvpGroupBattleTiming(match, PVP_GROUP_MODE_TEAM).closesAtMs) return;
     const activePair = getPvpTeamBattleEntry(match, match?.battle_no || 1);
     const myUserId = String(authUser?.uid || '').trim();
     if (myUserId !== String(activePair?.red_user_id || '').trim() && myUserId !== String(activePair?.blue_user_id || '').trim()) {
@@ -10109,6 +9922,11 @@ export default function CodeQuizApp() {
     const safeIndex = Math.max(0, Number(selectedIndex || 0));
     const isCorrect = safeIndex >= 0 && safeIndex === Number(question?.answer ?? -1);
     const nowMs = Date.now();
+    if (nowMs > getPvpGroupBattleTiming(match, PVP_GROUP_MODE_TEAM).finalizeAtMs) {
+      showToast('Tempo esgotado para este confronto.');
+      playSfx('error');
+      return;
+    }
     const previousAnswers = Array.isArray(pvpTeamAnswers) ? [...pvpTeamAnswers] : [];
     const previousSelectedIndex = pvpTeamSelectedIndex;
     const previousSubmitted = pvpTeamSubmitted;
@@ -10164,6 +9982,8 @@ export default function CodeQuizApp() {
     const match = pvpEliminationMatch;
     const status = String(match?.status || '').trim().toLowerCase();
     if (status !== 'active' || pvpEliminationSubmitted) return;
+    const timing = getPvpGroupBattleTiming(match, PVP_GROUP_MODE_ELIMINATION);
+    if (Date.now() < timing.opensAtMs || Date.now() > timing.closesAtMs) return;
     const myUserId = String(authUser?.uid || '').trim();
     const activePair = getPvpEliminationActivePair(match);
     if (myUserId !== String(activePair?.user1 || '').trim() && myUserId !== String(activePair?.user2 || '').trim()) {
@@ -10194,6 +10014,11 @@ export default function CodeQuizApp() {
     const safeIndex = Math.max(0, Number(selectedIndex || 0));
     const isCorrect = safeIndex >= 0 && safeIndex === Number(question?.answer ?? -1);
     const nowMs = Date.now();
+    if (nowMs > getPvpGroupBattleTiming(match, PVP_GROUP_MODE_ELIMINATION).finalizeAtMs) {
+      showToast('Tempo esgotado para este duelo.');
+      playSfx('error');
+      return;
+    }
     const previousAnswers = Array.isArray(pvpEliminationAnswers) ? [...pvpEliminationAnswers] : [];
     const previousSelectedIndex = pvpEliminationSelectedIndex;
     const previousSubmitted = pvpEliminationSubmitted;
@@ -10423,138 +10248,29 @@ export default function CodeQuizApp() {
     }
   }
 
-  async function finalizePvpTeamBattle(matchInput) {
-    if (pvpTeamFinalizeBusyRef.current) return;
-    if (!authUser?.uid) return;
-
-    const matchId = String(matchInput?.id || pvpTeamMatch?.id || '').trim();
-    const battleNo = Math.max(1, Number(matchInput?.battle_no || pvpTeamMatch?.battle_no || 1));
-    const status = String(matchInput?.status || '').trim().toLowerCase();
-    if (!matchId || status !== 'active') return;
-
-    pvpTeamFinalizeBusyRef.current = true;
-    const lockAcquired = await tryAcquireRoundFinalizeLock(matchId, battleNo, authUser.uid, 7000).catch(() => false);
-    if (!lockAcquired) {
-      pvpTeamFinalizeBusyRef.current = false;
-      return;
-    }
-
-    try {
-      const latestMatch = await getPvpTeamMatch(matchId).catch(() => null);
-      const latestStatus = String(latestMatch?.status || '').trim().toLowerCase();
-      if (!latestMatch || latestStatus !== 'active') return;
-      if (Math.max(1, Number(latestMatch?.battle_no || 1)) !== battleNo) return;
-
-      const battleEntry = getPvpTeamBattleEntry(latestMatch, battleNo);
-      const redUserId = String(battleEntry?.red_user_id || '').trim();
-      const blueUserId = String(battleEntry?.blue_user_id || '').trim();
-      if (!redUserId || !blueUserId) return;
-
-      const liveBattleAnswers = getPvpTeamCurrentBattleAnswers(pvpTeamAnswers, battleNo);
-      const liveBattleAnswerMap = new Map(
-        liveBattleAnswers.map((answer) => [String(answer?.user_id || '').trim(), answer])
-      );
-      const liveReady = [redUserId, blueUserId].every((userId) => liveBattleAnswerMap.has(userId));
-      const answers = liveReady
-        ? liveBattleAnswers
-        : await getPvpTeamBattleAnswers(matchId, battleNo).catch(() => []);
-      const answersByUser = new Map(
-        (Array.isArray(answers) ? answers : []).map((answer) => [String(answer?.user_id || '').trim(), answer])
-      );
-
-      const question = latestMatch?.question_set?.[battleNo - 1];
-      if (!question) return;
-
-      const fallbackAnsweredAt = Date.now();
-      const redAnswer = answersByUser.get(redUserId) || {
-        user_id: redUserId,
-        answer_idx: -1,
-        is_correct: false,
-        answered_at_ms: fallbackAnsweredAt
-      };
-      const blueAnswer = answersByUser.get(blueUserId) || {
-        user_id: blueUserId,
-        answer_idx: -1,
-        is_correct: false,
-        answered_at_ms: fallbackAnsweredAt
-      };
-      const battleCorrectIndex = resolvePvpCorrectIndex(
-        [redAnswer, blueAnswer],
-        Number(question?.answer ?? -1)
-      );
-      const outcome = resolveRoundOutcome({
-        question,
-        answerPlayer1: redAnswer,
-        answerPlayer2: blueAnswer,
-        player1Id: redUserId,
-        player2Id: blueUserId
-      });
-
-      const nextMemberScores = {
-        ...(latestMatch?.member_scores && typeof latestMatch.member_scores === 'object'
-          ? latestMatch.member_scores
-          : {})
-      };
-      nextMemberScores[redUserId] = Math.max(0, Number(nextMemberScores[redUserId] || 0) + Number(outcome.player1_delta || 0));
-      nextMemberScores[blueUserId] = Math.max(0, Number(nextMemberScores[blueUserId] || 0) + Number(outcome.player2_delta || 0));
-
-      const nextRedScore = Math.max(0, Number(latestMatch?.red_score || 0) + Number(outcome.player1_delta || 0));
-      const nextBlueScore = Math.max(0, Number(latestMatch?.blue_score || 0) + Number(outcome.player2_delta || 0));
-      const totalBattles = Math.max(1, Number(latestMatch?.total_rounds || PVP_TEAM_BATTLE_TOTAL_ROUNDS));
-      const finished = battleNo >= totalBattles;
-
-      if (finished) {
-        const winnerSide = nextRedScore > nextBlueScore
-          ? 'red'
-          : (nextBlueScore > nextRedScore ? 'blue' : 'draw');
-        await updatePvpTeamMatch(matchId, {
-          status: 'finished',
-          red_score: nextRedScore,
-          blue_score: nextBlueScore,
-          member_scores: nextMemberScores,
-          winner_side: winnerSide,
-          ended_battle_no: battleNo,
-          result_battle_no: battleNo,
-          result_battle_correct_answer_idx: battleCorrectIndex,
-          result_battle_winner_user_id: outcome.winner_user_id || null,
-          next_battle_no: null,
-          round_result_until_ms: null,
-          ended_at: nowIso()
-        }).catch(() => null);
-        if (latestMatch?.room_id) {
-          updatePvpTeamRoom(latestMatch.room_id, {
-            status: 'finished'
-          }).catch(() => null);
-        }
-        return;
-      }
-
-      const nowMs = Date.now();
-      await updatePvpTeamMatch(matchId, {
-        status: 'round_result',
-        red_score: nextRedScore,
-        blue_score: nextBlueScore,
-        member_scores: nextMemberScores,
-        result_battle_no: battleNo,
-        result_battle_correct_answer_idx: battleCorrectIndex,
-        result_battle_winner_user_id: outcome.winner_user_id || null,
-        next_battle_no: battleNo + 1,
-        round_result_until_ms: nowMs + PVP_ROUND_RESULT_DURATION_MS
-      }).catch(() => null);
-    } catch (error) {
-      console.error('finalize team battle failed:', error);
-    } finally {
-      await releaseRoundFinalizeLock(matchId, battleNo, authUser.uid).catch(() => null);
-      pvpTeamFinalizeBusyRef.current = false;
-    }
+  // Cada aparelho tenta aplicar o resultado dos bots uma vez por partida (a limpeza
+  // automática cobre o caso de quem encerrou ter fechado o app no meio).
+  function applyPvpGroupBotRewardsOnce(mode, matchRow) {
+    const matchId = String(matchRow?.id || '').trim();
+    if (!matchId || String(matchRow?.status || '').trim().toLowerCase() !== 'finished') return;
+    const key = `${mode}:${matchId}`;
+    if (pvpGroupBotRewardAttemptsRef.current.has(key)) return;
+    pvpGroupBotRewardAttemptsRef.current.add(key);
+    applyPvpGroupMatchBotRewards(mode, matchRow).catch(() => {
+      pvpGroupBotRewardAttemptsRef.current.delete(key);
+    });
   }
 
   async function handlePvpTeamMatchFinished(matchRow) {
     const matchId = String(matchRow?.id || '').trim();
     if (!matchId) return;
 
-    setPvpTeamResultReward(null);
-    setPvpTeamRewardCollecting(false);
+    // A partida encerrada pode chegar várias vezes (atualizações posteriores da linha):
+    // só a primeira limpa o estado da recompensa.
+    if (!handledPvpTeamMatchIdsRef.current.has(matchId)) {
+      setPvpTeamResultReward(null);
+      setPvpTeamRewardCollecting(false);
+    }
     const resultKey = getPvpTeamResultForUser(matchRow, authUser?.uid || '');
     setPvpMode(PVP_MODE_TEAM_BATTLE);
     if (String(matchRow?.room_id || '').trim()) {
@@ -10567,6 +10283,9 @@ export default function CodeQuizApp() {
     setPvpTeamSelectedIndex(null);
     setScreen('pvp-team-result');
 
+    // Qualquer humano que viu o fim aplica o resultado dos bots (uma vez só por bot).
+    applyPvpGroupBotRewardsOnce(PVP_GROUP_MODE_TEAM, matchRow);
+
     if (!authUser?.uid) return;
     if (handledPvpTeamMatchIdsRef.current.has(matchId)) return;
 
@@ -10577,18 +10296,12 @@ export default function CodeQuizApp() {
     }
     handledPvpTeamMatchIdsRef.current.add(matchId);
 
-    const decisiveBattleNo = Math.max(
-      1,
-      Number(matchRow?.ended_battle_no || matchRow?.result_battle_no || matchRow?.battle_no || PVP_TEAM_BATTLE_TOTAL_ROUNDS)
-    );
-    const nextBattleNo = Math.max(1, Number(progress.pvpBattles || 0) + 1);
-    const pvpPointsGain = getPvpPointsDeltaAdvanced(resultKey, {
-      battleNo: nextBattleNo,
-      roundNo: decisiveBattleNo,
-      matchRow,
-      userId: authUser.uid
+    // Mesma conta aplicada aos bots (pontos, XP e moedas por resultado e dificuldade).
+    const outcome = getPvpGroupMatchOutcomeForUser(matchRow, PVP_GROUP_MODE_TEAM, authUser.uid, {
+      battleCountBefore: Math.max(0, Number(progress.pvpBattles || 0))
     });
-    const rewards = getPvpRewardsByDifficulty(matchRow?.difficulty || pvpConfig?.difficulty || 'easy', resultKey);
+    const pvpPointsGain = outcome.points;
+    const rewards = { xp: outcome.xp, coins: outcome.coins };
     const passStateBefore = applyEvolutionPassRewards(progress, []);
     const passClaimableBeforeSet = new Set(
       (Array.isArray(passStateBefore?.unlockedAchievements) ? passStateBefore.unlockedAchievements : [])
@@ -10651,8 +10364,10 @@ export default function CodeQuizApp() {
     if (!matchId) return;
     if (!allowEarly && status !== 'finished') return;
 
-    setPvpEliminationResultReward(null);
-    setPvpEliminationRewardCollecting(false);
+    if (!handledPvpEliminationMatchIdsRef.current.has(matchId)) {
+      setPvpEliminationResultReward(null);
+      setPvpEliminationRewardCollecting(false);
+    }
     setPvpMode(PVP_MODE_ELIMINATION);
     if (String(matchRow?.room_id || '').trim()) {
       setPvpEliminationRoomId(String(matchRow.room_id).trim());
@@ -10665,13 +10380,8 @@ export default function CodeQuizApp() {
     setScreen('pvp-elimination-result');
 
     if (status === 'finished') {
-      const botBusyMatchId = String(matchRow?.room_id || '').trim() || matchId;
-      const botIds = getPvpEliminationRoomBotIds(matchRow);
-      if (botIds.length) {
-        await Promise.all(botIds.map((botId) => (
-          clearBotBusy(botId, botBusyMatchId).catch(() => null)
-        )));
-      }
+      // Resultado dos bots (pontos/XP/moedas pela colocação) e liberação para outras partidas.
+      applyPvpGroupBotRewardsOnce(PVP_GROUP_MODE_ELIMINATION, matchRow);
     }
 
     const myUserId = String(authUser?.uid || '').trim();
@@ -10690,23 +10400,13 @@ export default function CodeQuizApp() {
     }
     handledPvpEliminationMatchIdsRef.current.add(matchId);
 
-    const decisiveBattleNo = Math.max(
-      1,
-      Number(matchRow?.result_battle_no || matchRow?.ended_battle_no || matchRow?.battle_no || 1)
-    );
-    const nextBattleNo = Math.max(1, Number(progress.pvpBattles || 0) + 1);
-    const pvpPointsGain = getPvpPointsDeltaAdvanced(resultKey, {
-      battleNo: nextBattleNo,
-      roundNo: decisiveBattleNo,
-      matchRow,
-      userId: myUserId
+    // Mesma conta aplicada aos bots: pontos pela colocação e recompensa proporcional.
+    const outcome = getPvpGroupMatchOutcomeForUser(matchRow, PVP_GROUP_MODE_ELIMINATION, myUserId, {
+      forcePlacement: placement,
+      battleCountBefore: Math.max(0, Number(progress.pvpBattles || 0))
     });
-    const baseRewards = getPvpRewardsByDifficulty(matchRow?.difficulty || pvpConfig?.difficulty || 'easy', resultKey);
-    const rewardScale = getPvpEliminationRewardScaleByPlacement(placement);
-    const scaledRewards = {
-      xp: Math.max(0, Math.round(Number(baseRewards.xp || 0) * rewardScale)),
-      coins: Math.max(0, Math.round(Number(baseRewards.coins || 0) * rewardScale))
-    };
+    const pvpPointsGain = outcome.points;
+    const scaledRewards = { xp: outcome.xp, coins: outcome.coins };
     const passStateBefore = applyEvolutionPassRewards(progress, []);
     const passClaimableBeforeSet = new Set(
       (Array.isArray(passStateBefore?.unlockedAchievements) ? passStateBefore.unlockedAchievements : [])
@@ -10989,6 +10689,29 @@ export default function CodeQuizApp() {
     }
   }
 
+  // Abandono no meio de uma partida em grupo: -2 PvP (W.O.), sem XP/moedas, uma vez só.
+  function applyPvpGroupForfeitPenalty(matchId = '') {
+    const safeMatchId = String(matchId || '').trim();
+    const userId = String(authUser?.uid || '').trim();
+    if (!safeMatchId || !userId) return null;
+    if (progress?.pvpProcessedMatches?.[safeMatchId]) return null;
+    const outcome = getPvpGroupForfeitOutcome();
+    const penalizedProgress = normalizeProgress({
+      ...progress,
+      pvpBattles: Math.max(0, Number(progress.pvpBattles || 0) + 1),
+      pvpPoints: Math.max(0, Number(progress.pvpPoints || 0) + outcome.points),
+      pvpProcessedMatches: {
+        ...(progress.pvpProcessedMatches || {}),
+        [safeMatchId]: true
+      },
+      updatedAt: Date.now()
+    });
+    const nextProgress = applyEvolutionPassRewards(penalizedProgress, []).progress;
+    setProgress(nextProgress);
+    upsertStatsFromProgress(userId, nextProgress).catch(() => null);
+    return outcome;
+  }
+
   function leavePvpTeamFlow() {
     const activeMatch = pvpTeamMatch && typeof pvpTeamMatch === 'object' ? pvpTeamMatch : null;
     const activeRoom = pvpTeamRoom && typeof pvpTeamRoom === 'object' ? pvpTeamRoom : null;
@@ -10996,47 +10719,38 @@ export default function CodeQuizApp() {
     const activeMatchId = String(activeMatch?.id || pvpTeamMatchId || '').trim();
     const activeMatchStatus = String(activeMatch?.status || '').trim().toLowerCase();
     const roomId = String(activeRoom?.id || activeMatch?.room_id || pvpTeamRoomId || '').trim();
+    const leavingLiveMatch = Boolean(
+      myUserId
+      && activeMatchId
+      && (activeMatchStatus === 'active' || activeMatchStatus === 'round_result')
+      && !getPvpGroupMatchGoneIds(activeMatch, PVP_GROUP_MODE_TEAM).includes(myUserId)
+    );
 
+    if (leavingLiveMatch) {
+      const outcome = applyPvpGroupForfeitPenalty(activeMatchId);
+      if (outcome) showToast(`Você abandonou a batalha. ${formatSignedPoints(outcome.points)} PvP`);
+    }
+    pvpTeamAutoStartRoomIdRef.current = '';
+    setPvpTeamAutoStartPending(false);
     resetPvpTeamState();
     setPvpMode('');
     setScreen('play-mode');
 
     (async () => {
       try {
-        const canFinalizeMatch = Boolean(
-          myUserId
-          && activeMatchId
-          && (activeMatchStatus === 'active' || activeMatchStatus === 'round_result')
-        );
-
-        if (canFinalizeMatch) {
-          const latest = await getPvpTeamMatch(activeMatchId).catch(() => null);
-          const latestStatus = String(latest?.status || '').trim().toLowerCase();
-          if (latest && (latestStatus === 'active' || latestStatus === 'round_result')) {
-            const mySide = getPvpTeamUserSide(latest, myUserId);
-            const winnerSide = mySide ? getPvpTeamOpponentSide(mySide) : 'draw';
-            await updatePvpTeamMatch(activeMatchId, {
-              status: 'finished',
-              winner_side: winnerSide,
-              ended_reason: 'forfeit',
-              ended_by_user_id: myUserId,
-              ended_battle_no: Math.max(
-                1,
-                Number(latest?.result_battle_no || latest?.battle_no || activeMatch?.battle_no || 1)
-              ),
-              ended_at: nowIso()
-            }).catch(() => null);
-            if (roomId) {
-              updatePvpTeamRoom(roomId, {
-                status: 'finished'
-              }).catch(() => null);
-            }
-            return;
+        if (leavingLiveMatch) {
+          // A partida continua para quem ficou: meus confrontos passam a valer como sem
+          // resposta. Se eu era o último humano, ela termina como W.O. do meu time.
+          const result = await leavePvpGroupMatch(PVP_GROUP_MODE_TEAM, activeMatchId, myUserId).catch(() => null);
+          if (String(result?.row?.status || '').trim().toLowerCase() === 'finished') {
+            await applyPvpGroupMatchBotRewards(PVP_GROUP_MODE_TEAM, result.row).catch(() => null);
           }
         }
-
         if (roomId && myUserId) {
-          await leavePvpTeamRoom(roomId, myUserId).catch(() => null);
+          await removePvpGroupRoomMembers(PVP_GROUP_MODE_TEAM, roomId, [myUserId], {
+            reason: 'left_room',
+            releaseBots: !activeMatchId
+          }).catch(() => null);
         }
       } catch (error) {
         console.error('leave team flow cleanup failed:', error);
@@ -11047,16 +10761,31 @@ export default function CodeQuizApp() {
   function leavePvpEliminationFlow() {
     const activeMatch = pvpEliminationMatch && typeof pvpEliminationMatch === 'object' ? pvpEliminationMatch : null;
     const activeRoom = pvpEliminationRoom && typeof pvpEliminationRoom === 'object' ? pvpEliminationRoom : null;
-    const roomId = String(activeRoom?.id || pvpEliminationRoomId || '').trim();
+    const roomId = String(activeRoom?.id || activeMatch?.room_id || pvpEliminationRoomId || '').trim();
     const matchId = String(activeMatch?.id || pvpEliminationMatchId || '').trim();
     const matchStatus = String(activeMatch?.status || '').trim().toLowerCase();
     const myUserId = String(authUser?.uid || '').trim();
-    const amRoomHost = myUserId && myUserId === String(getPvpEliminationRoomHostUserId(activeRoom) || '').trim();
     const hasLiveMatch = !!matchId && (
       matchStatus === 'active'
       || matchStatus === 'round_result'
       || matchStatus === 'elimination_result'
     );
+    const alreadyLeft = !!myUserId && getPvpGroupMatchGoneIds(activeMatch, PVP_GROUP_MODE_ELIMINATION).includes(myUserId);
+    const stillAlive = !!myUserId && getPvpEliminationActiveMemberIds(activeMatch).includes(myUserId);
+    const placementDecided = matchStatus === 'elimination_result'
+      && String(activeMatch?.next_status || '').trim().toLowerCase() === 'finished';
+
+    // Já eliminado (assistindo) ou com a colocação decidida: sai recebendo a colocação.
+    if (hasLiveMatch && !alreadyLeft && (!stillAlive || placementDecided) && getPvpEliminationMemberById(activeMatch, myUserId)) {
+      exitPvpEliminationWithPlacement().catch(() => null);
+      return;
+    }
+
+    const leavingAlive = hasLiveMatch && !alreadyLeft && stillAlive;
+    if (leavingAlive) {
+      const outcome = applyPvpGroupForfeitPenalty(matchId);
+      if (outcome) showToast(`Você abandonou a eliminatória. ${formatSignedPoints(outcome.points)} PvP`);
+    }
     if (matchId) {
       rememberIgnoredPvpEliminationMatch(matchId);
     }
@@ -11067,19 +10796,19 @@ export default function CodeQuizApp() {
 
     (async () => {
       try {
-        if (matchId && myUserId) {
-          await markPvpEliminationMatchParticipantOptOut(matchId, myUserId).catch(() => null);
-          if (hasLiveMatch) {
-            await continuePvpEliminationAfterPlayerExit(activeMatch, myUserId).catch(() => null);
+        if (leavingAlive) {
+          // Saio como eliminado na hora; quem ficou começa um novo ciclo. Sem humano
+          // acompanhando, a partida termina pela classificação atual.
+          const result = await leavePvpGroupMatch(PVP_GROUP_MODE_ELIMINATION, matchId, myUserId).catch(() => null);
+          if (String(result?.row?.status || '').trim().toLowerCase() === 'finished') {
+            await applyPvpGroupMatchBotRewards(PVP_GROUP_MODE_ELIMINATION, result.row).catch(() => null);
           }
         }
-        if (activeRoom?.id && amRoomHost && !hasLiveMatch) {
-          await removePvpEliminationBotsFromLobbyRoom(activeRoom, {
-            reason: 'host_left_elimination_lobby'
-          }).catch(() => null);
-        }
         if (roomId && myUserId) {
-          await leavePvpEliminationRoom(roomId, myUserId).catch(() => null);
+          await removePvpGroupRoomMembers(PVP_GROUP_MODE_ELIMINATION, roomId, [myUserId], {
+            reason: 'left_room',
+            releaseBots: !matchId
+          }).catch(() => null);
         }
       } catch (error) {
         console.error('leave elimination flow cleanup failed:', error);
@@ -12315,6 +12044,7 @@ export default function CodeQuizApp() {
             + Math.floor(Math.random() * (PVP_BOT_DECISION_DELAY_MAX_MS - PVP_BOT_DECISION_DELAY_MIN_MS + 1));
           const botDecisionAtMs = nowMs + botDecisionDelayMs;
           const botWillReject = Math.random() < 0.6;
+          const botFallbackProfile = getSystemBotFallbackProfile(selectedBotId);
           const created = await createPvpMatch({
             id: matchId,
             status: 'pending_accept',
@@ -12346,11 +12076,11 @@ export default function CodeQuizApp() {
             player1_queue_joined_at_ms: resolveBackendQueueJoinMs(myQueue, queueSessionJoinedAtMs || nowMs),
             player1_accept_state: 'pending',
             player2_user_id: selectedBotId,
-            player2_nickname: botProfile.nickname || SYSTEM_BOT_NICKNAME,
-            player2_avatar: botProfile.avatar || '🤖',
-            player2_frame: botProfile.equipped_frame || 'frame_default',
-            player2_background: botProfile.equipped_background || 'bg_default',
-            player2_emoji: botProfile.equipped_emoji || 'emoji_profile',
+            player2_nickname: botProfile.nickname || botFallbackProfile.nickname,
+            player2_avatar: botProfile.avatar || botFallbackProfile.avatar,
+            player2_frame: botProfile.equipped_frame || botFallbackProfile.equipped_frame,
+            player2_background: botProfile.equipped_background || botFallbackProfile.equipped_background,
+            player2_emoji: botProfile.equipped_emoji || botFallbackProfile.equipped_emoji,
             player2_level: Math.max(1, Number(botStats.level || 1)),
             player2_pvp_points: Math.max(0, Number(botStats.pvp_points || 0)),
             player2_pvp_battles: Math.max(0, Number(botStats.pvp_battles || 0)),
@@ -14093,19 +13823,14 @@ export default function CodeQuizApp() {
   const pvpTeamBattleEntry = getPvpTeamBattleEntry(pvpTeamMatch, pvpTeamBattleNo);
   const pvpTeamActivePair = getPvpTeamActivePairMembers(pvpTeamMatch, pvpTeamBattleNo);
   const pvpTeamQuestion = pvpTeamMatch?.question_set?.[pvpTeamBattleNo - 1] || null;
-  const pvpTeamBattleDuration = Math.max(
-    1000,
-    Number(getRoundDurationSeconds(pvpTeamMatch?.difficulty || pvpConfig.difficulty) || 20) * 1000
-    + PVP_ROUND_EXTRA_ANSWER_MS
-  );
-  const pvpTeamBattleStartedAtMs = Math.max(
-    0,
-    Number(pvpTeamMatch?.battle_started_at_ms || toMillis(pvpTeamMatch?.battle_started_at) || 0)
-  );
-  const pvpTeamBattleElapsedMs = pvpTeamBattleStartedAtMs > 0
-    ? Math.max(0, pvpClockMs - pvpTeamBattleStartedAtMs)
-    : 0;
-  const pvpTeamBattleRemainingMs = Math.max(0, pvpTeamBattleDuration - pvpTeamBattleElapsedMs);
+  // Mesmo relógio que o motor usa para fechar o confronto.
+  const pvpTeamBattleTiming = getPvpGroupBattleTiming(pvpTeamMatch, PVP_GROUP_MODE_TEAM);
+  const pvpTeamBattleDuration = pvpTeamBattleTiming.answerMs;
+  const pvpTeamBattleRemainingMs = pvpTeamBattleTiming.startedAtMs > 0
+    ? Math.max(0, Math.min(pvpTeamBattleDuration, pvpTeamBattleTiming.closesAtMs - pvpClockMs))
+    : pvpTeamBattleDuration;
+  const pvpTeamAnswerWindowOpen = pvpTeamBattleStatus === 'active' && pvpTeamBattleRemainingMs > 0;
+  const pvpTeamLeftMemberIds = getPvpGroupMatchGoneIds(pvpTeamMatch, PVP_GROUP_MODE_TEAM);
   const pvpTeamBattleRemainingSec = Math.max(0, Math.ceil(pvpTeamBattleRemainingMs / 1000));
   const pvpTeamTimerPctRaw = (pvpTeamBattleRemainingMs / Math.max(1, pvpTeamBattleDuration)) * 100;
   const pvpTeamTimerPct = Number.isFinite(pvpTeamTimerPctRaw)
@@ -14225,15 +13950,9 @@ export default function CodeQuizApp() {
   const pvpEliminationQuestion = pvpEliminationMatch?.question_set?.[
     Math.max(1, Number(pvpEliminationMatch?.battle_no || 1)) - 1
   ] || null;
-  const pvpEliminationBattleDuration = Math.max(
-    1000,
-    Number(getRoundDurationSeconds(pvpEliminationMatch?.difficulty || pvpConfig.difficulty) || 20) * 1000
-    + PVP_ROUND_EXTRA_ANSWER_MS
-  );
-  const pvpEliminationBattleStartedAtMs = Math.max(
-    0,
-    Number(pvpEliminationMatch?.battle_started_at_ms || toMillis(pvpEliminationMatch?.battle_started_at) || 0)
-  );
+  const pvpEliminationBattleTiming = getPvpGroupBattleTiming(pvpEliminationMatch, PVP_GROUP_MODE_ELIMINATION);
+  const pvpEliminationBattleDuration = pvpEliminationBattleTiming.answerMs;
+  const pvpEliminationBattleStartedAtMs = pvpEliminationBattleTiming.startedAtMs;
   const pvpEliminationBattleElapsedMs = pvpEliminationBattleStartedAtMs > 0
     ? Math.max(0, pvpClockMs - pvpEliminationBattleStartedAtMs)
     : 0;
@@ -14242,7 +13961,13 @@ export default function CodeQuizApp() {
     && pvpEliminationBattleElapsedMs < PVP_ELIMINATION_BATTLE_INTRO_MS
     && !!pvpEliminationPairUser1Id
     && !!pvpEliminationPairUser2Id;
-  const pvpEliminationBattleRemainingMs = Math.max(0, pvpEliminationBattleDuration - pvpEliminationBattleElapsedMs);
+  // O tempo de resposta só começa a contar depois da apresentação do confronto.
+  const pvpEliminationBattleRemainingMs = pvpEliminationBattleStartedAtMs > 0
+    ? Math.max(0, Math.min(pvpEliminationBattleDuration, pvpEliminationBattleTiming.closesAtMs - pvpClockMs))
+    : pvpEliminationBattleDuration;
+  const pvpEliminationAnswerWindowOpen = pvpEliminationBattleStatus === 'active'
+    && !pvpEliminationShowBattleIntro
+    && pvpEliminationBattleRemainingMs > 0;
   const pvpEliminationTimerPctRaw = (pvpEliminationBattleRemainingMs / Math.max(1, pvpEliminationBattleDuration)) * 100;
   const pvpEliminationTimerPct = Number.isFinite(pvpEliminationTimerPctRaw)
     ? Math.max(0, Math.min(100, pvpEliminationTimerPctRaw))
@@ -14277,7 +14002,11 @@ export default function CodeQuizApp() {
   const pvpEliminationEliminatedUserId = String(pvpEliminationMatch?.eliminated_user_id || '').trim();
   const pvpEliminationEliminatedMember = pvpEliminationMemberMap.get(pvpEliminationEliminatedUserId) || null;
   const pvpEliminationEliminationLabel = pvpEliminationEliminatedUserId
-    ? `${pvpEliminationEliminatedMember?.nickname || 'Jogador'} foi eliminado`
+    ? (
+      String(pvpEliminationMatch?.eliminated_reason || '').trim().toLowerCase() === 'exit'
+        ? `${pvpEliminationEliminatedMember?.nickname || 'Jogador'} saiu da partida`
+        : `${pvpEliminationEliminatedMember?.nickname || 'Jogador'} foi eliminado`
+    )
     : 'Eliminação concluída';
   const pvpEliminationWinnerUserId = String(pvpEliminationMatch?.winner_user_id || '').trim();
   const pvpEliminationWinnerMember = pvpEliminationMemberMap.get(pvpEliminationWinnerUserId) || null;
@@ -15325,6 +15054,7 @@ export default function CodeQuizApp() {
             pvpSelectedDifficulty,
             pvpState,
             pvpTeamActionBusy,
+            pvpTeamAutoStartPending,
             pvpTeamCurrentUserReady,
             pvpTeamMySide,
             pvpTeamRoom,
@@ -15408,7 +15138,9 @@ export default function CodeQuizApp() {
             pvpTeamBlueMembers,
             pvpTeamCurrentBattleLabel,
             pvpTeamCurrentPairLabel,
+            pvpTeamAnswerWindowOpen,
             pvpTeamIsActivePlayer,
+            pvpTeamLeftMemberIds,
             pvpTeamMatch,
             pvpTeamMySide,
             pvpTeamQuestion,
@@ -15432,6 +15164,7 @@ export default function CodeQuizApp() {
             leavePvpEliminationFlow,
             music: shellMusic,
             pickPvpEliminationAnswer,
+            pvpEliminationAnswerWindowOpen,
             pvpEliminationBattleRemainingSec: Math.ceil(Math.max(0, pvpEliminationBattleRemainingMs) / 1000),
             pvpEliminationBattleStatus,
             pvpEliminationCountdownClass,

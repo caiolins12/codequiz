@@ -937,7 +937,7 @@ export const PVP_MATCH_REJECT_RESOLVE_DELAY_MS = 800;
 export const PVP_BOT_DECISION_DELAY_MIN_MS = 800;
 export const PVP_BOT_DECISION_DELAY_MAX_MS = 1800;
 export const PVP_BOT_DECISION_POST_TRANSITION_BUFFER_MS = 650;
-export const PVP_ROUND_RESULT_DURATION_MS = 3000;
+export const PVP_ROUND_RESULT_DURATION_MS = 5000;
 export const PVP_ROUND_EXTRA_ANSWER_MS = 3000;
 export const PVP_THEME_SWITCH_EVERY_QUESTIONS = 3;
 export const PVP_EMOJI_SPAM_WINDOW_MS = 1000;
@@ -1037,6 +1037,7 @@ export function getPvpTeamRoomReadyMemberIds(roomRow = null) {
 export function isPvpTeamRoomMemberReady(roomRow = null, userId = '') {
   const safeUserId = String(userId || '').trim();
   if (!safeUserId) return false;
+  if (isSystemBotUserId(safeUserId)) return getPvpTeamUserSide(roomRow, safeUserId) !== '';
   return getPvpTeamRoomReadyMemberIds(roomRow).includes(safeUserId);
 }
 
@@ -1050,7 +1051,7 @@ export function getPvpTeamRoomLaunchCheck(roomRow = null) {
     && blueMembers.length === PVP_TEAM_ROOM_SIDE_CAPACITY;
   const waitingReadyMembers = [...redMembers, ...blueMembers].filter((member) => {
     const userId = String(member?.user_id || '').trim();
-    if (!userId || userId === hostUserId) return false;
+    if (!userId || userId === hostUserId || isSystemBotUserId(userId)) return false;
     return !readyIds.has(userId);
   });
   return {
@@ -2098,12 +2099,13 @@ export function buildPvpEliminationRoomStartBlockedNotice(roomRow = null) {
   };
 }
 
-export function shufflePvpEliminationIds(ids = []) {
+export function shufflePvpEliminationIds(ids = [], random = Math.random) {
   const list = Array.isArray(ids)
     ? ids.map((entry) => String(entry || '').trim()).filter(Boolean)
     : [];
+  const nextRandom = typeof random === 'function' ? random : Math.random;
   for (let idx = list.length - 1; idx > 0; idx -= 1) {
-    const swapIndex = Math.floor(Math.random() * (idx + 1));
+    const swapIndex = Math.floor(nextRandom() * (idx + 1));
     const current = list[idx];
     list[idx] = list[swapIndex];
     list[swapIndex] = current;
@@ -2111,13 +2113,17 @@ export function shufflePvpEliminationIds(ids = []) {
   return list;
 }
 
-export function buildPvpEliminationCycleRounds(activeUserIds = []) {
+// Com seedKey o sorteio é determinístico: todo cliente que calcular o mesmo ciclo
+// chega nos mesmos confrontos (necessário porque a transição roda em transação).
+export function buildPvpEliminationCycleRounds(activeUserIds = [], seedKey = '') {
   const activeIds = Array.from(new Set(
     (Array.isArray(activeUserIds) ? activeUserIds : [])
       .map((entry) => String(entry || '').trim())
       .filter(Boolean)
   ));
   if (activeIds.length < 2) return [];
+  const safeSeedKey = String(seedKey || '').trim();
+  const random = safeSeedKey ? createBotSeededRandom(hashBotSeed(`pvp_elimination_cycle:${safeSeedKey}`)) : Math.random;
 
   if (activeIds.length === 2) {
     return Array.from({ length: PVP_ELIMINATION_ROUNDS_PER_CYCLE }, (_, index) => ({
@@ -2132,7 +2138,7 @@ export function buildPvpEliminationCycleRounds(activeUserIds = []) {
   }
 
   if (activeIds.length === 3) {
-    const rotation = shufflePvpEliminationIds(activeIds);
+    const rotation = shufflePvpEliminationIds(activeIds, random);
     const rounds = [
       [rotation[0], rotation[1], rotation[2]],
       [rotation[1], rotation[2], rotation[0]],
@@ -2149,8 +2155,27 @@ export function buildPvpEliminationCycleRounds(activeUserIds = []) {
     }));
   }
 
+  if (activeIds.length === 4) {
+    // Rodízio completo: em 3 rodadas cada jogador enfrenta os outros 3 uma vez.
+    const [a, b, c, d] = shufflePvpEliminationIds(activeIds, random);
+    const rounds = [
+      [[a, b], [c, d]],
+      [[a, c], [b, d]],
+      [[a, d], [b, c]]
+    ];
+    return rounds.slice(0, PVP_ELIMINATION_ROUNDS_PER_CYCLE).map((pairs, index) => ({
+      round_in_cycle: index + 1,
+      waiting_user_ids: [],
+      pairs: pairs.map(([user1, user2], pairIndex) => ({
+        pair_no: pairIndex + 1,
+        player1_user_id: user1,
+        player2_user_id: user2
+      }))
+    }));
+  }
+
   return Array.from({ length: PVP_ELIMINATION_ROUNDS_PER_CYCLE }, (_, index) => {
-    const shuffled = shufflePvpEliminationIds(activeIds);
+    const shuffled = shufflePvpEliminationIds(activeIds, random);
     const waitingUserIds = shuffled.length % 2 === 0 ? [] : [shuffled[shuffled.length - 1]];
     const pairPool = waitingUserIds.length ? shuffled.slice(0, shuffled.length - 1) : shuffled;
     const pairs = [];

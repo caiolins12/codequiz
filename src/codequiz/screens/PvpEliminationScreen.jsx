@@ -50,6 +50,7 @@ export default function PvpEliminationScreen({ vm }) {
     leavePvpEliminationFlow,
     music,
     pickPvpEliminationAnswer,
+    pvpEliminationAnswerWindowOpen,
     pvpEliminationBattleRemainingSec,
     pvpEliminationBattleStatus,
     pvpEliminationCountdownClass,
@@ -88,7 +89,12 @@ export default function PvpEliminationScreen({ vm }) {
   const left = pair[0] || null;
   const right = pair[1] || null;
   const active = pvpEliminationBattleStatus === 'active';
-  const locked = pvpEliminationSubmitted || !active || !pvpEliminationIsActivePairMember || pvpEliminationIsSpectator || pvpEliminationShowBattleIntro;
+  const locked = pvpEliminationSubmitted
+    || !active
+    || !pvpEliminationIsActivePairMember
+    || pvpEliminationIsSpectator
+    || pvpEliminationShowBattleIntro
+    || pvpEliminationAnswerWindowOpen === false;
   const selected = Number(pvpEliminationSelectedIndex);
   const hasSelection = Number.isFinite(selected) && selected >= 0 && pvpEliminationSelectedIndex !== null;
   const timerLevel = pvpEliminationTimerClass === 'danger' ? 'danger' : (pvpEliminationTimerClass === 'warning' ? 'warning' : '');
@@ -146,7 +152,7 @@ export default function PvpEliminationScreen({ vm }) {
             disabled={locked}
             keyPrefix={`elim${pvpEliminationMatch?.battle_no || 1}`}
           />
-          <footer className={styles.footer}>
+          <footer className={cx(styles.footer, status ? styles.footerIdle : '')}>
             <Button size="xl" variant="success" block disabled={locked || !hasSelection} onClick={confirmPvpEliminationAnswer}>
               Confirmar resposta
             </Button>
