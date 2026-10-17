@@ -189,9 +189,10 @@ async function prepareGsi(forceNewNonce = false) {
       cancel_on_tap_outside: false,
       itp_support: true,
       use_fedcm_for_prompt: true,
-      // O botao usa o popup classico do Google: o modo FedCM do botao falha em
-      // navegadores/webviews sem suporte completo ("Error retrieving a token").
-      use_fedcm_for_button: false,
+      // No Chrome/Edge o botao abre o seletor de conta nativo (FedCM) por cima
+      // do app, sem nova aba. O GSI so usa FedCM quando o navegador suporta o
+      // modo botao; nos demais (Safari, Firefox) cai no popup classico abaixo.
+      use_fedcm_for_button: true,
       ux_mode: 'popup',
       callback: (response) => {
         void handleGoogleCredential(response);
