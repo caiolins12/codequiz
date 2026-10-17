@@ -1955,7 +1955,6 @@ export async function getSystemBotSnapshot(botId = SYSTEM_BOT_ID, options = {}) 
     void ensureSystemBots().catch(() => null);
   }
   const nowIso = new Date().toISOString();
-  const joinedAtMs = Math.max(0, Number(payload?.joined_at_ms || 0));
   const [profile, stats, config] = await Promise.all([
     getUserProfile(safeBotId).catch(() => null),
     getUserStats(safeBotId).catch(() => null),

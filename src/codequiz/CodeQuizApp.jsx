@@ -14,14 +14,7 @@ import {
 import { firebaseDb, onValue, ref } from './lib/dbClient';
 import { LANGUAGES, QUESTIONS, TOPICS } from './data/questions-data';
 import { buildEvolutionPassSnapshot, EVOLUTION_PASS_STAGES } from './lib/achievements';
-import {
-  DIFFICULTY_LABELS,
-  PVE_QUESTIONS_PER_ROUND,
-  PVP_COINS_REWARD,
-  PVP_XP_REWARD,
-  QUESTIONS_PER_ROUND,
-  TIMER_SECONDS
-} from './lib/constants';
+import { DIFFICULTY_LABELS, PVE_QUESTIONS_PER_ROUND, QUESTIONS_PER_ROUND } from './lib/constants';
 import {
   cleanupStalePairLocks,
   cleanupDrawFinishedMatches,
@@ -55,6 +48,7 @@ import {
   getNextBotForUserMatch,
   getPvpRoundAnswers,
   getPvpTeamBattleAnswers,
+  getPvpTeamMatch,
   joinPvpEliminationRoom,
   joinPvpTeamRoom,
   publishPvpEliminationRoomNotice,
@@ -63,7 +57,6 @@ import {
   pushPvpEmojiEvent,
   getQueueEntryByUser,
   getQuizRankings,
-  getSystemBotDefaultStrength,
   getSystemBotSnapshot,
   clearBotBusy,
   isSystemBotUserId,
@@ -132,13 +125,7 @@ import {
   normalizeProgress,
   saveProgress
 } from './lib/progress';
-import {
-  areQuestionsSemanticallyEquivalent,
-  getQuestionPool,
-  getRoundQuestionCapacity,
-  getTopicsByLanguage,
-  pickRoundQuestions
-} from './lib/quizEngine';
+import { getTopicsByLanguage } from './lib/quizEngine';
 import {
   canPurchaseItem,
   defaultShopData,
@@ -151,7 +138,6 @@ import {
   getItemsByType,
   getShopItem,
   loadShopData,
-  SHOP_RARITY_LABELS,
   SHOP_RARITY_ORDER,
   mergeShopData,
   normalizeShopData,
@@ -170,4022 +156,289 @@ import {
   resolveMatchWinner,
   resolveRoundOutcome
 } from './lib/pvp';
-import { getProgressTotalXp, getQuizKey, getXPForLevel, normalizeDifficulty } from './lib/utils';
-
-function isImageAvatarValue(value) {
-  const safe = String(value || '').trim().toLowerCase();
-  return safe.startsWith('http://') || safe.startsWith('https://') || safe.startsWith('data:image/');
-}
-
-const AVATAR_IMAGE_RETRY_DELAY_MS = 1800;
-
-// Foto de perfil remota (Google). O googleusercontent as vezes recusa a primeira
-// carga (ex.: logo apos o login); tenta mais uma vez e, se falhar de novo, mostra
-// o fallback em vez do icone de imagem quebrada.
-function AvatarImage({ src, fallback = null, className, alt = '' }) {
-  const [failure, setFailure] = useState({ src: '', count: 0 });
-  const failures = failure.src === src ? failure.count : 0;
-
-  useEffect(() => {
-    if (failures !== 1) return undefined;
-    const timer = setTimeout(() => setFailure({ src, count: 2 }), AVATAR_IMAGE_RETRY_DELAY_MS);
-    return () => clearTimeout(timer);
-  }, [failures, src]);
-
-  if (!src || failures === 1 || failures >= 3) return fallback;
-  return (
-    <img
-      key={failures === 2 ? 'retry' : 'first'}
-      className={className}
-      src={src}
-      alt={alt}
-      referrerPolicy="no-referrer"
-      onError={() => setFailure({ src, count: failures + 1 })}
-    />
-  );
-}
-
-function getBackgroundVisualMeta(shopData) {
-  const shop = normalizeShopData(shopData);
-  const background = getShopItem(shop?.equipped?.background);
-  const id = String(background?.id || 'bg_default').trim() || 'bg_default';
-  const rarity = String(background?.rarity || 'common').trim().toLowerCase() || 'common';
-  const isLegendary = rarity === 'legendary';
-  return {
-    id,
-    rarity,
-    isLegendary,
-    className: [
-      `cos-bg-${id}`
-    ].filter(Boolean).join(' ')
-  };
-}
-
-function getDifficultyMultiplier(difficulty) {
-  const safe = normalizeDifficulty(difficulty);
-  if (safe === 'hard') return 3;
-  if (safe === 'medium') return 2;
-  return 1;
-}
-
-function formatSignedPoints(value) {
-  const safe = Math.trunc(Number(value || 0));
-  if (safe > 0) return `+${safe}`;
-  return String(safe);
-}
-
-function getPvpDifficultyFromPoints(pointsValue) {
-  const points = Math.max(0, Number(pointsValue || 0));
-  if (points >= 400) return 'hard';
-  if (points >= 200) return 'medium';
-  return 'easy';
-}
-
-function getPvpQueueDifficultyFromStats(statsRow = null) {
-  const row = statsRow && typeof statsRow === 'object' ? statsRow : {};
-  return getPvpDifficultyFromPoints(row.pvp_points || 0);
-}
-
-function getPvpQueueDifficultyFromProgress(progressRow = null) {
-  const row = progressRow && typeof progressRow === 'object' ? progressRow : {};
-  return getPvpDifficultyFromPoints(row.pvpPoints || 0);
-}
-
-function getPvpQueueDifficultyFromConfig(configRow = null, progressRow = null) {
-  const row = configRow && typeof configRow === 'object' ? configRow : {};
-  if (String(row.difficulty || '').trim()) {
-    return normalizeDifficulty(row.difficulty || 'easy');
-  }
-  return getPvpQueueDifficultyFromProgress(progressRow);
-}
-
-function getEvolutionPassPreferredStage(stages = []) {
-  const safeStages = Array.isArray(stages) ? stages : [];
-  return safeStages.find((stage) => stage.completed && !stage.claimed)
-    || safeStages.find((stage) => stage.active)
-    || safeStages.find((stage) => !stage.claimed)
-    || safeStages[0]
-    || null;
-}
-
-function getEvolutionPassStageStatus(stage) {
-  const safeStage = stage && typeof stage === 'object' ? stage : {};
-  const isLockedStage = safeStage.locked && !safeStage.claimed;
-  if (safeStage.claimed) return 'Coletada';
-  if (isLockedStage) return 'Bloqueada';
-  if (safeStage.completed) return 'Pronta';
-  if (safeStage.active) return 'Em progresso';
-  return 'Bloqueada';
-}
-
-function normalizeQuestionTextForSequence(value) {
-  return String(value || '')
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, ' ')
-    .trim();
-}
-
-function normalizeQuestionForSequence(rawQuestion) {
-  const safe = rawQuestion && typeof rawQuestion === 'object' ? rawQuestion : {};
-  const opts = Array.isArray(safe.opts)
-    ? safe.opts.map((value) => String(value ?? '').trim()).filter((value) => value.length > 0)
-    : [];
-  const rawAnswer = Number(safe.answer ?? -1);
-  const answer = Number.isFinite(rawAnswer) ? Math.trunc(rawAnswer) : -1;
-  return {
-    q: String(safe.q || '').trim(),
-    code: String(safe.code || ''),
-    opts,
-    answer,
-    explain: String(safe.explain || '').trim()
-  };
-}
-
-function buildQuestionStableKeyForSequence(question) {
-  const normalized = normalizeQuestionForSequence(question);
-  const qKey = normalizeQuestionTextForSequence(normalized.q);
-  const codeKey = normalizeQuestionTextForSequence(normalized.code);
-  const optsKey = normalized.opts.map((opt) => normalizeQuestionTextForSequence(opt)).join('|');
-  if (!qKey && !codeKey && !optsKey) return '';
-  return `${qKey}__${codeKey}__${optsKey}__${String(normalized.answer)}`;
-}
-
-function hashStringToPositiveInt(value) {
-  const safe = String(value || '');
-  let hash = 2166136261;
-  for (let index = 0; index < safe.length; index += 1) {
-    hash ^= safe.charCodeAt(index);
-    hash = Math.imul(hash, 16777619);
-  }
-  return hash >>> 0;
-}
-
-function createDeterministicRandom(seedKey = '') {
-  let state = hashStringToPositiveInt(seedKey || 'seed') || 0x9e3779b9;
-  return () => {
-    state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
-    return state / 4294967296;
-  };
-}
-
-function shuffleDeterministic(values, seedKey = '') {
-  const next = Array.isArray(values) ? [...values] : [];
-  if (next.length <= 1) return next;
-  const rand = createDeterministicRandom(seedKey);
-  for (let index = next.length - 1; index > 0; index -= 1) {
-    const pickIndex = Math.floor(rand() * (index + 1));
-    [next[index], next[pickIndex]] = [next[pickIndex], next[index]];
-  }
-  return next;
-}
-
-function remapPvpQuestionOptionsDeterministic(question, questionOrderIndex = 0, forcedCorrectIndex = null) {
-  const safeQuestion = question && typeof question === 'object' ? question : {};
-  const normalized = normalizeQuestionForSequence(safeQuestion);
-  const optsCount = normalized.opts.length;
-  const currentAnswer = normalized.answer;
-  if (optsCount <= 1) return { ...safeQuestion, ...normalized };
-  if (currentAnswer < 0 || currentAnswer >= optsCount) return { ...safeQuestion, ...normalized };
-
-  const safeOrderIndex = Math.max(0, Math.trunc(Number(questionOrderIndex || 0)));
-  const stableKey = buildQuestionStableKeyForSequence(normalized) || `pvp_q_${safeOrderIndex}`;
-  const seededTargetIndex = Math.floor(
-    createDeterministicRandom(`${stableKey}::slot::${safeOrderIndex}::${optsCount}`)() * optsCount
-  );
-  const targetIndex = Number.isFinite(Number(forcedCorrectIndex))
-    ? Math.max(0, Math.min(optsCount - 1, Math.trunc(Number(forcedCorrectIndex))))
-    : seededTargetIndex;
-  const correctOption = normalized.opts[currentAnswer];
-  const wrongOptions = normalized.opts.filter((_, index) => index !== currentAnswer);
-  const shuffledWrong = shuffleDeterministic(wrongOptions, `${stableKey}::wrong::${safeOrderIndex}`);
-  const remappedOpts = [];
-
-  for (let index = 0; index < optsCount; index += 1) {
-    if (index === targetIndex) remappedOpts.push(correctOption);
-    else remappedOpts.push(String(shuffledWrong.shift() ?? ''));
-  }
-
-  return {
-    ...safeQuestion,
-    ...normalized,
-    opts: remappedOpts,
-    answer: targetIndex
-  };
-}
-
-function buildPvpAnswerSlotPlan(questions = []) {
-  const list = Array.isArray(questions) ? questions : [];
-  if (!list.length) return [];
-
-  const optionCounts = list.map((question) => {
-    const normalized = normalizeQuestionForSequence(question);
-    return Math.max(2, Number(normalized.opts.length || 2));
-  });
-  const maxSlotCount = Math.max(2, ...optionCounts);
-  const allSlots = Array.from({ length: maxSlotCount }, (_, index) => index);
-  const signature = list
-    .map((question, index) => `${index}:${buildQuestionStableKeyForSequence(question)}`)
-    .join('||');
-  const seedBase = signature || `pvp_slot_plan_${list.length}_${maxSlotCount}`;
-  const usageBySlot = new Map();
-  const pickedSlots = [];
-
-  const readUsage = (slot) => Math.max(0, Number(usageBySlot.get(slot) || 0));
-
-  for (let index = 0; index < list.length; index += 1) {
-    const optsCount = optionCounts[index];
-    const allowedSlots = allSlots.filter((slot) => slot < optsCount);
-    const shuffledCandidates = shuffleDeterministic(allowedSlots, `${seedBase}::pick_cycle::${index}`);
-    const candidates = [
-      ...shuffledCandidates,
-      ...allowedSlots.filter((slot) => !shuffledCandidates.includes(slot))
-    ];
-    let bestSlot = candidates[0] ?? 0;
-    let bestScore = Number.POSITIVE_INFINITY;
-
-    candidates.forEach((slot, slotOrder) => {
-      const prev = pickedSlots[index - 1];
-      const prevPrev = pickedSlots[index - 2];
-      const prevPrevPrev = pickedSlots[index - 3];
-      let score = 0;
-      score += readUsage(slot) * 6;
-
-      if (index > 0 && slot === prev) score += 4;
-      if (index > 1 && slot === prev && slot === prevPrev) score += 160;
-      // Penalize ABAB-like pattern to avoid predictable alternation.
-      if (index > 2 && slot === prevPrev && prev === prevPrevPrev && slot !== prev) score += 10;
-
-      // Encourage diversity early in the round.
-      if (readUsage(slot) === 0) score -= 2.4;
-
-      // Penalize very short distance to previous same slot.
-      for (let back = index - 1; back >= 0; back -= 1) {
-        if (pickedSlots[back] !== slot) continue;
-        const distance = index - back;
-        if (distance <= 3) {
-          score += (4 - distance) * 1.4;
-        }
-        break;
-      }
-
-      const tieBreakRand = createDeterministicRandom(`${seedBase}::tie::${index}::${slot}`)();
-      score += (tieBreakRand * 0.6) + (slotOrder * 0.01);
-
-      if (score < bestScore) {
-        bestScore = score;
-        bestSlot = slot;
-      }
-    });
-
-    pickedSlots.push(bestSlot);
-    usageBySlot.set(bestSlot, readUsage(bestSlot) + 1);
-  }
-
-  return pickedSlots;
-}
-
-function spreadPvpQuestionAnswers(questions = []) {
-  const list = Array.isArray(questions) ? questions : [];
-  if (!list.length) return [];
-  const slotPlan = buildPvpAnswerSlotPlan(list);
-  return list.map((question, index) => {
-    const plannedSlot = Number(slotPlan[index] ?? -1);
-    return remapPvpQuestionOptionsDeterministic(question, index, plannedSlot);
-  });
-}
-
-function getDidacticExplainText(question) {
-  const normalized = normalizeQuestionForSequence(question);
-  if (normalized.explain) return normalized.explain;
-  const answerIndex = Number(normalized.answer);
-  const answerText = (
-    Number.isInteger(answerIndex)
-    && answerIndex >= 0
-    && answerIndex < normalized.opts.length
-  ) ? normalized.opts[answerIndex] : '';
-  if (answerText) {
-    return `Resposta correta: ${answerText}. Revise o conceito principal para fixar o raciocinio.`;
-  }
-  return 'Revise o enunciado e os conceitos principais deste tema para reforcar o aprendizado.';
-}
-
-function buildOrderedUniqueQuestionsForTopic(questionsMap, languageId, topicId, difficulty) {
-  const safeLanguageId = String(languageId || '').trim();
-  const safeTopicId = String(topicId || '').trim();
-  const safeDifficulty = normalizeDifficulty(difficulty || 'easy');
-  const pool = getQuestionPool(questionsMap, languageId, topicId, difficulty);
-  if (!Array.isArray(pool) || !pool.length) return [];
-  const ordered = [];
-  const seenKeys = new Set();
-
-  pool.forEach((question) => {
-    const normalized = normalizeQuestionForSequence(question);
-    if (!normalized.q || normalized.opts.length < 2) return;
-    if (normalized.answer < 0 || normalized.answer >= normalized.opts.length) return;
-    const key = buildQuestionStableKeyForSequence(normalized);
-    if (!key || seenKeys.has(key)) return;
-    const candidate = {
-      ...normalized,
-      language: safeLanguageId,
-      topic: safeTopicId,
-      difficulty: safeDifficulty,
-      explain: getDidacticExplainText(normalized)
-    };
-    const hasSemanticDuplicate = ordered.some((current) => (
-      areQuestionsSemanticallyEquivalent(current, candidate)
-    ));
-    if (hasSemanticDuplicate) return;
-    seenKeys.add(key);
-    ordered.push(candidate);
-  });
-
-  return ordered;
-}
-
-function getPveRoundSeconds() {
-  return Math.max(1, Number(TIMER_SECONDS.easy || 30));
-}
-
-function buildPveQuestionReviewEntry(question, options = {}) {
-  const safe = normalizeQuestionForSequence(question);
-  const questionIndex = Math.max(0, Math.trunc(Number(options?.questionIndex || 0)));
-  const selectedIndexRaw = Number(options?.selectedIndex ?? -1);
-  const selectedIndex = Number.isFinite(selectedIndexRaw) ? Math.trunc(selectedIndexRaw) : -1;
-  const selectedInRange = selectedIndex >= 0 && selectedIndex < safe.opts.length;
-  const correctIndex = safe.answer >= 0 && safe.answer < safe.opts.length ? safe.answer : -1;
-  return {
-    questionIndex,
-    index: questionIndex + 1,
-    q: safe.q,
-    code: safe.code,
-    opts: safe.opts,
-    correctIndex,
-    selectedIndex: selectedInRange ? selectedIndex : -1,
-    isCorrect: options?.isCorrect === true,
-    isTimeout: options?.isTimeout === true,
-    wasAnswered: options?.wasAnswered !== false,
-    explain: getDidacticExplainText(safe)
-  };
-}
-
-function buildPveRoundReviewList(questions = [], answerLog = []) {
-  const safeQuestions = Array.isArray(questions) ? questions : [];
-  const answersMap = new Map(
-    (Array.isArray(answerLog) ? answerLog : [])
-      .map((row) => [Math.max(0, Math.trunc(Number(row?.questionIndex || 0))), row])
-  );
-
-  return safeQuestions.map((question, index) => {
-    const logged = answersMap.get(index);
-    if (logged && typeof logged === 'object') return logged;
-    return buildPveQuestionReviewEntry(question, {
-      questionIndex: index,
-      selectedIndex: -1,
-      isCorrect: false,
-      isTimeout: false,
-      wasAnswered: false
-    });
-  });
-}
-
-function pickPveRoundQuestionsByTopicSequence(questionsMap, languageId, topicId, difficulty, count) {
-  const safeLanguage = String(languageId || '').trim();
-  const safeTopic = String(topicId || '').trim();
-  const safeDifficulty = normalizeDifficulty(difficulty || 'easy');
-  const safeCount = Math.max(1, Math.trunc(Number(count || PVE_QUESTIONS_PER_ROUND)));
-  if (!safeLanguage || !safeTopic) return [];
-
-  const topics = getTopicsByLanguage(TOPICS, safeLanguage);
-  const topicIds = [];
-  const pushTopicId = (value) => {
-    const safeValue = String(value || '').trim();
-    if (!safeValue) return;
-    if (topicIds.includes(safeValue)) return;
-    topicIds.push(safeValue);
-  };
-
-  pushTopicId(safeTopic);
-  topics.forEach((topic) => pushTopicId(topic?.id));
-
-  const picked = [];
-  const visitedTopicKeys = new Set();
-  const pullFromTopic = (languageToRead, topicToRead) => {
-    const safeLanguageToRead = String(languageToRead || '').trim();
-    const safeTopicToRead = String(topicToRead || '').trim();
-    if (!safeLanguageToRead || !safeTopicToRead) return;
-    const visitedKey = `${safeLanguageToRead}::${safeTopicToRead}`;
-    if (visitedTopicKeys.has(visitedKey)) return;
-    visitedTopicKeys.add(visitedKey);
-    if (picked.length >= safeCount) return;
-    const missing = Math.max(0, safeCount - picked.length);
-    if (!missing) return;
-    const selected = pickRoundQuestions(
-      questionsMap,
-      safeLanguageToRead,
-      safeTopicToRead,
-      safeDifficulty,
-      missing,
-      picked
-    );
-    if (!selected.length) return;
-    selected.forEach((question) => {
-      const normalized = normalizeQuestionForSequence(question);
-      picked.push({
-        ...normalized,
-        explain: getDidacticExplainText(normalized)
-      });
-    });
-  };
-
-  for (const currentTopicId of topicIds) {
-    pullFromTopic(safeLanguage, currentTopicId);
-  }
-
-  if (picked.length < safeCount) {
-    LANGUAGES.forEach((languageMeta) => {
-      if (picked.length >= safeCount) return;
-      const languageId = String(languageMeta?.id || '').trim();
-      const fallbackTopics = getTopicsByLanguage(TOPICS, languageId);
-      fallbackTopics.forEach((topicMeta) => {
-        if (picked.length >= safeCount) return;
-        pullFromTopic(languageId, topicMeta?.id || '');
-      });
-    });
-  }
-
-  return picked.slice(0, safeCount);
-}
-
-function normalizePvpSequenceCursorEntry(raw) {
-  const safe = raw && typeof raw === 'object' ? raw : {};
-  return {
-    topic_index: Math.max(0, Math.trunc(Number(safe.topic_index ?? safe.topicIndex ?? 0))),
-    question_index: Math.max(0, Math.trunc(Number(safe.question_index ?? safe.questionIndex ?? 0))),
-    topic_key: String(safe.topic_key || safe.topicKey || '').trim()
-  };
-}
-
-function normalizePvpSequenceCursorState(raw) {
-  const safe = raw && typeof raw === 'object' ? raw : {};
-  const next = {};
-  Object.entries(safe).forEach(([key, value]) => {
-    const safeKey = String(key || '').trim();
-    if (!safeKey) return;
-    next[safeKey] = normalizePvpSequenceCursorEntry(value);
-  });
-  return next;
-}
-
-function normalizePvpSequenceRecentStartsState(raw) {
-  const safe = raw && typeof raw === 'object' ? raw : {};
-  const next = {};
-  Object.entries(safe).forEach(([key, value]) => {
-    const safeKey = String(key || '').trim();
-    if (!safeKey) return;
-    const safeList = Array.isArray(value) ? value : [];
-    const normalized = [];
-    safeList.forEach((entry) => {
-      const safeEntry = String(entry || '').trim();
-      if (!safeEntry || normalized.includes(safeEntry)) return;
-      normalized.push(safeEntry);
-    });
-    if (normalized.length) {
-      next[safeKey] = normalized.slice(0, PVP_SEQUENCE_RECENT_STARTS_MAX);
-    }
-  });
-  return next;
-}
-
-function getPvpSequenceCursorMapKey(areaId = '', difficulty = 'easy') {
-  const safeArea = String(areaId || 'programming').trim() || 'programming';
-  const safeDifficulty = normalizeDifficulty(difficulty || 'easy');
-  return `${safeArea}__${safeDifficulty}`;
-}
-
-function resolvePvpSequenceSeed(seedInput = '', options = {}) {
-  const safeSeed = String(seedInput || '').trim();
-  if (safeSeed) return safeSeed;
-  const safeDifficulty = normalizeDifficulty(options?.difficulty || 'easy');
-  const safeArea = String(options?.areaId || 'mixed').trim() || 'mixed';
-  const safeTopic = String(options?.topicId || 'mixed').trim() || 'mixed';
-  const safeLanguage = normalizeLegacyLanguageId(options?.languageId || '', safeTopic) || 'mixed';
-  return `${safeArea}::${safeDifficulty}::${safeLanguage}::${safeTopic}`;
-}
-
-function buildPvpSequenceTopicCatalog(questionsMap, difficulty, options = {}) {
-  const safeDifficulty = normalizeDifficulty(difficulty || 'easy');
-  const safeArea = String(options?.areaId || '').trim();
-  const safeTopic = String(options?.topicId || '').trim();
-  const safeLanguage = normalizeLegacyLanguageId(options?.languageId || '', safeTopic);
-  const safeSequenceSeed = resolvePvpSequenceSeed(options?.sequenceSeed, {
-    areaId: safeArea,
-    difficulty: safeDifficulty,
-    languageId: safeLanguage,
-    topicId: safeTopic
-  });
-  const areaLanguageIds = getLanguageIdsByKnowledgeArea(safeArea);
-  const restrictToArea = areaLanguageIds.length > 0;
-  const candidateLanguages = [];
-  const pushLanguage = (languageId) => {
-    const safeLanguageId = normalizeLegacyLanguageId(languageId, safeTopic);
-    if (!safeLanguageId) return;
-    if (candidateLanguages.includes(safeLanguageId)) return;
-    if (restrictToArea && !areaLanguageIds.includes(safeLanguageId)) return;
-    if (!getTopicsByLanguage(TOPICS, safeLanguageId).length) return;
-    candidateLanguages.push(safeLanguageId);
-  };
-
-  pushLanguage(safeLanguage);
-  areaLanguageIds.forEach((languageId) => pushLanguage(languageId));
-  if (!restrictToArea) {
-    LANGUAGES.forEach((language) => pushLanguage(language?.id));
-  }
-
-  const catalog = [];
-  candidateLanguages.forEach((languageId) => {
-    const topics = getTopicsByLanguage(TOPICS, languageId);
-    topics.forEach((topic) => {
-      const topicId = String(topic?.id || '').trim();
-      if (!topicId) return;
-      const questions = shuffleDeterministic(
-        buildOrderedUniqueQuestionsForTopic(questionsMap, languageId, topicId, safeDifficulty),
-        `${safeSequenceSeed}::${languageId}::${topicId}::${safeDifficulty}`
-      );
-      if (!questions.length) return;
-      catalog.push({
-        language: languageId,
-        topic: topicId,
-        topicKey: `${languageId}::${topicId}`,
-        questions
-      });
-    });
-  });
-
-  return shuffleDeterministic(catalog, `${safeSequenceSeed}::catalog`);
-}
-
-function resolvePvpSequenceTopicIndex(catalog, cursor) {
-  const safeCatalog = Array.isArray(catalog) ? catalog : [];
-  if (!safeCatalog.length) return 0;
-  const safeCursor = normalizePvpSequenceCursorEntry(cursor);
-  if (safeCursor.topic_key) {
-    const byTopicKey = safeCatalog.findIndex((entry) => entry.topicKey === safeCursor.topic_key);
-    if (byTopicKey >= 0) return byTopicKey;
-  }
-
-  return Math.min(safeCatalog.length - 1, Math.max(0, Number(safeCursor.topic_index || 0)));
-}
-
-function resolvePvpSequenceStartCursor(catalog, topicIndexInput, questionIndexInput, minimumRemaining = 1) {
-  const safeCatalog = Array.isArray(catalog) ? catalog : [];
-  if (!safeCatalog.length) {
-    return { topicIndex: 0, questionIndex: 0 };
-  }
-  const requiredRemaining = Math.max(1, Math.trunc(Number(minimumRemaining || 1)));
-  let topicIndex = Math.min(safeCatalog.length - 1, Math.max(0, Math.trunc(Number(topicIndexInput || 0))));
-  let questionIndex = Math.max(0, Math.trunc(Number(questionIndexInput || 0)));
-
-  for (let guard = 0; guard < safeCatalog.length; guard += 1) {
-    const entry = safeCatalog[topicIndex];
-    const maxQuestionIndex = Math.max(0, entry.questions.length - 1);
-    const safeQuestionIndex = Math.min(questionIndex, maxQuestionIndex);
-    const remaining = Math.max(0, entry.questions.length - safeQuestionIndex);
-    if (remaining >= requiredRemaining) {
-      return {
-        topicIndex,
-        questionIndex: safeQuestionIndex
-      };
-    }
-    topicIndex = (topicIndex + 1) % safeCatalog.length;
-    questionIndex = 0;
-  }
-
-  for (let index = 0; index < safeCatalog.length; index += 1) {
-    if (safeCatalog[index].questions.length > 0) {
-      return { topicIndex: index, questionIndex: 0 };
-    }
-  }
-
-  return { topicIndex: 0, questionIndex: 0 };
-}
-
-function resolvePvpSequenceRecentStartCursor(catalog, startCursor, recentStartTopicKeys = [], minimumRemaining = 1) {
-  const safeCatalog = Array.isArray(catalog) ? catalog : [];
-  if (!safeCatalog.length) return normalizePvpSequenceCursorEntry({});
-  const safeStartCursor = normalizePvpSequenceCursorEntry(startCursor);
-  const currentTopicIndex = Math.min(
-    safeCatalog.length - 1,
-    Math.max(0, Math.trunc(Number(safeStartCursor.topic_index || 0)))
-  );
-  const currentTopicKey = String(
-    safeStartCursor.topic_key
-    || safeCatalog[currentTopicIndex]?.topicKey
-    || ''
-  ).trim();
-  const recentKeys = Array.isArray(recentStartTopicKeys)
-    ? recentStartTopicKeys
-      .map((value) => String(value || '').trim())
-      .filter(Boolean)
-    : [];
-
-  if (!recentKeys.length || safeCatalog.length < 2 || !currentTopicKey) {
-    return {
-      ...safeStartCursor,
-      topic_index: currentTopicIndex,
-      topic_key: currentTopicKey
-    };
-  }
-
-  const recentSet = new Set(recentKeys);
-  if (!recentSet.has(currentTopicKey)) {
-    return {
-      ...safeStartCursor,
-      topic_index: currentTopicIndex,
-      topic_key: currentTopicKey
-    };
-  }
-
-  for (let offset = 1; offset < safeCatalog.length; offset += 1) {
-    const candidateIndex = (currentTopicIndex + offset) % safeCatalog.length;
-    const candidateStart = resolvePvpSequenceStartCursor(catalog, candidateIndex, 0, minimumRemaining);
-    const candidateEntry = safeCatalog[candidateStart.topicIndex];
-    const candidateTopicKey = String(candidateEntry?.topicKey || '').trim();
-    if (!candidateTopicKey || recentSet.has(candidateTopicKey) || candidateTopicKey === currentTopicKey) continue;
-    return {
-      topic_index: candidateStart.topicIndex,
-      question_index: candidateStart.questionIndex,
-      topic_key: candidateTopicKey
-    };
-  }
-
-  return {
-    ...safeStartCursor,
-    topic_index: currentTopicIndex,
-    topic_key: currentTopicKey
-  };
-}
-
-function takePvpSequenceQuestions(catalog, startCursor, count) {
-  const safeCatalog = Array.isArray(catalog) ? catalog : [];
-  const safeCount = Math.max(1, Math.trunc(Number(count || 1)));
-  const themeSwitchEvery = Math.max(1, Math.trunc(Number(PVP_THEME_SWITCH_EVERY_QUESTIONS || 3)));
-  if (!safeCatalog.length) {
-    return {
-      questions: [],
-      nextCursor: normalizePvpSequenceCursorEntry({})
-    };
-  }
-
-  let topicIndex = Math.min(safeCatalog.length - 1, Math.max(0, Math.trunc(Number(startCursor?.topic_index || 0))));
-  let questionIndex = Math.max(0, Math.trunc(Number(startCursor?.question_index || 0)));
-  let pickedFromCurrentTopic = 0;
-  const picked = [];
-  const seenInRun = new Set();
-  const totalQuestionsAvailable = safeCatalog.reduce((acc, entry) => acc + entry.questions.length, 0);
-  const guardMax = Math.max(
-    safeCount * (safeCatalog.length + 3),
-    totalQuestionsAvailable + safeCount + safeCatalog.length + 12
-  );
-
-  for (let guard = 0; picked.length < safeCount && guard < guardMax; guard += 1) {
-    const topicEntry = safeCatalog[topicIndex];
-    if (!topicEntry || !topicEntry.questions.length) {
-      topicIndex = (topicIndex + 1) % safeCatalog.length;
-      questionIndex = 0;
-      pickedFromCurrentTopic = 0;
-      continue;
-    }
-    if (questionIndex >= topicEntry.questions.length) {
-      topicIndex = (topicIndex + 1) % safeCatalog.length;
-      questionIndex = 0;
-      pickedFromCurrentTopic = 0;
-      continue;
-    }
-
-    const question = topicEntry.questions[questionIndex];
-    questionIndex += 1;
-    const key = buildQuestionStableKeyForSequence(question);
-    if (key && seenInRun.has(key)) continue;
-    const hasSemanticDuplicate = picked.some((pickedQuestion) => (
-      areQuestionsSemanticallyEquivalent(pickedQuestion, question)
-    ));
-    if (hasSemanticDuplicate) continue;
-    if (key) seenInRun.add(key);
-    picked.push(question);
-    pickedFromCurrentTopic += 1;
-
-    const exhaustedTopic = questionIndex >= topicEntry.questions.length;
-    const reachedSwitchLimit = pickedFromCurrentTopic >= themeSwitchEvery;
-    if (exhaustedTopic || reachedSwitchLimit) {
-      topicIndex = (topicIndex + 1) % safeCatalog.length;
-      questionIndex = 0;
-      pickedFromCurrentTopic = 0;
-    }
-  }
-
-  if (safeCatalog.length && questionIndex >= safeCatalog[topicIndex].questions.length) {
-    topicIndex = (topicIndex + 1) % safeCatalog.length;
-    questionIndex = 0;
-  }
-
-  return {
-    questions: picked,
-    nextCursor: {
-      topic_index: topicIndex,
-      question_index: questionIndex,
-      topic_key: String(safeCatalog[topicIndex]?.topicKey || '').trim()
-    }
-  };
-}
-
-function pickPvpQuestionSetBySequence(questionsMap, options = {}) {
-  const safeDifficulty = normalizeDifficulty(options?.difficulty || 'easy');
-  const safeCount = Math.max(1, Math.trunc(Number(options?.count || PVP_ROUNDS_PER_MATCH)));
-  const safeArea = String(options?.areaId || '').trim();
-  const safeTopic = String(options?.preferredTopic || options?.topic || '').trim();
-  const safeLanguage = normalizeLegacyLanguageId(options?.preferredLanguage || options?.language || '', safeTopic);
-  const safeCursor = normalizePvpSequenceCursorEntry(options?.cursor);
-  const ensureMatchWindow = options?.ensureMatchWindow !== false;
-  const safeRecentStartTopicKeys = Array.isArray(options?.recentStartTopicKeys)
-    ? options.recentStartTopicKeys
-    : [];
-  const safeSequenceSeed = resolvePvpSequenceSeed(options?.sequenceSeed, {
-    areaId: safeArea,
-    difficulty: safeDifficulty,
-    languageId: safeLanguage,
-    topicId: safeTopic
-  });
-  const catalog = buildPvpSequenceTopicCatalog(questionsMap, safeDifficulty, {
-    areaId: safeArea,
-    languageId: safeLanguage,
-    topicId: safeTopic,
-    sequenceSeed: safeSequenceSeed
-  });
-
-  if (!catalog.length) {
-    return {
-      questions: [],
-      startCursor: normalizePvpSequenceCursorEntry({}),
-      nextCursor: normalizePvpSequenceCursorEntry({}),
-      areaId: safeArea,
-      difficulty: safeDifficulty,
-      preferredLanguage: safeLanguage,
-      preferredTopic: safeTopic,
-      sequenceSeed: safeSequenceSeed,
-      resolvedLanguage: safeLanguage,
-      resolvedTopic: safeTopic
-    };
-  }
-
-  const baseTopicIndex = resolvePvpSequenceTopicIndex(catalog, safeCursor);
-  const baseQuestionIndex = Math.max(0, Math.trunc(Number(safeCursor.question_index || 0)));
-  const minimumStartRemaining = ensureMatchWindow
-    ? Math.min(safeCount, Math.max(1, Math.trunc(Number(PVP_THEME_SWITCH_EVERY_QUESTIONS || 3))))
-    : 1;
-  const resolvedStart = resolvePvpSequenceStartCursor(
-    catalog,
-    baseTopicIndex,
-    baseQuestionIndex,
-    minimumStartRemaining
-  );
-  const startEntry = catalog[resolvedStart.topicIndex] || catalog[0];
-  const startCursor = resolvePvpSequenceRecentStartCursor(catalog, {
-    topic_index: resolvedStart.topicIndex,
-    question_index: resolvedStart.questionIndex,
-    topic_key: String(startEntry?.topicKey || '').trim()
-  }, safeRecentStartTopicKeys, minimumStartRemaining);
-  const finalStartEntry = catalog[startCursor.topic_index] || catalog[0];
-  const taken = takePvpSequenceQuestions(catalog, startCursor, safeCount);
-  const spreadQuestions = spreadPvpQuestionAnswers(taken.questions);
-
-  return {
-    questions: spreadQuestions,
-    startCursor,
-    nextCursor: taken.nextCursor,
-    areaId: safeArea,
-    difficulty: safeDifficulty,
-    preferredLanguage: safeLanguage,
-    preferredTopic: safeTopic,
-    sequenceSeed: safeSequenceSeed,
-    resolvedLanguage: String(finalStartEntry?.language || safeLanguage || ''),
-    resolvedTopic: String(finalStartEntry?.topic || safeTopic || '')
-  };
-}
-
-function hasPvpMatchSequenceMetadata(matchRow) {
-  const row = matchRow && typeof matchRow === 'object' ? matchRow : {};
-  if (String(row.pvp_sequence_start_topic_key || '').trim()) return true;
-  return Number.isFinite(Number(row.pvp_sequence_start_topic_index));
-}
-
-function buildPvpQuestionSetFromMatchSequence(matchRow, roundCount) {
-  const row = matchRow && typeof matchRow === 'object' ? matchRow : {};
-  const safeRoundCount = Math.max(1, Math.trunc(Number(roundCount || 1)));
-  const sequenceDifficulty = normalizeDifficulty(
-    row.pvp_sequence_difficulty || row.difficulty || 'easy'
-  );
-  const sequenceArea = String(
-    row.pvp_sequence_area
-    || row.knowledge_area
-    || resolveKnowledgeAreaByLanguageId(row.language || '')
-    || ''
-  ).trim();
-  const preferredLanguage = String(
-    row.pvp_sequence_pref_language
-    || row.language
-    || ''
-  ).trim();
-  const preferredTopic = String(
-    row.pvp_sequence_pref_topic
-    || row.topic
-    || ''
-  ).trim();
-  const sequence = pickPvpQuestionSetBySequence(QUESTIONS, {
-    difficulty: sequenceDifficulty,
-    count: safeRoundCount,
-    areaId: sequenceArea,
-    preferredLanguage,
-    preferredTopic,
-    sequenceSeed: String(row.pvp_sequence_seed || '').trim(),
-    ensureMatchWindow: false,
-    cursor: {
-      topic_index: Number(row.pvp_sequence_start_topic_index || 0),
-      question_index: Number(row.pvp_sequence_start_question_index || 0),
-      topic_key: String(row.pvp_sequence_start_topic_key || '').trim()
-    }
-  });
-  return Array.isArray(sequence.questions) ? sequence.questions : [];
-}
-
-function buildShopFallbackFromProfile(profileRow = null) {
-  const safe = profileRow && typeof profileRow === 'object' ? profileRow : {};
-  const equipped = {
-    frame: String(safe.equipped_frame || 'frame_default'),
-    background: String(safe.equipped_background || 'bg_default'),
-    emoji: String(safe.equipped_emoji || 'emoji_profile')
-  };
-  return normalizeShopData({
-    owned: [
-      'frame_default',
-      'bg_default',
-      'emoji_profile',
-      equipped.frame,
-      equipped.background,
-      equipped.emoji
-    ],
-    equipped,
-    updatedAt: Date.now()
-  });
-}
-
-function getRandomBotMatchDelayMs(minSeconds = 1, maxSeconds = 12) {
-  const minMs = Math.max(0, Math.trunc(Number(minSeconds || 0) * 1000));
-  const maxMs = Math.max(minMs, Math.trunc(Number(maxSeconds || 12) * 1000));
-  return minMs + Math.floor(Math.random() * (maxMs - minMs + 1));
-}
-
-function formatBuildBadgeValue(buildSha = '', builtAt = '') {
-  const safeBuiltAt = String(builtAt || '').trim();
-  const builtAtMs = Date.parse(safeBuiltAt);
-  const fallbackDate = new Date();
-  const dateToFormat = Number.isFinite(builtAtMs) && builtAtMs > 0
-    ? new Date(builtAtMs)
-    : fallbackDate;
-
-  try {
-    const day = dateToFormat.toLocaleDateString('pt-BR', {
-      day: '2-digit'
-    });
-    const month = dateToFormat.toLocaleDateString('pt-BR', {
-      month: 'long'
-    });
-    const year = dateToFormat.toLocaleDateString('pt-BR', {
-      year: 'numeric'
-    });
-    const hour = dateToFormat.toLocaleTimeString('pt-BR', {
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false
-    });
-    return `Atualizado em ${day} de ${month} de ${year} às ${hour}`;
-  } catch {
-    return 'Atualizado em -- de -- de ---- às --:--';
-  }
-}
-
-function formatSettingsUpdatedAtValue(builtAt = '') {
-  const safeBuiltAt = String(builtAt || '').trim();
-  const builtAtMs = Date.parse(safeBuiltAt);
-  const dateToFormat = Number.isFinite(builtAtMs) && builtAtMs > 0
-    ? new Date(builtAtMs)
-    : null;
-
-  if (!dateToFormat) {
-    return 'Última atualização em -- de -- de ---- às --:--:--.';
-  }
-
-  try {
-    const day = dateToFormat.toLocaleDateString('pt-BR', {
-      day: '2-digit'
-    });
-    const month = dateToFormat.toLocaleDateString('pt-BR', {
-      month: 'long'
-    });
-    const year = dateToFormat.toLocaleDateString('pt-BR', {
-      year: 'numeric'
-    });
-    const time = dateToFormat.toLocaleTimeString('pt-BR', {
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-      hour12: false
-    });
-    return `Última atualização em ${day} de ${month} de ${year} às ${time}.`;
-  } catch {
-    return 'Última atualização em -- de -- de ---- às --:--:--.';
-  }
-}
-
-function buildQueueSessionId(userId = '', nowMs = Date.now()) {
-  const safeUserId = String(userId || '').trim() || 'anonymous';
-  const safeNowMs = Math.max(0, Number(nowMs || Date.now()));
-  const suffix = Math.floor(Math.random() * 100000);
-  return `${safeUserId}_${safeNowMs}_${suffix}`;
-}
-
-const PVP_QUEUE_BOT_FIRST_THRESHOLD_MS = 15000;
-const PVP_QUEUE_BOT_FIRST_WINDOW_MAX_MS = 24000;
-const PVP_QUEUE_BOT_FIRST_DELAY_MIN_SECONDS = 2.5;
-const PVP_QUEUE_BOT_FIRST_DELAY_MAX_SECONDS = 9;
-const PVP_QUEUE_BOT_REFUSAL_DELAY_MIN_SECONDS = 2;
-const PVP_QUEUE_BOT_REFUSAL_DELAY_MAX_SECONDS = 6;
-const PVP_QUEUE_BOT_POST_THRESHOLD_RETRY_MAX_SECONDS = 2;
-const PVP_QUEUE_BOT_HARD_DEADLINE_MS = PVP_QUEUE_BOT_FIRST_WINDOW_MAX_MS;
-const PVP_QUEUE_RESUME_MODE_REFUSAL = 'requeue_after_refusal';
-const PVP_QUEUE_BOT_NEAR_DUE_PRIORITIZE_MS = 8000;
-const PVP_MATCH_ACCEPT_TIMEOUT_MS = 15000;
-const PVP_MATCH_FOUND_TRANSITION_MS = 1400;
-const PVP_MATCH_START_DELAY_MS = 2000;
-const PVP_MATCH_REJECT_RESOLVE_DELAY_MS = 800;
-const PVP_BOT_DECISION_DELAY_MIN_MS = 800;
-const PVP_BOT_DECISION_DELAY_MAX_MS = 1800;
-const PVP_BOT_DECISION_POST_TRANSITION_BUFFER_MS = 650;
-const PVP_ROUND_RESULT_DURATION_MS = 3000;
-const PVP_ROUND_EXTRA_ANSWER_MS = 3000;
-const PVP_THEME_SWITCH_EVERY_QUESTIONS = 3;
-const PVP_EMOJI_SPAM_WINDOW_MS = 1000;
-const PVP_EMOJI_SPAM_BURST_LIMIT = 3;
-const PVP_EMOJI_SPAM_COOLDOWN_MS = 2000;
-const PVP_MODE_DUEL = 'duel';
-const PVP_MODE_TEAM_BATTLE = 'team_battle';
-const PVP_MODE_ELIMINATION = 'elimination';
-const PVP_TEAM_ROOM_SIDE_CAPACITY = 2;
-const PVP_TEAM_BATTLE_ROUNDS_PER_BLOCK = 3;
-const PVP_TEAM_BATTLE_BLOCK_COUNT = 4;
-const PVP_TEAM_BATTLE_TOTAL_ROUNDS = PVP_TEAM_BATTLE_ROUNDS_PER_BLOCK * PVP_TEAM_BATTLE_BLOCK_COUNT;
-const PVP_ELIMINATION_ROOM_CAPACITY = 4;
-const PVP_ELIMINATION_ROUNDS_PER_CYCLE = 3;
-const PVP_ELIMINATION_MAX_TOTAL_BATTLES = 12;
-const PVP_ELIMINATION_BATTLE_INTRO_MS = 1600;
-const PVP_ELIMINATION_QUEUE_RETRY_MS = 900;
-const PVP_ELIMINATION_QUEUE_BOT_FILL_MIN_ELAPSED_MS = PVP_QUEUE_BOT_FIRST_THRESHOLD_MS;
-const PVP_ELIMINATION_QUEUE_BOT_FILL_RETRY_MS = 1100;
-const PVP_ELIMINATION_QUEUE_BOT_REFUSAL_CHANCE = 0.2;
-const PVP_ELIMINATION_ACCEPT_TIMEOUT_MS = PVP_MATCH_ACCEPT_TIMEOUT_MS;
-const PVP_ELIMINATION_ACCEPT_START_DELAY_MS = PVP_MATCH_START_DELAY_MS;
-const PVP_ELIMINATION_REJECT_RESOLVE_DELAY_MS = PVP_MATCH_REJECT_RESOLVE_DELAY_MS;
-const DATA_SUBSCRIBE_RETRY_TIMEOUT_MS = 3000;
-const DATA_SUBSCRIBE_MAX_RETRIES = 3;
-const DATA_SUBSCRIBE_RETRY_DELAY_MS = 260;
-
-function buildPvpTeamRoomId(userId = '') {
-  const safeUserId = String(userId || '').trim() || 'room';
-  return `pvp_team_room_${safeUserId}_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
-}
-
-function buildPvpTeamMatchId(roomId = '') {
-  const safeRoomId = String(roomId || '').trim() || 'team';
-  return `pvp_team_match_${safeRoomId}_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
-}
-
-function hashPvpTeamRoomPassword(password = '') {
-  const normalized = String(password || '').trim();
-  if (!normalized) return '';
-  const hash = hashStringToPositiveInt(`codequiz_team_room_v1::${normalized.toLowerCase()}`);
-  return `pvp_team_pw_${hash.toString(36)}_${normalized.length.toString(36)}`;
-}
-
-function normalizePvpTeamRoomName(value = '') {
-  return String(value || '')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .slice(0, 32);
-}
-
-function normalizePvpTeamRoomNameForCompare(value = '') {
-  return normalizePvpTeamRoomName(value)
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase();
-}
-
-function getPvpTeamMembersBySide(source = null, side = 'red') {
-  const key = side === 'blue' ? 'blue_members' : 'red_members';
-  const list = Array.isArray(source?.[key]) ? source[key] : [];
-  return list
-    .filter((entry) => entry && typeof entry === 'object')
-    .map((entry) => ({
-      ...entry,
-      user_id: String(entry.user_id || '').trim()
-    }))
-    .filter((entry) => !!entry.user_id)
-    .slice(0, PVP_TEAM_ROOM_SIDE_CAPACITY);
-}
-
-function getPvpTeamUserSide(source = null, userId = '') {
-  const safeUserId = String(userId || '').trim();
-  if (!safeUserId) return '';
-  if (getPvpTeamMembersBySide(source, 'red').some((member) => member.user_id === safeUserId)) return 'red';
-  if (getPvpTeamMembersBySide(source, 'blue').some((member) => member.user_id === safeUserId)) return 'blue';
-  return '';
-}
-
-function getPvpTeamRoomReadyMemberIds(roomRow = null) {
-  const memberIds = new Set([
-    ...getPvpTeamMembersBySide(roomRow, 'red').map((member) => String(member?.user_id || '').trim()),
-    ...getPvpTeamMembersBySide(roomRow, 'blue').map((member) => String(member?.user_id || '').trim())
-  ].filter(Boolean));
-  const source = Array.isArray(roomRow?.ready_member_ids) ? roomRow.ready_member_ids : [];
-  const readyIds = [];
-  const seen = new Set();
-  source.forEach((entry) => {
-    const userId = String(entry || '').trim();
-    if (!userId || seen.has(userId) || !memberIds.has(userId)) return;
-    seen.add(userId);
-    readyIds.push(userId);
-  });
-  return readyIds;
-}
-
-function isPvpTeamRoomMemberReady(roomRow = null, userId = '') {
-  const safeUserId = String(userId || '').trim();
-  if (!safeUserId) return false;
-  return getPvpTeamRoomReadyMemberIds(roomRow).includes(safeUserId);
-}
-
-function getPvpTeamRoomLaunchCheck(roomRow = null) {
-  const room = roomRow && typeof roomRow === 'object' ? roomRow : null;
-  const hostUserId = getPvpTeamRoomHostUserId(room);
-  const redMembers = getPvpTeamMembersBySide(room, 'red');
-  const blueMembers = getPvpTeamMembersBySide(room, 'blue');
-  const readyIds = new Set(getPvpTeamRoomReadyMemberIds(room));
-  const isFull = redMembers.length === PVP_TEAM_ROOM_SIDE_CAPACITY
-    && blueMembers.length === PVP_TEAM_ROOM_SIDE_CAPACITY;
-  const waitingReadyMembers = [...redMembers, ...blueMembers].filter((member) => {
-    const userId = String(member?.user_id || '').trim();
-    if (!userId || userId === hostUserId) return false;
-    return !readyIds.has(userId);
-  });
-  return {
-    isFull,
-    waitingReadyMembers,
-    canStart: isFull && waitingReadyMembers.length === 0
-  };
-}
-
-function buildPvpTeamRoomStartBlockedNotice(roomRow = null) {
-  const room = roomRow && typeof roomRow === 'object' ? roomRow : null;
-  const check = getPvpTeamRoomLaunchCheck(room);
-  const issues = [];
-  if (!check.isFull) {
-    issues.push('A sala precisa estar completa com 2 jogadores no Vermelho e 2 jogadores no Azul.');
-  }
-  if (check.waitingReadyMembers.length) {
-    const names = check.waitingReadyMembers
-      .map((member) => String(member?.nickname || '').trim() || 'Jogador')
-      .slice(0, 4);
-    issues.push(`Aguardando ${names.join(', ')} marcar pronto.`);
-  }
-  return {
-    id: `team_room_notice_${Date.now()}_${Math.floor(Math.random() * 10000)}`,
-    title: 'Ainda nao e possivel iniciar',
-    message: issues.join(' '),
-    created_at: new Date().toISOString(),
-    created_by_user_id: String(getPvpTeamRoomHostUserId(room) || '').trim()
-  };
-}
-
-function getPvpTeamOpponentSide(side = '') {
-  return String(side || '').trim().toLowerCase() === 'blue' ? 'red' : 'blue';
-}
-
-function normalizePvpTeamSide(value = '') {
-  return String(value || '').trim().toLowerCase() === 'blue' ? 'blue' : 'red';
-}
-
-function buildPvpTeamBattleSchedule(roomRow = null) {
-  const redMembers = getPvpTeamMembersBySide(roomRow, 'red');
-  const blueMembers = getPvpTeamMembersBySide(roomRow, 'blue');
-  if (redMembers.length < PVP_TEAM_ROOM_SIDE_CAPACITY || blueMembers.length < PVP_TEAM_ROOM_SIDE_CAPACITY) {
-    return [];
-  }
-
-  const blocks = [
-    [redMembers[0], blueMembers[0]],
-    [redMembers[1], blueMembers[1]],
-    [redMembers[0], blueMembers[1]],
-    [redMembers[1], blueMembers[0]]
-  ];
-  const schedule = [];
-
-  blocks.forEach((pair, blockIndex) => {
-    for (let roundInBlock = 1; roundInBlock <= PVP_TEAM_BATTLE_ROUNDS_PER_BLOCK; roundInBlock += 1) {
-      schedule.push({
-        battle_no: schedule.length + 1,
-        block_no: blockIndex + 1,
-        round_in_block: roundInBlock,
-        red_user_id: String(pair?.[0]?.user_id || '').trim(),
-        blue_user_id: String(pair?.[1]?.user_id || '').trim()
-      });
-    }
-  });
-
-  return schedule.filter((entry) => entry.red_user_id && entry.blue_user_id);
-}
-
-function getPvpTeamBattleEntry(matchRow = null, battleNo = 1) {
-  const schedule = Array.isArray(matchRow?.battle_schedule) ? matchRow.battle_schedule : [];
-  const safeBattleNo = Math.max(1, Number(battleNo || 1));
-  return schedule.find((entry) => Number(entry?.battle_no || 0) === safeBattleNo)
-    || schedule[safeBattleNo - 1]
-    || null;
-}
-
-function getPvpTeamResultForUser(matchRow = null, userId = '') {
-  const side = getPvpTeamUserSide(matchRow, userId);
-  const winnerSide = String(matchRow?.winner_side || '').trim().toLowerCase();
-  if (!side) return 'loss';
-  if (!winnerSide || winnerSide === 'draw') return 'draw';
-  return winnerSide === side ? 'win' : 'loss';
-}
-
-function getPvpTeamRoomStatusLabel(roomRow = null) {
-  const status = String(roomRow?.status || '').trim().toLowerCase();
-  if (status === 'active') return 'Em partida';
-  if (status === 'finished') return 'Encerrada';
-  return 'Lobby';
-}
-
-function getPvpEliminationRewardScaleByPlacement(placement = 0) {
-  const safePlacement = Math.max(1, Number(placement || 1));
-  if (safePlacement <= 1) return 1;
-  if (safePlacement === 2) return 0.85;
-  if (safePlacement === 3) return 0.65;
-  return 0.5;
-}
-
-function clampQueueDelaySeconds(value, fallback = 1, ceiling = 12) {
-  const safeFallback = Math.max(1, Math.min(ceiling, Number(fallback || 1)));
-  const safe = Number(value);
-  if (!Number.isFinite(safe) || safe <= 0) return safeFallback;
-  return Math.max(1, Math.min(ceiling, Math.trunc(safe)));
-}
-
-function computeQueueBotMatchAtMs({
-  nowMs = Date.now(),
-  queueJoinedAtMs = 0,
-  queueResumeMode = '',
-  currentBotMatchAtMs = 0,
-  minSeconds = 1,
-  maxSeconds = 12
-} = {}) {
-  const safeNowMs = Math.max(0, Number(nowMs || Date.now()));
-  const safeJoinedAtMs = Math.max(0, Number(queueJoinedAtMs || 0)) || safeNowMs;
-  const queueElapsedMs = Math.max(0, safeNowMs - safeJoinedAtMs);
-  const safeResumeMode = String(queueResumeMode || '').trim().toLowerCase();
-  const hardDeadlineMs = safeJoinedAtMs + PVP_QUEUE_BOT_HARD_DEADLINE_MS;
-
-  if (safeResumeMode === PVP_QUEUE_RESUME_MODE_REFUSAL) {
-    return safeNowMs + getRandomBotMatchDelayMs(
-      PVP_QUEUE_BOT_REFUSAL_DELAY_MIN_SECONDS,
-      PVP_QUEUE_BOT_REFUSAL_DELAY_MAX_SECONDS
-    );
-  }
-
-  // Past the hard deadline: retry immediately (no more waiting)
-  if (safeNowMs >= hardDeadlineMs) {
-    return safeNowMs;
-  }
-
-  if (queueElapsedMs < PVP_QUEUE_BOT_FIRST_THRESHOLD_MS) {
-    const remainingToThresholdMs = Math.max(0, PVP_QUEUE_BOT_FIRST_THRESHOLD_MS - queueElapsedMs);
-    const firstWindowDelayMs = getRandomBotMatchDelayMs(
-      PVP_QUEUE_BOT_FIRST_DELAY_MIN_SECONDS,
-      PVP_QUEUE_BOT_FIRST_DELAY_MAX_SECONDS
-    );
-    return Math.min(hardDeadlineMs, safeNowMs + remainingToThresholdMs + firstWindowDelayMs);
-  }
-
-  let safeMinSeconds = clampQueueDelaySeconds(minSeconds, 1, 12);
-  let safeMaxSeconds = Math.max(
-    safeMinSeconds,
-    clampQueueDelaySeconds(maxSeconds, safeMinSeconds, 12)
-  );
-
-  // After crossing 15s in queue, keep retries fast to avoid long stalls when a
-  // bot is temporarily busy/locked.
-  safeMaxSeconds = Math.min(safeMaxSeconds, PVP_QUEUE_BOT_POST_THRESHOLD_RETRY_MAX_SECONDS);
-  safeMinSeconds = Math.max(1, Math.min(safeMinSeconds, safeMaxSeconds));
-
-  // Cap retry delay to stay within hard deadline
-  const msUntilDeadline = Math.max(0, hardDeadlineMs - safeNowMs);
-  const maxSecondsUntilDeadline = Math.max(1, Math.floor(msUntilDeadline / 1000));
-  safeMaxSeconds = Math.min(safeMaxSeconds, maxSecondsUntilDeadline);
-  safeMinSeconds = Math.min(safeMinSeconds, safeMaxSeconds);
-
-  const nextAtMs = safeNowMs + getRandomBotMatchDelayMs(safeMinSeconds, safeMaxSeconds);
-  const currentScheduledAtMs = Math.max(0, Number(currentBotMatchAtMs || 0));
-  if (currentScheduledAtMs > safeNowMs) {
-    return Math.min(currentScheduledAtMs, nextAtMs);
-  }
-  return Math.min(hardDeadlineMs, nextAtMs);
-}
-
-const POPULAR_WHATSAPP_EMOJIS = [
-  '😂', '🤣', '😏', '🙄', '😈', '🤡', '👎', '🥱', '😬', '🤭',
-  '😎', '🔥', '💥', '👀', '😜', '😝', '😹', '🫠', '🧠', '😤',
-  '❤️', '😍', '😊', '😘', '🙏', '😭', '👍', '👏', '😁', '😅',
-  '🤔', '😢', '🤩', '😴', '😡', '🥳', '🙌', '👌', '🎉', '🤝',
-  '💪', '🤯', '🤖', '🤗', '😇', '😋', '😱', '🚀', '💡', '✨',
-  '🫶', '😮', '😴', '🤨', '😶', '😑', '😒', '🤫', '🫡', '🥶',
-  '🥵', '😵', '🙈', '🙉', '🙊', '😺', '😼', '😸', '😻', '😿',
-  '💖', '🤍', '😌', '🌙', '🧐', '🙂', '🤪', '🙃', '🏆', '🤓'
-];
-
-const PVP_EMOJI_PICKER_OPTIONS = Array.from(new Set(
-  POPULAR_WHATSAPP_EMOJIS
-    .map((emoji) => String(emoji || '').trim())
-    .filter((emoji) => !!emoji)
-));
-
-const DEFAULT_BATTLE_EMOJIS = ['🔥', '😎', '😵', '👏', '💡', '🤖'];
-const ENABLE_CLIENT_BOT_AUTOMATION = process.env.NODE_ENV === 'development'
-  && String(process.env.NEXT_PUBLIC_ENABLE_CLIENT_BOT_AUTOMATION || '').trim() === '1';
-const MOBILE_UA_PATTERN = /android|iphone|ipad|ipod|mobile|iemobile|opera mini/i;
-const MOBILE_SW_CLEANUP_STORAGE_KEY = 'cq_mobile_sw_cleanup_sha_v2';
-const LAST_CONFIRMED_BUILD_SHA_STORAGE_KEY = 'cq_last_confirmed_build_sha_v1';
-
-function isLikelyMobileWeb() {
-  if (typeof navigator === 'undefined') return false;
-  const ua = String(navigator.userAgent || navigator.vendor || '').toLowerCase();
-  const platform = String(navigator.platform || '');
-  const hasTouchPoints = Math.max(0, Number(navigator.maxTouchPoints || 0)) > 1;
-  const isIpadDesktopMode = platform === 'MacIntel' && hasTouchPoints;
-  return MOBILE_UA_PATTERN.test(ua) || isIpadDesktopMode;
-}
-
-const BOT_PERSONALITY_PRESETS = {
-  provocador: {
-    label: 'Provocador',
-    emojis: ['🔥', '😎', '😂', '😜', '💥', '👀']
-  },
-  analitico: {
-    label: 'Analitico',
-    emojis: ['🤔', '💡', '👌', '🤝', '😬', '✨']
-  },
-  calmo: {
-    label: 'Calmo',
-    emojis: ['😊', '🙏', '👌', '🤝', '😇', '✨']
-  },
-  estrategista: {
-    label: 'Estrategista',
-    emojis: ['🧠', '🤔', '🧐', '💡', '🫡', '✨']
-  },
-  caotico: {
-    label: 'Caotico',
-    emojis: ['🤪', '🥳', '😂', '💥', '🔥', '🙃']
-  },
-  sarcastico: {
-    label: 'Sarcastico',
-    emojis: ['😉', '😏', '🙄', '🤭', '👎', '😈']
-  },
-  competitivo: {
-    label: 'Competitivo',
-    emojis: ['😤', '💪', '🔥', '😎', '🏆', '🚀']
-  },
-  enigmatico: {
-    label: 'Enigmatico',
-    emojis: ['🌙', '😶', '🙈', '👀', '✨', '😈']
-  },
-  visionario: {
-    label: 'Visionario',
-    emojis: ['🧠', '💡', '🫡', '🤖', '🚀', '✨']
-  },
-  impulsivo: {
-    label: 'Impulsivo',
-    emojis: ['⚡', '💥', '🔥', '😤', '🤯', '🚀']
-  }
-};
-
-const BOT_STRENGTH_PRESETS = {
-  fraco: {
-    label: 'Fraco',
-    baseAccuracy: 0.5,
-    minAccuracy: 0.5,
-    maxAccuracy: 0.5,
-    clutchBoost: 0,
-    responseDelayMinMs: 2800,
-    responseDelayMaxMs: 5200
-  },
-  medio: {
-    label: 'Médio',
-    baseAccuracy: 0.7,
-    minAccuracy: 0.7,
-    maxAccuracy: 0.7,
-    clutchBoost: 0,
-    responseDelayMinMs: 1800,
-    responseDelayMaxMs: 3600
-  },
-  forte: {
-    label: 'Forte',
-    baseAccuracy: 0.9,
-    minAccuracy: 0.9,
-    maxAccuracy: 0.9,
-    clutchBoost: 0,
-    responseDelayMinMs: 900,
-    responseDelayMaxMs: 2400
-  }
-};
-
-const BOT_EMOJI_POOL_BY_BOT_ID = {
-  bot_sys_codequiz_prime: ['😏', '🔥', '🤡', '👀', '😜', '💥'],
-  bot_sys_codequiz_orbita: ['🧠', '🤔', '🧐', '💡', '🫡', '✨'],
-  bot_sys_codequiz_zefira: ['🤔', '🧠', '💡', '🫡', '✨', '🤓'],
-  bot_sys_codequiz_sopro: ['🙂', '🙏', '🫶', '👌', '😌', '✨'],
-  bot_sys_codequiz_lua9: ['🤪', '🥳', '😂', '💥', '🔥', '🙃'],
-  bot_sys_codequiz_thiagoara: ['😤', '💪', '🔥', '😎', '🏆', '🚀'],
-  bot_sys_codequiz_bdevonly: ['🧠', '🤔', '💡', '🫡', '🤓', '✨'],
-  bot_sys_codequiz_flakael: ['😉', '😏', '🙄', '🤭', '👎', '😈'],
-  bot_sys_codequiz_z3n: ['😏', '😉', '🙄', '🤭', '😈', '👀']
-};
-
-function normalizeBotPersonality(value) {
-  const key = String(value || '').trim().toLowerCase();
-  if (BOT_PERSONALITY_PRESETS[key]) return key;
-  return 'provocador';
-}
-
-function normalizeBotStrength(value) {
-  const key = String(value || '').trim().toLowerCase();
-  if (BOT_STRENGTH_PRESETS[key]) return key;
-  return 'medio';
-}
-
-function getBotEmojiPool(personalityKey, botUserId = '') {
-  const safeBotId = String(botUserId || '').trim();
-  if (safeBotId && Array.isArray(BOT_EMOJI_POOL_BY_BOT_ID[safeBotId])) {
-    return normalizeBattleEmojis(BOT_EMOJI_POOL_BY_BOT_ID[safeBotId]).slice(0, 6);
-  }
-  const safe = BOT_PERSONALITY_PRESETS[normalizeBotPersonality(personalityKey)];
-  return Array.isArray(safe?.emojis) && safe.emojis.length ? safe.emojis.slice(0, 6) : DEFAULT_BATTLE_EMOJIS;
-}
-
-function normalizeBattleEmojis(list) {
-  const source = Array.isArray(list) ? list : [];
-  const allowed = new Set(POPULAR_WHATSAPP_EMOJIS);
-  const picked = [];
-  source.forEach((emoji) => {
-    const safe = String(emoji || '').trim();
-    if (!safe || !allowed.has(safe) || picked.includes(safe)) return;
-    if (picked.length >= 6) return;
-    picked.push(safe);
-  });
-  if (picked.length >= 6) return picked;
-  DEFAULT_BATTLE_EMOJIS.forEach((emoji) => {
-    if (picked.length >= 6 || picked.includes(emoji)) return;
-    picked.push(emoji);
-  });
-  POPULAR_WHATSAPP_EMOJIS.forEach((emoji) => {
-    if (picked.length >= 6 || picked.includes(emoji)) return;
-    picked.push(emoji);
-  });
-  return picked.slice(0, 6);
-}
-
-function normalizeEmojiDraftSlots(list) {
-  const source = Array.isArray(list) ? list : [];
-  const allowed = new Set(POPULAR_WHATSAPP_EMOJIS);
-  const slots = Array.from({ length: 6 }, () => '');
-  const used = new Set();
-
-  for (let index = 0; index < Math.min(6, source.length); index += 1) {
-    const safe = String(source[index] || '').trim();
-    if (!safe || !allowed.has(safe) || used.has(safe)) continue;
-    slots[index] = safe;
-    used.add(safe);
-  }
-
-  if (source.length > 6) {
-    for (let index = 6; index < source.length; index += 1) {
-      const safe = String(source[index] || '').trim();
-      if (!safe || !allowed.has(safe) || used.has(safe)) continue;
-      const emptyIndex = slots.findIndex((item) => !item);
-      if (emptyIndex < 0) break;
-      slots[emptyIndex] = safe;
-      used.add(safe);
-    }
-  }
-
-  return slots;
-}
-
-function getMissingEmojiSlotIndexes(list) {
-  const slots = normalizeEmojiDraftSlots(list);
-  return slots
-    .map((emoji, index) => (emoji ? 0 : index + 1))
-    .filter((slotIndex) => slotIndex > 0);
-}
-
-function getNextEmptyEmojiSlot(list) {
-  const current = normalizeEmojiDraftSlots(list);
-  const emptyIndex = current.findIndex((emoji) => !emoji);
-  if (emptyIndex < 0) return 5;
-  return Math.max(0, Math.min(5, emptyIndex));
-}
-
-function applyEmojiToDraft(list, emoji, slotIndex = null) {
-  const safeEmoji = String(emoji || '').trim();
-  if (!safeEmoji) return normalizeEmojiDraftSlots(list);
-  if (!POPULAR_WHATSAPP_EMOJIS.includes(safeEmoji)) return normalizeEmojiDraftSlots(list);
-  const current = normalizeEmojiDraftSlots(list);
-  const duplicateIndex = current.findIndex((item) => item === safeEmoji);
-
-  let target = Number.isFinite(Number(slotIndex))
-    ? Math.max(0, Math.min(5, Number(slotIndex)))
-    : getNextEmptyEmojiSlot(current);
-
-  if (duplicateIndex === target) return current;
-  const next = [...current];
-  if (duplicateIndex >= 0) {
-    next[duplicateIndex] = '';
-  }
-  next[target] = safeEmoji;
-  return normalizeEmojiDraftSlots(next);
-}
-
-function removeEmojiFromDraftByIndex(list, index) {
-  const current = normalizeEmojiDraftSlots(list);
-  const safeIndex = Math.max(0, Math.min(5, Number(index || 0)));
-  if (!Number.isFinite(safeIndex)) return current;
-  const next = [...current];
-  next[safeIndex] = '';
-  return next;
-}
-
-function getBotStrengthPreset(botStrength = 'medio') {
-  const safeStrength = normalizeBotStrength(botStrength);
-  return BOT_STRENGTH_PRESETS[safeStrength] || BOT_STRENGTH_PRESETS.medio;
-}
-
-function getBotStrengthLabel(botStrength = 'medio') {
-  const preset = getBotStrengthPreset(botStrength);
-  return String(preset?.label || BOT_STRENGTH_PRESETS.medio.label);
-}
-
-function hashBotSeed(value = '') {
-  const input = String(value || '');
-  let hash = 7;
-  for (let idx = 0; idx < input.length; idx += 1) {
-    hash = (Math.imul(hash, 31) + input.charCodeAt(idx)) | 0;
-  }
-  const normalized = Math.abs(hash) % 2147483646;
-  return normalized + 1;
-}
-
-function createBotSeededRandom(seedValue) {
-  let seed = Math.floor(Number(seedValue || 1)) % 2147483647;
-  if (seed <= 0) seed += 2147483646;
-  return () => {
-    seed = (seed * 48271) % 2147483647;
-    return seed / 2147483647;
-  };
-}
-
-function resolveDeterministicBotRun(seedKey, targetAccuracy, totalSteps, targetStep = totalSteps) {
-  const safeSteps = Math.max(1, Math.trunc(Number(totalSteps || 1)));
-  const safeTargetStep = Math.max(1, Math.min(safeSteps, Math.trunc(Number(targetStep || safeSteps))));
-  const safeTargetAccuracy = Math.max(0.01, Math.min(0.99, Number(targetAccuracy || 0)));
-  let hits = 0;
-  let streak = 0;
-  let bestStreak = 0;
-  let hitAtStep = false;
-
-  for (let step = 1; step <= safeSteps; step += 1) {
-    const expectedHits = safeTargetAccuracy * step;
-    const minHits = Math.floor(expectedHits);
-    const maxHits = Math.ceil(expectedHits);
-    let hit = false;
-
-    if (hits < minHits) {
-      hit = true;
-    } else if (hits >= maxHits) {
-      hit = false;
-    } else {
-      const rand = createBotSeededRandom(hashBotSeed(`${seedKey}:${step}`));
-      hit = rand() < safeTargetAccuracy;
-    }
-
-    if (hit) {
-      hits += 1;
-      streak += 1;
-      if (streak > bestStreak) bestStreak = streak;
-    } else {
-      streak = 0;
-    }
-
-    if (step === safeTargetStep) {
-      hitAtStep = hit;
-    }
-  }
-
-  return {
-    correctCount: hits,
-    bestStreak,
-    hitAtStep
-  };
-}
-
-function getBotAccuracyByStrength(botStrength = 'medio', _context = {}) {
-  const safeStrength = normalizeBotStrength(botStrength);
-  const preset = getBotStrengthPreset(safeStrength);
-  return Math.max(0.01, Math.min(0.99, Number(preset?.baseAccuracy || BOT_STRENGTH_PRESETS.medio.baseAccuracy)));
-}
-
-function getBotAnswerDelayMs() {
-  // Keep bot answer timing independent from player actions/strength.
-  return getRandomBotMatchDelayMs(0.7, 2.2);
-}
-
-function pickBotAnswerIndex(question, botStrength = 'medio', context = {}) {
-  const safeQuestion = question && typeof question === 'object' ? question : {};
-  const options = Array.isArray(safeQuestion.opts) ? safeQuestion.opts : [];
-  const optionsCount = options.length;
-  if (!optionsCount) return -1;
-
-  const correctIndex = Math.max(0, Math.min(optionsCount - 1, Number(safeQuestion.answer || 0)));
-  const safeStrength = normalizeBotStrength(botStrength);
-  const accuracy = getBotAccuracyByStrength(safeStrength, context);
-  const roundNo = Math.max(1, Math.trunc(Number(context?.roundNo || 1)));
-  const totalRounds = Math.max(roundNo, Math.trunc(Number(context?.totalRounds || 5)));
-  const matchId = String(context?.matchId || '').trim();
-  const botUserId = String(context?.botUserId || '').trim();
-  const seedBase = matchId && botUserId
-    ? `pvp:${matchId}:${botUserId}:${safeStrength}`
-    : `pvp:${safeStrength}:${Date.now()}_${Math.floor(Math.random() * 10000)}`;
-  const shouldHit = resolveDeterministicBotRun(seedBase, accuracy, totalRounds, roundNo).hitAtStep;
-  if (shouldHit) return correctIndex;
-
-  const wrongIndexes = Array.from({ length: optionsCount }, (_, idx) => idx).filter((idx) => idx !== correctIndex);
-  if (!wrongIndexes.length) return correctIndex;
-  const wrongRoll = createBotSeededRandom(hashBotSeed(`${seedBase}:wrong:${roundNo}`))();
-  return wrongIndexes[Math.floor(wrongRoll * wrongIndexes.length)];
-}
-
-function buildRewardParticleBurst({ xp = 0, coins = 0, origin = null }) {
-  const rewardXp = Math.max(0, Number(xp || 0));
-  const rewardCoins = Math.max(0, Number(coins || 0));
-  const hasWindow = typeof window !== 'undefined';
-  const baseX = Number(origin?.x || (hasWindow ? window.innerWidth * 0.5 : 240));
-  const baseY = Number(origin?.y || (hasWindow ? window.innerHeight * 0.78 : 580));
-
-  const coinCount = rewardCoins > 0 ? Math.max(18, Math.min(180, Math.round(rewardCoins * 2.8 + rewardXp * 0.2))) : 0;
-  const xpCount = rewardXp > 0 ? Math.max(16, Math.min(160, Math.round(rewardXp * 1.85 + rewardCoins * 0.25))) : 0;
-  const particles = [];
-
-  const pushParticle = (kind, index, delay, phase = 'main') => {
-    const isCoin = kind === 'coin';
-    const id = `${kind}_${Date.now()}_${index}_${Math.floor(Math.random() * 9999)}`;
-    const isTail = phase === 'tail';
-    const spread = isTail
-      ? (isCoin ? 16 : 20)
-      : (isCoin ? 22 : 26);
-    const dx = (Math.random() - 0.5) * (isTail
-      ? (isCoin ? 170 : 210)
-      : (isCoin ? 220 : 260));
-    const dy = -(isTail
-      ? (260 + Math.random() * (isCoin ? 200 : 240))
-      : (220 + Math.random() * (isCoin ? 240 : 280)));
-    const drift = (Math.random() - 0.5) * (isTail
-      ? (isCoin ? 30 : 42)
-      : (isCoin ? 40 : 52));
-    const duration = Math.round((isTail
-      ? (isCoin ? 1200 : 1400)
-      : (isCoin ? 1450 : 1700)) + Math.random() * (isTail ? 620 : 820));
-    const size = (isTail
-      ? (isCoin ? 16 : 12)
-      : (isCoin ? 18 : 14)) + Math.random() * (isTail ? 6 : (isCoin ? 9 : 7));
-    particles.push({
-      id,
-      kind,
-      icon: isCoin ? '🪙' : '✦',
-      x: baseX + (Math.random() - 0.5) * spread,
-      y: baseY + (Math.random() - 0.5) * 16,
-      dx,
-      dy,
-      drift,
-      delay,
-      duration,
-      size,
-      rotate: Math.round((Math.random() - 0.5) * 36)
-    });
-  };
-
-  let remainingCoins = coinCount;
-  let remainingXp = xpCount;
-  let delayCursor = 0;
-  let sequenceIndex = 0;
-
-  while (remainingCoins > 0 || remainingXp > 0) {
-    const totalRemaining = remainingCoins + remainingXp;
-    const pickCoin = remainingCoins > 0 && (
-      remainingXp <= 0 || Math.random() < (remainingCoins / Math.max(1, totalRemaining))
-    );
-
-    const kind = pickCoin ? 'coin' : 'xp';
-    if (kind === 'coin') remainingCoins -= 1;
-    else remainingXp -= 1;
-
-    // Particulas nascem em sequencia curta, mantendo sobreposicao para efeito de volume.
-    const stepMin = kind === 'coin' ? 12 : 14;
-    const stepMax = kind === 'coin' ? 24 : 28;
-    const step = stepMin + Math.floor(Math.random() * (stepMax - stepMin + 1));
-    delayCursor += step;
-
-    pushParticle(kind, sequenceIndex, delayCursor);
-    sequenceIndex += 1;
-  }
-
-  const tailCoinCount = Math.max(2, Math.min(14, Math.round(coinCount * 0.12)));
-  const tailXpCount = Math.max(2, Math.min(12, Math.round(xpCount * 0.12)));
-  let tailCoinsRemaining = coinCount > 0 ? tailCoinCount : 0;
-  let tailXpRemaining = xpCount > 0 ? tailXpCount : 0;
-  let tailCursor = delayCursor + Math.round(110 + Math.random() * 80);
-
-  while (tailCoinsRemaining > 0 || tailXpRemaining > 0) {
-    const totalTailRemaining = tailCoinsRemaining + tailXpRemaining;
-    const pickTailCoin = tailCoinsRemaining > 0 && (
-      tailXpRemaining <= 0 || Math.random() < (tailCoinsRemaining / Math.max(1, totalTailRemaining))
-    );
-    const tailKind = pickTailCoin ? 'coin' : 'xp';
-    if (tailKind === 'coin') tailCoinsRemaining -= 1;
-    else tailXpRemaining -= 1;
-
-    const tailStep = tailKind === 'coin'
-      ? 16 + Math.floor(Math.random() * 14)
-      : 18 + Math.floor(Math.random() * 16);
-    tailCursor += tailStep;
-    pushParticle(tailKind, sequenceIndex, tailCursor, 'tail');
-    sequenceIndex += 1;
-  }
-
-  return particles;
-}
-
-function getPvpRewardsByDifficulty(difficulty, resultKey) {
-  const safeDifficulty = normalizeDifficulty(difficulty || 'easy');
-  const safeResult = String(resultKey || '').trim().toLowerCase();
-  const xpRow = PVP_XP_REWARD[safeDifficulty] || PVP_XP_REWARD.easy;
-  const coinsRow = PVP_COINS_REWARD[safeDifficulty] || PVP_COINS_REWARD.easy;
-  return {
-    xp: Math.max(0, Number(xpRow[safeResult] || 0)),
-    coins: Math.max(0, Number(coinsRow[safeResult] || 0))
-  };
-}
-
-function getMatchPlayerAcceptState(matchRow, userId) {
-  const row = matchRow && typeof matchRow === 'object' ? matchRow : {};
-  const uid = String(userId || '').trim();
-  if (!uid) return 'pending';
-  if (uid === String(row.player1_user_id || '').trim()) {
-    return String(row.player1_accept_state || 'pending').trim().toLowerCase() || 'pending';
-  }
-  if (uid === String(row.player2_user_id || '').trim()) {
-    return String(row.player2_accept_state || 'pending').trim().toLowerCase() || 'pending';
-  }
-  return 'pending';
-}
-
-function shouldResumeQueueAfterMatchRefused(matchRow, userId) {
-  const flow = getMatchRefusalQueueFlow(matchRow, userId);
-  return flow.shouldResume;
-}
-
-function getMatchRefusalQueueFlow(matchRow, userId) {
-  const uid = String(userId || '').trim();
-  if (!uid) {
-    return {
-      endedReason: '',
-      acceptState: 'pending',
-      shouldResume: false,
-      queueCanceled: false
-    };
-  }
-
-  const row = matchRow && typeof matchRow === 'object' ? matchRow : {};
-  const endedReason = String(row.ended_reason || '').trim().toLowerCase();
-  const acceptState = getMatchPlayerAcceptState(row, uid);
-  if (endedReason !== 'match_refused' && endedReason !== 'accept_timeout') {
-    return {
-      endedReason,
-      acceptState,
-      shouldResume: false,
-      queueCanceled: false
-    };
-  }
-
-  const endedBy = String(row.ended_by_user_id || '').trim();
-  const explicitlyRejected = acceptState === 'rejected';
-  const explicitlyAccepted = acceptState === 'accepted';
-  const leftByExit = endedBy && endedBy === uid && !explicitlyRejected;
-
-  if (endedReason === 'match_refused') {
-    const queueCanceled = explicitlyRejected || leftByExit;
-    return {
-      endedReason,
-      acceptState,
-      shouldResume: !queueCanceled,
-      queueCanceled
-    };
-  }
-
-  const shouldResume = explicitlyAccepted;
-  return {
-    endedReason,
-    acceptState,
-    shouldResume,
-    queueCanceled: !shouldResume
-  };
-}
-
-function getMatchRefusalQueueStatusText(matchRow, userId, { resumed = false } = {}) {
-  const flow = getMatchRefusalQueueFlow(matchRow, userId);
-  if (flow.endedReason === 'accept_timeout') {
-    if (resumed) return 'Tempo de aceite do oponente esgotado. Você voltou para a fila.';
-    if (flow.queueCanceled) return 'Tempo de aceite esgotado. Sua fila foi cancelada.';
-    return 'Tempo de aceite esgotado. Voltando para a arena.';
-  }
-  if (flow.endedReason === 'match_refused') {
-    if (resumed) return 'Confronto recusado. Você voltou para a fila.';
-    if (flow.queueCanceled) return 'Confronto recusado. Sua fila foi cancelada.';
-    return 'Confronto recusado. Voltando para a arena.';
-  }
-  return 'Confronto encerrado. Voltando para a arena.';
-}
-
-function resolveMatchQueueJoinedAtMs(matchRow, fallbackMs = 0, userId = '') {
-  const row = matchRow && typeof matchRow === 'object' ? matchRow : {};
-  const safeUserId = String(userId || '').trim();
-  const player1Id = String(row.player1_user_id || '').trim();
-  const player2Id = String(row.player2_user_id || '').trim();
-  const playerJoinedAtMs = safeUserId === player1Id
-    ? Math.max(0, Number(row.player1_queue_joined_at_ms || 0))
-    : (
-      safeUserId === player2Id
-        ? Math.max(0, Number(row.player2_queue_joined_at_ms || 0))
-        : 0
-    );
-  const explicitMs = Math.max(
-    0,
-    Number(
-      playerJoinedAtMs
-      || row.player1_queue_joined_at_ms
-      || row.player2_queue_joined_at_ms
-      || row.queue_joined_at_ms
-      || row.joined_at_ms
-      || fallbackMs
-      || 0
-    )
-  );
-  if (explicitMs > 0) return explicitMs;
-  return Math.max(
-    0,
-    toMillis(
-      row.queue_joined_at
-      || row.created_at
-      || 0
-    )
-  );
-}
-
-function isQueueEntryFreshWaiting(queueRow, staleMs = 12000) {
-  const row = queueRow && typeof queueRow === 'object' ? queueRow : {};
-  if (String(row.status || '').trim().toLowerCase() !== 'waiting') return false;
-  const updatedMs = Math.max(0, toMillis(row.updated_at || row.created_at));
-  if (!updatedMs) return false;
-  const maxAgeMs = Math.max(4000, Number(staleMs || 12000));
-  return (Date.now() - updatedMs) <= maxAgeMs;
-}
-
-function getPendingAcceptAutoCloseReason(matchRow, nowMs = Date.now()) {
-  const row = matchRow && typeof matchRow === 'object' ? matchRow : {};
-  if (String(row.status || '').trim().toLowerCase() !== 'pending_accept') return '';
-
-  const p1State = String(row.player1_accept_state || 'pending').trim().toLowerCase();
-  const p2State = String(row.player2_accept_state || 'pending').trim().toLowerCase();
-  if (p1State === 'rejected' || p2State === 'rejected') return 'match_refused';
-
-  const acceptDeadlineMs = Math.max(0, Number(row.accept_deadline_ms || 0));
-  if (acceptDeadlineMs > 0 && nowMs >= acceptDeadlineMs + 5000) return 'accept_timeout';
-
-  const updatedMs = Math.max(
-    0,
-    toMillis(row.updated_at || row.created_at || row.round_started_at || row.round_started_at_ms)
-  );
-  if (updatedMs > 0 && (nowMs - updatedMs) >= 40000) return 'accept_timeout';
-
-  return '';
-}
-
-function getInvalidFinishedMatchReason(matchRow) {
-  const row = matchRow && typeof matchRow === 'object' ? matchRow : {};
-  const status = String(row.status || '').trim().toLowerCase();
-  if (status !== 'finished') return '';
-  if (row.is_bot_quiz === true) return '';
-  const endedReason = String(row.ended_reason || '').trim().toLowerCase();
-  // Forfeit is a valid end state and should keep reward/compensation flows.
-  if (endedReason === 'forfeit') return '';
-  if (row.result_void === true) {
-    return String(row.result_void_reason || '').trim() || 'voided_match';
-  }
-  const endedRoundNo = Math.max(0, Number(row.ended_round_no || row.round_no || 0));
-  const shortMatch = endedRoundNo < 5;
-  const p1 = Math.max(0, Number(row.player1_score || 0));
-  const p2 = Math.max(0, Number(row.player2_score || 0));
-  const zeroScore = p1 === 0 && p2 === 0;
-  if (shortMatch && zeroScore) return 'under_min_rounds_zero_score';
-  if (shortMatch) return 'under_min_rounds';
-  if (zeroScore) return 'zero_score';
-  return '';
-}
-
-function isInvalidFinishedMatch(matchRow) {
-  return !!getInvalidFinishedMatchReason(matchRow);
-}
-
-function getMatchAcceptStateLabel(stateKey) {
-  const key = String(stateKey || 'pending').trim().toLowerCase();
-  if (key === 'accepted') return 'Aceitou';
-  if (key === 'rejected') return 'Recusado';
-  return 'Pendente';
-}
-
-function getPvpRoundAnswerFeedback(answerRow, correctIndex = -1) {
-  const pickedIndex = Number(answerRow?.answer_idx ?? -1);
-  const hasAnswer = Number.isFinite(pickedIndex) && pickedIndex >= 0;
-  const isCorrect = hasAnswer && isPvpAnswerCorrect(answerRow, correctIndex);
-  const isUnanswered = !hasAnswer;
-  return {
-    hasAnswer,
-    isCorrect,
-    label: isUnanswered ? 'Não respondeu' : (isCorrect ? 'Acertou' : 'Errou'),
-    emoji: isUnanswered ? '⏳' : (isCorrect ? '✅' : '❌'),
-    cssClass: isUnanswered ? 'neutral' : (isCorrect ? 'success' : 'error')
-  };
-}
-
-function getPvpAnswerTargetRoundNo(matchRow, status = '') {
-  const safeStatus = String(status || matchRow?.status || '').trim().toLowerCase();
-  if (safeStatus === 'round_result') {
-    return Math.max(1, Number(matchRow?.result_round_no || matchRow?.round_no || 1));
-  }
-  return Math.max(1, Number(matchRow?.round_no || 1));
-}
-
-function getPvpRoundAnswersForRound(answerRows = [], roundNo = 1) {
-  const safeRoundNo = Math.max(1, Number(roundNo || 1));
-  const rows = Array.isArray(answerRows) ? answerRows : [];
-  return rows.filter((row) => Math.max(0, Number(row?.round_no || 0)) === safeRoundNo);
-}
-
-function getPvpTeamRoomHostUserId(roomRow = null) {
-  return String(roomRow?.created_by_user_id || '').trim();
-}
-
-function getPvpTeamMatchBattleNo(matchRow = null, status = '') {
-  const safeStatus = String(status || matchRow?.status || '').trim().toLowerCase();
-  if (safeStatus === 'round_result') {
-    return Math.max(1, Number(matchRow?.result_battle_no || matchRow?.battle_no || 1));
-  }
-  return Math.max(1, Number(matchRow?.battle_no || 1));
-}
-
-function getPvpTeamCurrentBattleAnswers(answerRows = [], battleNo = 1) {
-  const safeBattleNo = Math.max(1, Number(battleNo || 1));
-  const rows = Array.isArray(answerRows) ? answerRows : [];
-  return rows.filter((row) => Math.max(0, Number(row?.battle_no || 0)) === safeBattleNo);
-}
-
-function getPvpTeamBattleDisplayLabel(entry = null) {
-  const blockNo = Math.max(1, Number(entry?.block_no || 1));
-  const roundInBlock = Math.max(1, Number(entry?.round_in_block || 1));
-  return `Confronto ${blockNo}/${PVP_TEAM_BATTLE_BLOCK_COUNT} · Rodada ${roundInBlock}/${PVP_TEAM_BATTLE_ROUNDS_PER_BLOCK}`;
-}
-
-function getPvpTeamSideColorLabel(side = '') {
-  return String(side || '').trim().toLowerCase() === 'blue' ? 'Azul' : 'Vermelho';
-}
-
-function getPvpTeamActivePairMembers(matchRow = null, battleNo = 1) {
-  const entry = getPvpTeamBattleEntry(matchRow, battleNo);
-  const redMembers = getPvpTeamMembersBySide(matchRow, 'red');
-  const blueMembers = getPvpTeamMembersBySide(matchRow, 'blue');
-  return {
-    entry,
-    red: redMembers.find((member) => member.user_id === String(entry?.red_user_id || '').trim()) || null,
-    blue: blueMembers.find((member) => member.user_id === String(entry?.blue_user_id || '').trim()) || null
-  };
-}
-
-function buildPvpEliminationRoomId(userId = '') {
-  const safeUserId = String(userId || '').trim() || 'room';
-  return `pvp_elimination_room_${safeUserId}_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
-}
-
-function buildPvpEliminationMatchId(roomId = '') {
-  const safeRoomId = String(roomId || '').trim() || 'elimination';
-  return `pvp_elimination_match_${safeRoomId}_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
-}
-
-function getPvpEliminationMembers(source = null) {
-  const list = Array.isArray(source?.members) ? source.members : [];
-  return list
-    .filter((entry) => entry && typeof entry === 'object')
-    .map((entry) => ({
-      ...entry,
-      user_id: String(entry.user_id || '').trim()
-    }))
-    .filter((entry) => !!entry.user_id)
-    .slice(0, PVP_ELIMINATION_ROOM_CAPACITY);
-}
-
-function getPvpEliminationMemberById(source = null, userId = '') {
-  const safeUserId = String(userId || '').trim();
-  if (!safeUserId) return null;
-  return getPvpEliminationMembers(source).find((member) => member.user_id === safeUserId) || null;
-}
-
-function getPvpEliminationActiveMemberIds(source = null) {
-  const fallbackIds = getPvpEliminationMembers(source).map((member) => String(member?.user_id || '').trim()).filter(Boolean);
-  const sourceIds = Array.isArray(source?.active_member_ids) ? source.active_member_ids : fallbackIds;
-  const next = [];
-  const seen = new Set();
-  sourceIds.forEach((entry) => {
-    const userId = String(entry || '').trim();
-    if (!userId || seen.has(userId)) return;
-    if (fallbackIds.length && !fallbackIds.includes(userId)) return;
-    seen.add(userId);
-    next.push(userId);
-  });
-  return next;
-}
-
-function getPvpEliminationRoomReadyMemberIds(roomRow = null) {
-  const memberIds = new Set(
-    getPvpEliminationMembers(roomRow).map((member) => String(member?.user_id || '').trim()).filter(Boolean)
-  );
-  const source = Array.isArray(roomRow?.ready_member_ids) ? roomRow.ready_member_ids : [];
-  const next = [];
-  const seen = new Set();
-  source.forEach((entry) => {
-    const userId = String(entry || '').trim();
-    if (!userId || seen.has(userId) || !memberIds.has(userId)) return;
-    seen.add(userId);
-    next.push(userId);
-  });
-  return next;
-}
-
-function isPvpEliminationRoomMemberReady(roomRow = null, userId = '') {
-  const safeUserId = String(userId || '').trim();
-  if (!safeUserId) return false;
-  return getPvpEliminationRoomReadyMemberIds(roomRow).includes(safeUserId);
-}
-
-function getPvpEliminationRoomHostUserId(roomRow = null) {
-  return String(roomRow?.created_by_user_id || '').trim();
-}
-
-function getPvpEliminationRoomStatusLabel(roomRow = null) {
-  const status = String(roomRow?.status || '').trim().toLowerCase();
-  if (status === 'pending_accept') return 'Aguardando aceite';
-  if (status === 'active') return 'Em partida';
-  if (status === 'finished') return 'Encerrada';
-  return 'Lobby';
-}
-
-function normalizePvpEliminationAcceptState(value = 'pending') {
-  const key = String(value || '').trim().toLowerCase();
-  if (key === 'accepted' || key === 'rejected') return key;
-  return 'pending';
-}
-
-function getPvpEliminationRoomAcceptStateMap(roomRow = null) {
-  const members = getPvpEliminationMembers(roomRow);
-  const memberIds = members.map((member) => String(member?.user_id || '').trim()).filter(Boolean);
-  const source = roomRow?.accept_member_states && typeof roomRow.accept_member_states === 'object'
-    ? roomRow.accept_member_states
-    : {};
-  return memberIds.reduce((acc, userId) => {
-    acc[userId] = normalizePvpEliminationAcceptState(source[userId]);
-    return acc;
-  }, {});
-}
-
-function getPvpEliminationRoomAcceptState(roomRow = null, userId = '') {
-  const safeUserId = String(userId || '').trim();
-  if (!safeUserId) return 'pending';
-  const stateMap = getPvpEliminationRoomAcceptStateMap(roomRow);
-  return normalizePvpEliminationAcceptState(stateMap[safeUserId]);
-}
-
-function getPvpEliminationRoomAcceptBotDecisionAtMap(roomRow = null) {
-  const members = getPvpEliminationMembers(roomRow);
-  const memberIds = new Set(
-    members.map((member) => String(member?.user_id || '').trim()).filter(Boolean)
-  );
-  const source = roomRow?.accept_bot_decision_at_ms && typeof roomRow.accept_bot_decision_at_ms === 'object'
-    ? roomRow.accept_bot_decision_at_ms
-    : {};
-  const next = {};
-  Object.entries(source).forEach(([userId, value]) => {
-    const safeUserId = String(userId || '').trim();
-    if (!safeUserId || !memberIds.has(safeUserId)) return;
-    const decisionAtMs = Math.max(0, Number(value || 0));
-    if (decisionAtMs > 0) {
-      next[safeUserId] = decisionAtMs;
-    }
-  });
-  return next;
-}
-
-function getPvpEliminationRoomAcceptBotWillRejectMap(roomRow = null) {
-  const members = getPvpEliminationMembers(roomRow);
-  const memberIds = new Set(
-    members.map((member) => String(member?.user_id || '').trim()).filter(Boolean)
-  );
-  const source = roomRow?.accept_bot_will_reject && typeof roomRow.accept_bot_will_reject === 'object'
-    ? roomRow.accept_bot_will_reject
-    : {};
-  const next = {};
-  Object.entries(source).forEach(([userId, value]) => {
-    const safeUserId = String(userId || '').trim();
-    if (!safeUserId || !memberIds.has(safeUserId)) return;
-    if (value === true || value === false) {
-      next[safeUserId] = value;
-      return;
-    }
-    const normalized = String(value || '').trim().toLowerCase();
-    if (normalized === 'true' || normalized === '1') next[safeUserId] = true;
-    if (normalized === 'false' || normalized === '0') next[safeUserId] = false;
-  });
-  return next;
-}
-
-function getPvpEliminationRoomLaunchCheck(roomRow = null) {
-  const room = roomRow && typeof roomRow === 'object' ? roomRow : null;
-  const hostUserId = getPvpEliminationRoomHostUserId(room);
-  const members = getPvpEliminationMembers(room);
-  const readyIds = new Set(getPvpEliminationRoomReadyMemberIds(room));
-  const isFull = members.length === PVP_ELIMINATION_ROOM_CAPACITY;
-  const waitingReadyMembers = members.filter((member) => {
-    const userId = String(member?.user_id || '').trim();
-    if (!userId || userId === hostUserId) return false;
-    return !readyIds.has(userId);
-  });
-  return {
-    isFull,
-    waitingReadyMembers,
-    canStart: isFull && waitingReadyMembers.length === 0
-  };
-}
-
-function buildPvpEliminationRoomStartBlockedNotice(roomRow = null) {
-  const room = roomRow && typeof roomRow === 'object' ? roomRow : null;
-  const check = getPvpEliminationRoomLaunchCheck(room);
-  const issues = [];
-  if (!check.isFull) {
-    issues.push('A sala precisa ter 4 jogadores para iniciar.');
-  }
-  if (check.waitingReadyMembers.length) {
-    const names = check.waitingReadyMembers
-      .map((member) => String(member?.nickname || '').trim() || 'Jogador')
-      .slice(0, 4);
-    issues.push(`Aguardando ${names.join(', ')} marcar pronto.`);
-  }
-  return {
-    id: `elimination_room_notice_${Date.now()}_${Math.floor(Math.random() * 10000)}`,
-    title: 'Ainda nao e possivel iniciar',
-    message: issues.join(' '),
-    created_at: new Date().toISOString(),
-    created_by_user_id: String(getPvpEliminationRoomHostUserId(room) || '').trim()
-  };
-}
-
-function shufflePvpEliminationIds(ids = []) {
-  const list = Array.isArray(ids)
-    ? ids.map((entry) => String(entry || '').trim()).filter(Boolean)
-    : [];
-  for (let idx = list.length - 1; idx > 0; idx -= 1) {
-    const swapIndex = Math.floor(Math.random() * (idx + 1));
-    const current = list[idx];
-    list[idx] = list[swapIndex];
-    list[swapIndex] = current;
-  }
-  return list;
-}
-
-function buildPvpEliminationCycleRounds(activeUserIds = []) {
-  const activeIds = Array.from(new Set(
-    (Array.isArray(activeUserIds) ? activeUserIds : [])
-      .map((entry) => String(entry || '').trim())
-      .filter(Boolean)
-  ));
-  if (activeIds.length < 2) return [];
-
-  if (activeIds.length === 2) {
-    return Array.from({ length: PVP_ELIMINATION_ROUNDS_PER_CYCLE }, (_, index) => ({
-      round_in_cycle: index + 1,
-      waiting_user_ids: [],
-      pairs: [{
-        pair_no: 1,
-        player1_user_id: activeIds[0],
-        player2_user_id: activeIds[1]
-      }]
-    }));
-  }
-
-  if (activeIds.length === 3) {
-    const rotation = shufflePvpEliminationIds(activeIds);
-    const rounds = [
-      [rotation[0], rotation[1], rotation[2]],
-      [rotation[1], rotation[2], rotation[0]],
-      [rotation[2], rotation[0], rotation[1]]
-    ];
-    return rounds.slice(0, PVP_ELIMINATION_ROUNDS_PER_CYCLE).map((entry, index) => ({
-      round_in_cycle: index + 1,
-      waiting_user_ids: [entry[2]],
-      pairs: [{
-        pair_no: 1,
-        player1_user_id: entry[0],
-        player2_user_id: entry[1]
-      }]
-    }));
-  }
-
-  return Array.from({ length: PVP_ELIMINATION_ROUNDS_PER_CYCLE }, (_, index) => {
-    const shuffled = shufflePvpEliminationIds(activeIds);
-    const waitingUserIds = shuffled.length % 2 === 0 ? [] : [shuffled[shuffled.length - 1]];
-    const pairPool = waitingUserIds.length ? shuffled.slice(0, shuffled.length - 1) : shuffled;
-    const pairs = [];
-    for (let pairIndex = 0; pairIndex < pairPool.length; pairIndex += 2) {
-      const user1 = String(pairPool[pairIndex] || '').trim();
-      const user2 = String(pairPool[pairIndex + 1] || '').trim();
-      if (!user1 || !user2 || user1 === user2) continue;
-      pairs.push({
-        pair_no: pairs.length + 1,
-        player1_user_id: user1,
-        player2_user_id: user2
-      });
-    }
-    return {
-      round_in_cycle: index + 1,
-      waiting_user_ids: waitingUserIds,
-      pairs
-    };
-  }).filter((entry) => Array.isArray(entry.pairs) && entry.pairs.length);
-}
-
-function getPvpEliminationRoundEntry(matchRow = null, roundInCycle = 1) {
-  const rounds = Array.isArray(matchRow?.cycle_rounds) ? matchRow.cycle_rounds : [];
-  const safeRoundInCycle = Math.max(1, Number(roundInCycle || 1));
-  return rounds.find((entry) => Number(entry?.round_in_cycle || 0) === safeRoundInCycle)
-    || rounds[safeRoundInCycle - 1]
-    || null;
-}
-
-function getPvpEliminationPairEntry(matchRow = null, roundInCycle = 1, pairNo = 1) {
-  const roundEntry = getPvpEliminationRoundEntry(matchRow, roundInCycle);
-  const pairs = Array.isArray(roundEntry?.pairs) ? roundEntry.pairs : [];
-  const safePairNo = Math.max(1, Number(pairNo || 1));
-  return pairs.find((entry) => Number(entry?.pair_no || 0) === safePairNo)
-    || pairs[safePairNo - 1]
-    || null;
-}
-
-function getPvpEliminationPairFromRounds(cycleRounds = [], roundInCycle = 1, pairNo = 1) {
-  const rounds = Array.isArray(cycleRounds) ? cycleRounds : [];
-  const safeRoundInCycle = Math.max(1, Number(roundInCycle || 1));
-  const safePairNo = Math.max(1, Number(pairNo || 1));
-  const roundEntry = rounds.find((entry) => Number(entry?.round_in_cycle || 0) === safeRoundInCycle)
-    || rounds[safeRoundInCycle - 1]
-    || null;
-  const pairs = Array.isArray(roundEntry?.pairs) ? roundEntry.pairs : [];
-  return pairs.find((entry) => Number(entry?.pair_no || 0) === safePairNo)
-    || pairs[safePairNo - 1]
-    || null;
-}
-
-function getPvpEliminationActivePair(matchRow = null) {
-  const explicitPair = Array.isArray(matchRow?.active_pair_user_ids) ? matchRow.active_pair_user_ids : [];
-  if (explicitPair.length >= 2) {
-    const user1 = String(explicitPair[0] || '').trim();
-    const user2 = String(explicitPair[1] || '').trim();
-    if (user1 && user2 && user1 !== user2) {
-      return {
-        user1,
-        user2
-      };
-    }
-  }
-  const pairEntry = getPvpEliminationPairEntry(
-    matchRow,
-    Number(matchRow?.round_in_cycle || 1),
-    Number(matchRow?.pair_no || 1)
-  );
-  return {
-    user1: String(pairEntry?.player1_user_id || '').trim(),
-    user2: String(pairEntry?.player2_user_id || '').trim()
-  };
-}
-
-function getPvpEliminationPlacementForUser(matchRow = null, userId = '') {
-  const safeUserId = String(userId || '').trim();
-  if (!safeUserId) return 0;
-  const members = getPvpEliminationMembers(matchRow);
-  const totalPlayers = Math.max(1, members.length || PVP_ELIMINATION_ROOM_CAPACITY);
-  const winnerUserId = String(matchRow?.winner_user_id || '').trim();
-  if (winnerUserId && safeUserId === winnerUserId) return 1;
-  const eliminationOrder = Array.isArray(matchRow?.elimination_order)
-    ? matchRow.elimination_order.map((entry) => String(entry || '').trim()).filter(Boolean)
-    : [];
-  const eliminatedIndex = eliminationOrder.indexOf(safeUserId);
-  if (eliminatedIndex >= 0) {
-    return Math.max(1, totalPlayers - eliminatedIndex);
-  }
-  const activeIds = getPvpEliminationActiveMemberIds(matchRow);
-  if (activeIds.includes(safeUserId)) {
-    if (activeIds.length <= 1) return 1;
-    if (activeIds.length === 2) return 2;
-    return Math.max(2, activeIds.length);
-  }
-  return totalPlayers;
-}
-
-function getPvpEliminationPlacementLabel(placement = 0) {
-  const safePlacement = Math.max(1, Number(placement || 1));
-  return `${safePlacement}o lugar`;
-}
-
-function getPvpEliminationResultKeyByPlacement(placement = 0) {
-  const safePlacement = Math.max(1, Number(placement || 1));
-  if (safePlacement <= 1) return 'win';
-  if (safePlacement === 2) return 'draw';
-  return 'loss';
-}
-
-function getPvpEliminationRoundLabel(matchRow = null) {
-  const cycleNo = Math.max(1, Number(matchRow?.cycle_no || 1));
-  const roundInCycle = Math.max(1, Number(matchRow?.round_in_cycle || 1));
-  const pairNo = Math.max(1, Number(matchRow?.pair_no || 1));
-  return `Ciclo ${cycleNo} - Rodada ${roundInCycle}/${PVP_ELIMINATION_ROUNDS_PER_CYCLE} - Duelo ${pairNo}`;
-}
-
-function buildPvpEliminationCycleScoreMap(activeIds = []) {
-  const next = {};
-  (Array.isArray(activeIds) ? activeIds : []).forEach((entry) => {
-    const userId = String(entry || '').trim();
-    if (!userId) return;
-    next[userId] = 0;
-  });
-  return next;
-}
-
-function getPvpEliminationNextPlayablePair(cycleRounds = [], roundInCycle = 1, pairNo = 1) {
-  const rounds = Array.isArray(cycleRounds) ? cycleRounds : [];
-  const safeRoundInCycle = Math.max(1, Number(roundInCycle || 1));
-  const safePairNo = Math.max(1, Number(pairNo || 1));
-  for (let roundIndex = safeRoundInCycle - 1; roundIndex < rounds.length; roundIndex += 1) {
-    const roundEntry = rounds[roundIndex];
-    const pairs = Array.isArray(roundEntry?.pairs) ? roundEntry.pairs : [];
-    const startPair = roundIndex === (safeRoundInCycle - 1) ? safePairNo : 1;
-    for (let pairIndex = startPair - 1; pairIndex < pairs.length; pairIndex += 1) {
-      const pairEntry = pairs[pairIndex];
-      const user1 = String(pairEntry?.player1_user_id || '').trim();
-      const user2 = String(pairEntry?.player2_user_id || '').trim();
-      if (!user1 || !user2 || user1 === user2) continue;
-      return {
-        round_in_cycle: Math.max(1, Number(roundEntry?.round_in_cycle || (roundIndex + 1))),
-        pair_no: Math.max(1, Number(pairEntry?.pair_no || (pairIndex + 1))),
-        player1_user_id: user1,
-        player2_user_id: user2
-      };
-    }
-  }
-  return null;
-}
-
-function nowIso() {
-  return new Date().toISOString();
-}
-
-function toMillis(value) {
-  if (typeof value === 'number' && Number.isFinite(value)) return value;
-  const numeric = Number(value);
-  if (Number.isFinite(numeric) && numeric > 0) return numeric;
-  const parsed = Date.parse(String(value || ''));
-  return Number.isFinite(parsed) ? parsed : 0;
-}
-
-function formatDurationMmSs(totalMs) {
-  const safeMs = Math.max(0, Number(totalMs || 0));
-  const totalSec = Math.floor(safeMs / 1000);
-  const minutes = Math.floor(totalSec / 60);
-  const seconds = totalSec % 60;
-  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
-}
-
-function getAdminMatchStartMs(matchRow) {
-  return Math.max(
-    0,
-    toMillis(matchRow?.created_at)
-    || toMillis(matchRow?.round_started_at_ms)
-    || toMillis(matchRow?.round_started_at)
-    || toMillis(matchRow?.updated_at)
-  );
-}
-
-function getAdminMatchEndMs(matchRow, nowMs = Date.now()) {
-  const status = String(matchRow?.status || '').trim().toLowerCase();
-  if (status === 'finished') {
-    return Math.max(
-      0,
-      toMillis(matchRow?.ended_at)
-      || toMillis(matchRow?.updated_at)
-      || getAdminMatchStartMs(matchRow)
-    );
-  }
-  return Math.max(0, Number(nowMs || Date.now()));
-}
-
-function getAdminMatchDurationLabel(matchRow, nowMs = Date.now()) {
-  const startedMs = getAdminMatchStartMs(matchRow);
-  if (!startedMs) return '00:00';
-  const endedMs = getAdminMatchEndMs(matchRow, nowMs);
-  return formatDurationMmSs(Math.max(0, endedMs - startedMs));
-}
-
-function getAdminMatchRoundsLabel(matchRow) {
-  const totalRounds = Math.max(1, Number(matchRow?.total_rounds || PVP_ROUNDS_PER_MATCH));
-  const status = String(matchRow?.status || '').trim().toLowerCase();
-  if (status === 'finished') {
-    const endedRoundNo = Math.max(1, Number(matchRow?.ended_round_no || matchRow?.round_no || totalRounds));
-    return `${endedRoundNo}/${totalRounds}`;
-  }
-  const currentRoundNo = Math.max(1, Number(matchRow?.round_no || 1));
-  return `${currentRoundNo}/${totalRounds}`;
-}
-
-function getLanguageNameById(languageId) {
-  const safeLanguageId = String(languageId || '').trim();
-  if (!safeLanguageId) return '--';
-  if (safeLanguageId === 'assuntos_gerais') return 'Assuntos Gerais';
-  const language = LANGUAGES.find((entry) => String(entry?.id || '') === safeLanguageId);
-  return String(language?.name || safeLanguageId);
-}
-
-function getTopicNameById(languageId, topicId) {
-  const safeTopicId = String(topicId || '').trim();
-  if (!safeTopicId) return '--';
-  const safeLanguageId = String(languageId || '').trim();
-  if (!safeLanguageId) return safeTopicId;
-  const topics = getTopicsByLanguage(TOPICS, safeLanguageId);
-  const topic = topics.find((entry) => String(entry?.id || '') === safeTopicId);
-  return String(topic?.name || safeTopicId);
-}
-
-function getLanguageIconById(languageId) {
-  const safeLanguageId = String(languageId || '').trim();
-  if (!safeLanguageId) return '🧠';
-  if (safeLanguageId === 'assuntos_gerais') return '🌍';
-  const language = LANGUAGES.find((entry) => String(entry?.id || '') === safeLanguageId);
-  return String(language?.icon || '🧠');
-}
-
-function getTopicEmojiById(languageId, topicId) {
-  const safeLanguageId = String(languageId || '').trim();
-  const safeTopicId = String(topicId || '').trim();
-  if (!safeLanguageId && !safeTopicId) return '🎯';
-  const topics = getTopicsByLanguage(TOPICS, safeLanguageId);
-  const topic = topics.find((entry) => String(entry?.id || '') === safeTopicId);
-  const topicEmoji = String(topic?.emoji || '').trim();
-  if (topicEmoji) return topicEmoji;
-  if (safeLanguageId) return getLanguageIconById(safeLanguageId);
-  return '🎯';
-}
-
-function getTopicEmojiPool(languageId, selectedIcon = '') {
-  const safeLanguageId = String(languageId || '').trim();
-  const fallbackPool = ['🎯', '🧠', '⚡', '📚', '🚀', '🧩', '💡', '🧪'];
-  const languageTopics = getTopicsByLanguage(TOPICS, safeLanguageId);
-  const languagePool = languageTopics
-    .map((topic) => String(topic?.emoji || '').trim())
-    .filter(Boolean);
-  const languageIcon = getLanguageIconById(safeLanguageId);
-  const merged = [...languagePool, languageIcon, String(selectedIcon || '').trim()]
-    .map((emoji) => String(emoji || '').trim())
-    .filter(Boolean);
-  if (!merged.length) return fallbackPool;
-  return Array.from(new Set([...merged, ...fallbackPool]));
-}
-
-function pickRandomIcon(pool = [], fallback = '🎯') {
-  const safePool = Array.isArray(pool)
-    ? pool.map((item) => String(item || '').trim()).filter(Boolean)
-    : [];
-  if (!safePool.length) return fallback;
-  const randomIndex = Math.floor(Math.random() * safePool.length);
-  return safePool[randomIndex] || fallback;
-}
-
-function buildThemeIntroRoulette(selectedIcon, pool = []) {
-  const safeSelectedIcon = String(selectedIcon || '').trim() || '🎯';
-  const safePool = getTopicEmojiPool('', safeSelectedIcon).concat(
-    Array.isArray(pool) ? pool : []
-  )
-    .map((item) => String(item || '').trim())
-    .filter(Boolean);
-  const uniquePool = Array.from(new Set(safePool));
-  const items = Array.from({ length: THEME_INTRO_ROULETTE_ITEMS_TOTAL }, () => pickRandomIcon(uniquePool, safeSelectedIcon));
-  const targetIndex = Math.min(
-    THEME_INTRO_ROULETTE_ITEMS_TOTAL - 1,
-    Math.max(1, THEME_INTRO_ROULETTE_TARGET_INDEX)
-  );
-  items[targetIndex] = safeSelectedIcon;
-  if (targetIndex > 0 && items[targetIndex - 1] === safeSelectedIcon) {
-    items[targetIndex - 1] = pickRandomIcon(uniquePool.filter((emoji) => emoji !== safeSelectedIcon), uniquePool[0] || '✨');
-  }
-  if (targetIndex < items.length - 1 && items[targetIndex + 1] === safeSelectedIcon) {
-    items[targetIndex + 1] = pickRandomIcon(uniquePool.filter((emoji) => emoji !== safeSelectedIcon), uniquePool[0] || '✨');
-  }
-  const railLeftPx = (targetIndex * THEME_INTRO_ROULETTE_CHIP_STEP_PX) + THEME_INTRO_ROULETTE_CHIP_CENTER_OFFSET_PX;
-  const minRollSteps = Math.max(4, THEME_INTRO_ROULETTE_MIN_ROLL_STEPS);
-  const maxRollSteps = Math.max(minRollSteps, THEME_INTRO_ROULETTE_MAX_ROLL_STEPS);
-  const rollSteps = minRollSteps + Math.floor(Math.random() * ((maxRollSteps - minRollSteps) + 1));
-  const rollStartOffsetPx = (rollSteps * THEME_INTRO_ROULETTE_CHIP_STEP_PX) + Math.floor(Math.random() * 34);
-  return {
-    items,
-    targetIndex,
-    railLeftPx,
-    rollStartOffsetPx
-  };
-}
-
-function resolveQuestionThemeContext(questionRow, fallbackLanguage = '', fallbackTopic = '') {
-  const row = questionRow && typeof questionRow === 'object' ? questionRow : {};
-  const languageId = String(
-    row.language
-    || row.language_id
-    || row.lang
-    || fallbackLanguage
-    || ''
-  ).trim();
-  const topicId = String(
-    row.topic
-    || row.topic_id
-    || row.topicId
-    || fallbackTopic
-    || ''
-  ).trim();
-  const difficulty = normalizeDifficulty(row.difficulty || 'easy');
-  return {
-    languageId,
-    topicId,
-    difficulty
-  };
-}
-
-function buildThemeContextKey(languageId = '', topicId = '') {
-  return `${String(languageId || '').trim()}::${String(topicId || '').trim()}`;
-}
-
-function getAdminQuizCardData(matchRow) {
-  const row = matchRow && typeof matchRow === 'object' ? matchRow : {};
-  const assignments = Array.isArray(row.bot_quiz_assignments) ? row.bot_quiz_assignments : [];
-  const firstAssignment = assignments.find((entry) => entry && typeof entry === 'object') || {};
-  const languageId = String(firstAssignment.language || row.language || '').trim();
-  const topicId = String(firstAssignment.topic || row.topic || '').trim();
-  const difficulty = normalizeDifficulty(
-    firstAssignment.difficulty
-    || row.bot_quiz_difficulty
-    || row.difficulty
-    || 'easy'
-  );
-  const baseTotalQuestions = Math.max(
-    1,
-    Math.trunc(Number(firstAssignment.total_questions || row.total_rounds || QUESTIONS_PER_ROUND))
-  );
-  const catalogTotalQuestions = getRoundQuestionCapacity(
-    QUESTIONS,
-    languageId,
-    topicId,
-    difficulty,
-    QUESTIONS_PER_ROUND
-  );
-  const totalQuestions = catalogTotalQuestions > 0
-    ? Math.max(1, Math.min(baseTotalQuestions, catalogTotalQuestions))
-    : baseTotalQuestions;
-  const scoreSource = firstAssignment.correct_count !== undefined
-    ? firstAssignment.correct_count
-    : row.player1_score;
-  const correctCount = Math.max(0, Math.min(totalQuestions, Math.trunc(Number(scoreSource || 0))));
-  const accuracyPct = Math.max(0, Math.min(100, Math.round((correctCount / Math.max(1, totalQuestions)) * 100)));
-
-  return {
-    languageId,
-    topicId,
-    difficulty,
-    difficultyLabel: DIFFICULTY_LABELS[difficulty] || DIFFICULTY_LABELS.easy,
-    languageLabel: getLanguageNameById(languageId),
-    topicLabel: getTopicNameById(languageId, topicId),
-    totalQuestions,
-    correctCount,
-    accuracyPct
-  };
-}
-
-function toAdminDayKey(msValue) {
-  const base = Math.max(0, Number(msValue || 0)) || Date.now();
-  const date = new Date(base);
-  const day = String(date.getDate()).padStart(2, '0');
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const year = String(date.getFullYear());
-  return `${day}${month}${year}`;
-}
-
-function getMatchBotUserId(matchRow) {
-  const row = matchRow && typeof matchRow === 'object' ? matchRow : {};
-  const byField = String(row.bot_user_id || '').trim();
-  if (isSystemBotUserId(byField)) return byField;
-  const player1Id = String(row.player1_user_id || '').trim();
-  const player2Id = String(row.player2_user_id || '').trim();
-  if (isSystemBotUserId(player1Id)) return player1Id;
-  if (isSystemBotUserId(player2Id)) return player2Id;
-  return '';
-}
-
-function getMatchHumanUserId(matchRow, botUserId = '') {
-  const row = matchRow && typeof matchRow === 'object' ? matchRow : {};
-  const safeBotUserId = String(botUserId || getMatchBotUserId(row)).trim();
-  if (!safeBotUserId) return '';
-  const player1Id = String(row.player1_user_id || '').trim();
-  const player2Id = String(row.player2_user_id || '').trim();
-  if (player1Id === safeBotUserId) return player2Id;
-  if (player2Id === safeBotUserId) return player1Id;
-  return '';
-}
-
-function getBotDefaultStrengthById(botUserId = '') {
-  const safeBotId = String(botUserId || '').trim();
-  if (!safeBotId) return normalizeBotStrength('medio');
-  return normalizeBotStrength(getSystemBotDefaultStrength(safeBotId));
-}
-
-function getBotStrengthFromMatchRow(matchRow, botUserId = '') {
-  const row = matchRow && typeof matchRow === 'object' ? matchRow : {};
-  const safeBotId = String(botUserId || '').trim();
-  const player1Id = String(row.player1_user_id || '').trim();
-  const player2Id = String(row.player2_user_id || '').trim();
-
-  if (safeBotId && safeBotId === player1Id) {
-    return normalizeBotStrength(
-      row.player1_bot_strength
-      || row.bot_strength
-      || getBotDefaultStrengthById(safeBotId)
-    );
-  }
-  if (safeBotId && safeBotId === player2Id) {
-    return normalizeBotStrength(
-      row.player2_bot_strength
-      || row.bot_strength
-      || getBotDefaultStrengthById(safeBotId)
-    );
-  }
-  if (safeBotId) {
-    return normalizeBotStrength(row.bot_strength || getBotDefaultStrengthById(safeBotId));
-  }
-  return normalizeBotStrength(row.bot_strength || 'medio');
-}
-
-function getAdminBotClassSummary(matchRow) {
-  const row = matchRow && typeof matchRow === 'object' ? matchRow : {};
-  if (!row || typeof row !== 'object') return '';
-
-  if (row.is_bot_quiz === true) {
-    const assignments = Array.isArray(row.bot_quiz_assignments) ? row.bot_quiz_assignments : [];
-    const labels = assignments
-      .slice(0, 2)
-      .map((entry) => {
-        const botId = String(entry?.bot_id || '').trim();
-        const strength = normalizeBotStrength(entry?.bot_strength || getBotDefaultStrengthById(botId));
-        return getBotStrengthLabel(strength);
-      })
-      .filter((label) => !!label);
-    if (!labels.length) return '';
-    if (labels.length === 1) return `Classe bot: ${labels[0]}`;
-    return `Classes bot: ${labels[0]} x ${labels[1]}`;
-  }
-
-  const player1Id = String(row.player1_user_id || '').trim();
-  const player2Id = String(row.player2_user_id || '').trim();
-  const isPlayer1Bot = isSystemBotUserId(player1Id);
-  const isPlayer2Bot = isSystemBotUserId(player2Id);
-
-  if (isPlayer1Bot && isPlayer2Bot) {
-    const strength1 = getBotStrengthLabel(getBotStrengthFromMatchRow(row, player1Id));
-    const strength2 = getBotStrengthLabel(getBotStrengthFromMatchRow(row, player2Id));
-    return `Classes bot: ${strength1} x ${strength2}`;
-  }
-
-  const botId = getMatchBotUserId(row);
-  if (!botId) return '';
-  const strength = getBotStrengthLabel(getBotStrengthFromMatchRow(row, botId));
-  return `Classe bot: ${strength}`;
-}
-
-function getAdminMatchTypeKey(matchRow) {
-  const row = matchRow && typeof matchRow === 'object' ? matchRow : {};
-  if (!row || typeof row !== 'object') return 'unknown';
-  if (row.is_bot_quiz === true) return 'bot_quiz';
-
-  const player1Id = String(row.player1_user_id || '').trim();
-  const player2Id = String(row.player2_user_id || '').trim();
-  const hasPlayer1 = !!player1Id;
-  const hasPlayer2 = !!player2Id;
-  const player1Bot = hasPlayer1 && isSystemBotUserId(player1Id);
-  const player2Bot = hasPlayer2 && isSystemBotUserId(player2Id);
-
-  if (player1Bot && player2Bot) return 'bot_vs_bot';
-  if (hasPlayer1 && hasPlayer2 && !player1Bot && !player2Bot) return 'user_vs_user';
-  if ((player1Bot && hasPlayer2 && !player2Bot) || (player2Bot && hasPlayer1 && !player1Bot)) {
-    return 'user_vs_bot';
-  }
-  return 'unknown';
-}
-
-function getAdminMatchTypeLabel(matchRow) {
-  const type = getAdminMatchTypeKey(matchRow);
-  if (type === 'bot_quiz') return 'Quiz solo';
-  if (type === 'user_vs_user') return 'Usuário x Usuário';
-  if (type === 'user_vs_bot') return 'Usuário x Bot';
-  if (type === 'bot_vs_bot') return 'Bot x Bot';
-  return 'Partida';
-}
-
-function isAdminQuizHistoryRow(matchRow) {
-  const row = matchRow && typeof matchRow === 'object' ? matchRow : {};
-  if (!row || typeof row !== 'object') return false;
-  if (row.is_bot_quiz === true) return true;
-  const endedReason = String(row.ended_reason || '').trim().toLowerCase();
-  if (endedReason.includes('quiz')) return true;
-  const modeKey = String(row.mode || row.match_mode || row.game_mode || '').trim().toLowerCase();
-  return modeKey === 'quiz';
-}
-
-function isAdminUserQuizHistoryRow(matchRow) {
-  const row = matchRow && typeof matchRow === 'object' ? matchRow : {};
-  if (!isAdminQuizHistoryRow(row)) return false;
-  if (row.is_bot_quiz === true) return false;
-  const player1Id = String(row.player1_user_id || '').trim();
-  const player2Id = String(row.player2_user_id || '').trim();
-  const hasBot = (player1Id && isSystemBotUserId(player1Id)) || (player2Id && isSystemBotUserId(player2Id));
-  return !hasBot;
-}
-
-function doesAdminHistoryRowMatchFilter(matchRow, filterKey = 'all') {
-  const key = String(filterKey || 'all').trim().toLowerCase();
-  if (key === 'all') return true;
-  const type = getAdminMatchTypeKey(matchRow);
-  const isQuiz = isAdminQuizHistoryRow(matchRow);
-  if (key === 'pvp') return !isQuiz;
-  if (key === 'users') return !isQuiz && (type === 'user_vs_user' || type === 'user_vs_bot');
-  if (key === 'quiz') return isQuiz;
-  if (key === 'user_quiz') return isAdminUserQuizHistoryRow(matchRow);
-  return true;
-}
-
-function isAdminLiveMatchRow(matchRow, nowMs = Date.now()) {
-  const row = matchRow && typeof matchRow === 'object' ? matchRow : {};
-  if (!row || typeof row !== 'object') return false;
-  if (row.result_void === true || row.history_hidden === true) return false;
-
-  const status = String(row.status || '').trim().toLowerCase();
-  if (status === 'pending_accept' || status === 'active' || status === 'round_result') return true;
-
-  // Include transitional states that may appear briefly during user-vs-user pairing.
-  if (status === 'matched' || status === 'starting') return true;
-  if (status === 'finished') return false;
-  if (row.is_bot_quiz === true) return false;
-
-  const type = getAdminMatchTypeKey(row);
-  if (type !== 'user_vs_user' && type !== 'user_vs_bot') return false;
-
-  const player1State = String(row.player1_accept_state || '').trim().toLowerCase();
-  const player2State = String(row.player2_accept_state || '').trim().toLowerCase();
-  const hasAcceptSignal = (
-    player1State === 'pending'
-    || player2State === 'pending'
-    || player1State === 'accepted'
-    || player2State === 'accepted'
-  );
-  if (!hasAcceptSignal) return false;
-
-  const updatedMs = toMillis(row.updated_at || row.round_started_at || row.created_at);
-  if (!updatedMs) return false;
-  return (Math.max(0, Number(nowMs || Date.now())) - updatedMs) <= 120000;
-}
-
-function buildFallbackPvpConfig() {
-  const language = LANGUAGES[0]?.id || 'javascript';
-  const topics = getTopicsByLanguage(TOPICS, language);
-  const topic = topics[0]?.id || 'variables';
-  return {
-    language,
-    topic,
-    difficulty: 'easy'
-  };
-}
-
-function hasQuestionsForDifficulty(languageId, topicId, difficulty) {
-  const safeLanguage = String(languageId || '').trim();
-  const safeTopic = String(topicId || '').trim();
-  if (!safeLanguage || !safeTopic) return false;
-  const safeDifficulty = normalizeDifficulty(difficulty || 'easy');
-  const pool = QUESTIONS?.[safeLanguage]?.[safeTopic]?.[safeDifficulty];
-  return Array.isArray(pool) && pool.length > 0;
-}
-
-function ensureValidPvpConfig(config) {
-  const fallback = buildFallbackPvpConfig();
-  const requestedTopic = String(config?.topic || '').trim();
-  const requestedLanguage = normalizeLegacyLanguageId(
-    String(config?.language || fallback.language).trim(),
-    requestedTopic
-  );
-  const safeDifficulty = normalizeDifficulty(config?.difficulty || fallback.difficulty);
-  const preferredArea = String(
-    config?.area
-    || config?.knowledge_area
-    || resolveKnowledgeAreaByLanguageId(requestedLanguage || fallback.language)
-    || ''
-  ).trim();
-  const areaLanguageIds = getLanguageIdsByKnowledgeArea(preferredArea);
-  const restrictToArea = areaLanguageIds.length > 0;
-
-  const candidateLanguages = [];
-  const pushCandidateLanguage = (value) => {
-    const safeValue = normalizeLegacyLanguageId(value, requestedTopic);
-    if (!safeValue) return;
-    if (candidateLanguages.includes(safeValue)) return;
-    if (restrictToArea && !areaLanguageIds.includes(safeValue)) return;
-    if (!getTopicsByLanguage(TOPICS, safeValue).length) return;
-    candidateLanguages.push(safeValue);
-  };
-
-  pushCandidateLanguage(requestedLanguage);
-  areaLanguageIds.forEach((languageId) => pushCandidateLanguage(languageId));
-  if (!restrictToArea) {
-    pushCandidateLanguage(fallback.language);
-    LANGUAGES.forEach((language) => pushCandidateLanguage(language?.id));
-  }
-
-  let safeLanguage = candidateLanguages[0] || areaLanguageIds[0] || fallback.language;
-  let safeTopic = '';
-
-  for (const languageId of candidateLanguages) {
-    const topics = getTopicsByLanguage(TOPICS, languageId);
-    if (!topics.length) continue;
-
-    const requestedTopicValid = (
-      !!requestedTopic
-      && topics.some((topic) => topic.id === requestedTopic)
-      && hasQuestionsForDifficulty(languageId, requestedTopic, safeDifficulty)
-    );
-    const compatibleTopic = requestedTopicValid
-      ? requestedTopic
-      : (topics.find((topic) => hasQuestionsForDifficulty(languageId, topic.id, safeDifficulty))?.id || '');
-    if (compatibleTopic) {
-      safeLanguage = languageId;
-      safeTopic = compatibleTopic;
-      break;
-    }
-  }
-
-  if (!safeTopic) {
-    const fallbackTopics = getTopicsByLanguage(TOPICS, safeLanguage);
-    safeTopic = fallbackTopics[0]?.id || fallback.topic;
-  }
-
-  return {
-    language: safeLanguage,
-    topic: safeTopic,
-    difficulty: safeDifficulty
-  };
-}
-
-const PVP_MIXED_LANGUAGE_ID = '__pvp__';
-const PVP_MIXED_TOPIC_ID = '__all__';
-
-function collectPvpQuestionPoolByDifficulty(questionsMap, difficulty, scope = {}) {
-  const safeDifficulty = normalizeDifficulty(difficulty || 'easy');
-  const safeQuestions = questionsMap && typeof questionsMap === 'object' ? questionsMap : {};
-  const safeLanguage = String(scope?.languageId || '').trim();
-  const safeTopic = String(scope?.topicId || '').trim();
-  const safeArea = String(scope?.areaId || '').trim();
-  const merged = [];
-  const pushTopicPack = (topicPack) => {
-    if (!topicPack || typeof topicPack !== 'object') return;
-    const pool = Array.isArray(topicPack[safeDifficulty]) ? topicPack[safeDifficulty] : [];
-    pool.forEach((question) => merged.push(question));
-  };
-
-  if (safeLanguage && safeTopic) {
-    const topicPack = safeQuestions?.[safeLanguage]?.[safeTopic];
-    pushTopicPack(topicPack);
-    return merged;
-  }
-
-  if (safeLanguage) {
-    const languagePack = safeQuestions?.[safeLanguage];
-    if (!languagePack || typeof languagePack !== 'object') return merged;
-    Object.values(languagePack).forEach((topicPack) => {
-      pushTopicPack(topicPack);
-    });
-    return merged;
-  }
-
-  if (safeArea) {
-    const areaLanguageIds = getLanguageIdsByKnowledgeArea(safeArea);
-    areaLanguageIds.forEach((languageId) => {
-      const languagePack = safeQuestions?.[languageId];
-      if (!languagePack || typeof languagePack !== 'object') return;
-      Object.values(languagePack).forEach((topicPack) => {
-        pushTopicPack(topicPack);
-      });
-    });
-    return merged;
-  }
-
-  Object.values(safeQuestions).forEach((languagePack) => {
-    if (!languagePack || typeof languagePack !== 'object') return;
-    Object.values(languagePack).forEach((topicPack) => {
-      pushTopicPack(topicPack);
-    });
-  });
-
-  return merged;
-}
-
-function pickPvpRoundQuestionsFromPool(mergedPool, difficulty, count, excludeQuestions = []) {
-  const safeDifficulty = normalizeDifficulty(difficulty || 'easy');
-  const safeCount = Math.max(1, Number(count || 1));
-  if (!Array.isArray(mergedPool) || !mergedPool.length) return [];
-
-  const virtualQuestionsMap = {
-    [PVP_MIXED_LANGUAGE_ID]: {
-      [PVP_MIXED_TOPIC_ID]: {
-        [safeDifficulty]: mergedPool
-      }
-    }
-  };
-
-  return pickRoundQuestions(
-    virtualQuestionsMap,
-    PVP_MIXED_LANGUAGE_ID,
-    PVP_MIXED_TOPIC_ID,
-    safeDifficulty,
-    safeCount,
-    excludeQuestions
-  );
-}
-
-function pickPvpRoundQuestionsByConfig(questionsMap, config, count, excludeQuestions = []) {
-  const safeDifficulty = normalizeDifficulty(config?.difficulty || 'easy');
-  const safeCount = Math.max(1, Number(count || 1));
-  const safeTopic = String(config?.topic || '').trim();
-  const safeLanguage = normalizeLegacyLanguageId(config?.language || '', safeTopic);
-  const safeArea = String(
-    config?.area
-    || config?.knowledge_area
-    || resolveKnowledgeAreaByLanguageId(safeLanguage)
-    || ''
-  ).trim();
-  const areaLanguageIds = getLanguageIdsByKnowledgeArea(safeArea);
-  const allowLanguageScope = !safeArea || !areaLanguageIds.length || areaLanguageIds.includes(safeLanguage);
-  const selected = [];
-  const scopes = [];
-
-  if (allowLanguageScope && safeLanguage && safeTopic) scopes.push({ languageId: safeLanguage, topicId: safeTopic });
-  if (allowLanguageScope && safeLanguage) scopes.push({ languageId: safeLanguage });
-  if (safeArea) scopes.push({ areaId: safeArea });
-  if (!safeArea) scopes.push({});
-
-  scopes.forEach((scope) => {
-    if (selected.length >= safeCount) return;
-    const pool = collectPvpQuestionPoolByDifficulty(questionsMap, safeDifficulty, scope);
-    if (!pool.length) return;
-    const missing = Math.max(0, safeCount - selected.length);
-    if (!missing) return;
-    const picked = pickPvpRoundQuestionsFromPool(
-      pool,
-      safeDifficulty,
-      missing,
-      [...excludeQuestions, ...selected]
-    );
-    if (picked.length) selected.push(...picked);
-  });
-
-  return selected.slice(0, safeCount);
-}
-
-function extendPvpQuestionSetIfNeeded(matchRow, nextRoundNo) {
-  const targetRoundNo = Math.max(1, Number(nextRoundNo || 1));
-  const currentSet = Array.isArray(matchRow?.question_set)
-    ? matchRow.question_set.filter((row) => row && typeof row === 'object')
-    : [];
-  if (targetRoundNo <= currentSet.length) return currentSet;
-
-  if (hasPvpMatchSequenceMetadata(matchRow)) {
-    const deterministicSet = buildPvpQuestionSetFromMatchSequence(matchRow, targetRoundNo);
-    if (deterministicSet.length >= targetRoundNo) return deterministicSet;
-    if (deterministicSet.length > currentSet.length) return deterministicSet;
-  }
-
-  const difficulty = normalizeDifficulty(matchRow?.difficulty || 'easy');
-  const safeConfig = ensureValidPvpConfig({
-    language: matchRow?.language || '',
-    topic: matchRow?.topic || '',
-    difficulty,
-    area: matchRow?.knowledge_area || resolveKnowledgeAreaByLanguageId(matchRow?.language || '')
-  });
-  const safeArea = String(
-    matchRow?.knowledge_area
-    || resolveKnowledgeAreaByLanguageId(safeConfig.language || matchRow?.language || '')
-    || ''
-  ).trim();
-  const nextSet = [...currentSet];
-  const missingCount = targetRoundNo - nextSet.length;
-
-  for (let index = 0; index < missingCount; index += 1) {
-    const picked = pickPvpRoundQuestionsByConfig(
-      QUESTIONS,
-      {
-        language: safeConfig.language,
-        topic: safeConfig.topic,
-        difficulty,
-        area: safeArea
-      },
-      1,
-      nextSet
-    );
-    if (!picked.length) break;
-    nextSet.push(picked[0]);
-  }
-
-  return nextSet;
-}
-
-const AUDIO_STORAGE_KEY = 'codequiz_audio_settings_v1';
-const AUDIO_DEFAULTS = {
-  musicEnabled: true,
-  musicVolume: 0.58,
-  sfxEnabled: true,
-  sfxVolume: 0.72
-};
-const MUSIC_AUTO_SKIP_INTERVAL_MS = 40 * 1000;
-const MUSIC_SKIP_FADE_OUT_MS = 360;
-const MUSIC_SKIP_FADE_IN_MS = 520;
-const MUSIC_SKIP_SWITCH_DELAY_MS = MUSIC_SKIP_FADE_OUT_MS + 44;
-const VERSION_CHECK_MS = 9000;
-const QUICK_BOOT_CHECKS_MS = [900, 1900, 3400, 5600];
-const COOKIE_CONSENT_STORAGE_KEY = 'codequiz_cookie_consent_v1';
-const COOKIE_CONSENT_COOKIE_KEY = 'codequiz_cookie_consent';
-const COOKIE_CONSENT_MAX_AGE_SECONDS = 60 * 60 * 24 * 365;
-const AUTH_OPERATION_TIMEOUT_MS = 7000;
-const AUTH_POPUP_TIMEOUT_MS = 30000;
-const AUTH_BOOTSTRAP_GUARD_MS = 18000;
-const GOOGLE_AUTH_MODAL_DISABLED_STATE = Object.freeze({ open: false, mode: 'signin' });
-const UI_ACTION_WATCHDOG_MS = 9000;
-const PVP_QUEUE_DISCONNECT_GRACE_MS = 9000;
-const PVP_QUEUE_DISCONNECT_GRACE_MOBILE_MS = 13000;
-const PVP_QUEUE_DISCONNECT_RECOVERY_TIMEOUT_MS = 2600;
-const PRELOAD_RUNTIME_MIN_INTERVAL_MS = 12000;
-const PRELOAD_RUNTIME_CHALLENGE_INTERVAL_MS = 18000;
-const PROGRESS_RECOVERY_RETRY_MS = 6000;
-const PROGRESS_FORCED_RESET_GUARD_MS = 1200;
-const NICKNAME_RULE_COPY = 'Use 3 a 12 caracteres. Letras, números, espaços, . _ ou -.';
-const SETTINGS_SECTION_DEFAULTS = Object.freeze({
-  account: false,
-  audio: false,
-  admin: false
-});
-const ADMIN_PANEL_PASSWORD = 'admin';
-const PVP_EMOJI_STORAGE_PREFIX = 'codequiz_pvp_battle_emojis_v1';
-const PVP_SEQUENCE_CURSOR_STORAGE_PREFIX = 'codequiz_pvp_sequence_cursor_v1';
-const PVP_SEQUENCE_RECENT_STARTS_STORAGE_PREFIX = 'codequiz_pvp_sequence_recent_starts_v1';
-const PVP_SEQUENCE_RECENT_STARTS_MAX = 3;
-const PVP_KNOWLEDGE_AREA_STORAGE_PREFIX = 'codequiz_pvp_knowledge_area_v1';
-const PLAYER_QUIZ_HISTORY_STORAGE_PREFIX = 'codequiz_player_quiz_history_v1';
-const PLAYER_QUIZ_HISTORY_MAX_ENTRIES = 40;
-const SHOP_UI_STATE_STORAGE_PREFIX = 'codequiz_shop_ui_state_v1';
-const HOME_TOUR_STORAGE_PREFIX = 'codequiz_home_tour_seen_v1';
-const LEAGUE_SNAPSHOT_STORAGE_PREFIX = 'codequiz_league_snapshot_v1';
-const LEAGUE_TRANSITION_VISIBLE_MS = 4200;
-const LEAGUE_ORDER = Object.freeze(['bronze', 'silver', 'gold', 'platinum', 'diamond']);
-const PASS_CLAIM_FX_VISIBLE_MS = 2400;
-const PASS_CLAIM_STAGE_FLASH_MS = 1700;
-const THEME_INTRO_PVE_DURATION_MS = 3200;
-const THEME_INTRO_PVP_DURATION_MS = 2800;
-const THEME_INTRO_PVE_SELECTED_HOLD_MS = 1200;
-const THEME_INTRO_PVP_SELECTED_HOLD_MS = 1050;
-const THEME_INTRO_ROULETTE_CHIP_STEP_PX = 84;
-const THEME_INTRO_ROULETTE_CHIP_CENTER_OFFSET_PX = 36;
-const THEME_INTRO_ROULETTE_ITEMS_TOTAL = 27;
-const THEME_INTRO_ROULETTE_TARGET_INDEX = 19;
-const THEME_INTRO_ROULETTE_MIN_ROLL_STEPS = 10;
-const THEME_INTRO_ROULETTE_MAX_ROLL_STEPS = 14;
-const BOT_CONFIG_DEFAULT = {
-  personality: 'provocador',
-  strength: 'forte'
-};
-const SHOP_UI_TABS = ['frame', 'background', 'emoji'];
-const SHOP_OWNERSHIP_FILTERS = ['all', 'owned', 'unowned'];
-const SHOP_CATEGORY_OPEN_DEFAULT = SHOP_RARITY_ORDER.reduce((acc, rarity) => {
-  acc[rarity] = true;
-  return acc;
-}, {});
-
-function getHomeTourStorageKey(userId = '') {
-  const safeUserId = String(userId || '').trim() || 'guest';
-  return `${HOME_TOUR_STORAGE_PREFIX}:${safeUserId}`;
-}
-
-function readHomeTourSeenLocal(userId = '') {
-  if (typeof window === 'undefined') return false;
-  try {
-    return String(window.localStorage.getItem(getHomeTourStorageKey(userId)) || '').trim() === '1';
-  } catch {
-    return false;
-  }
-}
-
-function writeHomeTourSeenLocal(userId = '', seen = true) {
-  if (typeof window === 'undefined') return;
-  try {
-    if (!seen) {
-      window.localStorage.removeItem(getHomeTourStorageKey(userId));
-      return;
-    }
-    window.localStorage.setItem(getHomeTourStorageKey(userId), '1');
-  } catch {
-    // ignore storage failures
-  }
-}
-
-function getPvpSequenceStorageKey(userId = '') {
-  const safeUserId = String(userId || 'guest').trim() || 'guest';
-  return `${PVP_SEQUENCE_CURSOR_STORAGE_PREFIX}_${safeUserId}`;
-}
-
-function getPvpSequenceRecentStartsStorageKey(userId = '') {
-  const safeUserId = String(userId || 'guest').trim() || 'guest';
-  return `${PVP_SEQUENCE_RECENT_STARTS_STORAGE_PREFIX}_${safeUserId}`;
-}
-
-function getPvpKnowledgeAreaStorageKey(userId = '') {
-  const safeUserId = String(userId || 'guest').trim() || 'guest';
-  return `${PVP_KNOWLEDGE_AREA_STORAGE_PREFIX}_${safeUserId}`;
-}
-
-function readPvpKnowledgeAreaLocal(userId = '') {
-  if (typeof window === 'undefined') return '';
-  try {
-    return String(window.localStorage.getItem(getPvpKnowledgeAreaStorageKey(userId)) || '').trim();
-  } catch {
-    return '';
-  }
-}
-
-function writePvpKnowledgeAreaLocal(userId = '', areaId = '') {
-  if (typeof window === 'undefined') return;
-  try {
-    const key = getPvpKnowledgeAreaStorageKey(userId);
-    const safeAreaId = String(areaId || '').trim();
-    if (!safeAreaId) {
-      window.localStorage.removeItem(key);
-      return;
-    }
-    window.localStorage.setItem(key, safeAreaId);
-  } catch {
-    // ignore storage failures
-  }
-}
-
-function normalizeLeagueKey(value = '') {
-  const safe = String(value || '').trim().toLowerCase();
-  return LEAGUE_ORDER.includes(safe) ? safe : 'bronze';
-}
-
-function getLeagueMetaByKey(value = '') {
-  const key = normalizeLeagueKey(value);
-  const lookupPoints = {
-    bronze: 0,
-    silver: 30,
-    gold: 60,
-    platinum: 90,
-    diamond: 110
-  };
-  return getCategoryByPoints(lookupPoints[key] || 0);
-}
-
-function getLeagueRankByKey(value = '') {
-  return LEAGUE_ORDER.indexOf(normalizeLeagueKey(value));
-}
-
-function getLeagueSnapshotStorageKey(userId = '') {
-  const safeUserId = String(userId || 'guest').trim() || 'guest';
-  return `${LEAGUE_SNAPSHOT_STORAGE_PREFIX}_${safeUserId}`;
-}
-
-function normalizeLeagueSnapshot(raw, userId = '') {
-  const safe = raw && typeof raw === 'object' ? raw : {};
-  return {
-    userId: String(safe.userId || safe.user_id || userId || '').trim(),
-    pveKey: normalizeLeagueKey(safe.pveKey || safe.pve_key),
-    pvpKey: normalizeLeagueKey(safe.pvpKey || safe.pvp_key)
-  };
-}
-
-function buildLeagueSnapshot(progressRow = null, userId = '') {
-  const safe = progressRow && typeof progressRow === 'object' ? progressRow : {};
-  const pveLeague = getCategoryByPoints(safe.rankingPoints ?? safe.ranking_points ?? 0);
-  const pvpLeague = getCategoryByPoints(safe.pvpPoints ?? safe.pvp_points ?? 0);
-  return normalizeLeagueSnapshot(
-    {
-      userId,
-      pveKey: pveLeague.key,
-      pvpKey: pvpLeague.key
-    },
-    userId
-  );
-}
-
-function readLeagueSnapshotLocal(userId = '') {
-  if (typeof window === 'undefined') return null;
-  try {
-    const raw = window.localStorage.getItem(getLeagueSnapshotStorageKey(userId));
-    if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    const snapshot = normalizeLeagueSnapshot(parsed, userId);
-    if (!snapshot.userId) return null;
-    return snapshot;
-  } catch {
-    return null;
-  }
-}
-
-function writeLeagueSnapshotLocal(userId = '', snapshot = null) {
-  if (typeof window === 'undefined') return;
-  try {
-    const safeUserId = String(userId || '').trim();
-    if (!safeUserId) return;
-    const normalized = normalizeLeagueSnapshot(snapshot, safeUserId);
-    window.localStorage.setItem(getLeagueSnapshotStorageKey(safeUserId), JSON.stringify(normalized));
-  } catch {
-    // ignore storage failures
-  }
-}
-
-function getPlayerQuizHistoryStorageKey(userId = '') {
-  const safeUserId = String(userId || 'guest').trim() || 'guest';
-  return `${PLAYER_QUIZ_HISTORY_STORAGE_PREFIX}_${safeUserId}`;
-}
-
-function normalizePlayerQuizHistoryEntry(raw) {
-  const safe = raw && typeof raw === 'object' ? raw : {};
-  const timestampMs = Math.max(
-    0,
-    Number(safe.timestampMs || safe.timestamp_ms || Date.parse(safe.createdAt || safe.created_at || '') || 0)
-  );
-  const createdAt = String(
-    safe.createdAt
-    || safe.created_at
-    || (timestampMs > 0 ? new Date(timestampMs).toISOString() : new Date().toISOString())
-  ).trim() || new Date().toISOString();
-  return {
-    id: String(safe.id || `pve_${timestampMs || Date.now()}`).trim() || `pve_${Date.now()}`,
-    type: 'pve',
-    language: String(safe.language || '').trim(),
-    topic: String(safe.topic || '').trim(),
-    difficulty: normalizeDifficulty(safe.difficulty || 'easy'),
-    scorePct: Math.max(0, Math.min(100, Math.trunc(Number(safe.scorePct || safe.score_pct || 0)))),
-    correctCount: Math.max(0, Math.trunc(Number(safe.correctCount || safe.correct_count || 0))),
-    totalQuestions: Math.max(1, Math.trunc(Number(safe.totalQuestions || safe.total_questions || 1))),
-    awardedXp: Math.max(0, Math.trunc(Number(safe.awardedXp || safe.awarded_xp || 0))),
-    awardedCoins: Math.max(0, Math.trunc(Number(safe.awardedCoins || safe.awarded_coins || 0))),
-    rankingGain: Math.max(0, Math.trunc(Number(safe.rankingGain || safe.ranking_gain || 0))),
-    createdAt,
-    timestampMs: timestampMs || Date.parse(createdAt) || Date.now()
-  };
-}
-
-function readPlayerQuizHistoryLocal(userId = '') {
-  if (typeof window === 'undefined') return [];
-  try {
-    const raw = window.localStorage.getItem(getPlayerQuizHistoryStorageKey(userId));
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return [];
-    return parsed
-      .map((entry) => normalizePlayerQuizHistoryEntry(entry))
-      .sort((a, b) => Math.max(0, Number(b.timestampMs || 0)) - Math.max(0, Number(a.timestampMs || 0)))
-      .slice(0, PLAYER_QUIZ_HISTORY_MAX_ENTRIES);
-  } catch {
-    return [];
-  }
-}
-
-function writePlayerQuizHistoryLocal(userId = '', entries = []) {
-  if (typeof window === 'undefined') return;
-  try {
-    const normalized = (Array.isArray(entries) ? entries : [])
-      .map((entry) => normalizePlayerQuizHistoryEntry(entry))
-      .sort((a, b) => Math.max(0, Number(b.timestampMs || 0)) - Math.max(0, Number(a.timestampMs || 0)))
-      .slice(0, PLAYER_QUIZ_HISTORY_MAX_ENTRIES);
-    window.localStorage.setItem(getPlayerQuizHistoryStorageKey(userId), JSON.stringify(normalized));
-  } catch {
-    // ignore storage failures
-  }
-}
-
-function appendPlayerQuizHistoryLocal(userId = '', entry = null) {
-  const normalizedEntry = normalizePlayerQuizHistoryEntry(entry);
-  const current = readPlayerQuizHistoryLocal(userId);
-  const next = [
-    normalizedEntry,
-    ...current.filter((row) => String(row?.id || '').trim() !== normalizedEntry.id)
-  ].slice(0, PLAYER_QUIZ_HISTORY_MAX_ENTRIES);
-  writePlayerQuizHistoryLocal(userId, next);
-  return next;
-}
-
-function buildDefaultShopCategoryState() {
-  return {
-    frame: { ...SHOP_CATEGORY_OPEN_DEFAULT },
-    background: { ...SHOP_CATEGORY_OPEN_DEFAULT },
-    emoji: { ...SHOP_CATEGORY_OPEN_DEFAULT }
-  };
-}
-
-function normalizeShopTab(tabInput = 'frame') {
-  const safeTab = String(tabInput || '').trim();
-  return SHOP_UI_TABS.includes(safeTab) ? safeTab : 'frame';
-}
-
-function normalizeShopOwnershipFilter(value = 'all') {
-  const safeValue = String(value || '').trim().toLowerCase();
-  return SHOP_OWNERSHIP_FILTERS.includes(safeValue) ? safeValue : 'all';
-}
-
-function normalizeShopCategoryOpenState(input) {
-  const source = input && typeof input === 'object' ? input : {};
-  const normalized = buildDefaultShopCategoryState();
-  SHOP_UI_TABS.forEach((tab) => {
-    const sourceTab = source[tab] && typeof source[tab] === 'object' ? source[tab] : {};
-    const nextTabState = {};
-    SHOP_RARITY_ORDER.forEach((rarity) => {
-      nextTabState[rarity] = Object.prototype.hasOwnProperty.call(sourceTab, rarity)
-        ? Boolean(sourceTab[rarity])
-        : true;
-    });
-    normalized[tab] = nextTabState;
-  });
-  return normalized;
-}
-
-function isShopCategoryOpenStateEqual(currentState, nextState) {
-  const safeCurrent = currentState && typeof currentState === 'object' ? currentState : {};
-  const safeNext = nextState && typeof nextState === 'object' ? nextState : {};
-  for (const tab of SHOP_UI_TABS) {
-    for (const rarity of SHOP_RARITY_ORDER) {
-      if (Boolean(safeCurrent?.[tab]?.[rarity]) !== Boolean(safeNext?.[tab]?.[rarity])) {
-        return false;
-      }
-    }
-  }
-  return true;
-}
-
-const KNOWLEDGE_AREAS = [
-  { id: 'programming', name: 'Programação', icon: '💻', color: '#3b82f6', desc: 'Linguagens, lógica e fundamentos da computação.' },
-  { id: 'general_knowledge', name: 'Assuntos Gerais', icon: '🌍', color: '#14b8a6', desc: 'Curiosidades, história, cultura, ciência e temas do cotidiano.' },
-  { id: 'theology', name: 'Teologia', icon: '✝️', color: '#a855f7', desc: 'Estudos bíblicos, história cristã e doutrinas.' },
-];
-
-const LEGACY_LANGUAGE_REDIRECT_BY_TOPIC = {
-  curiosidades_mundo: 'mundo_cultura',
-  geografia_culturas: 'mundo_cultura',
-  historia_geral: 'historia_sociedade',
-  cotidiano_sociedade: 'historia_sociedade',
-  ciencia_espaco: 'ciencia_criatividade',
-  artes_entretenimento: 'ciencia_criatividade'
-};
-
-function normalizeLegacyLanguageId(languageId = '', topicId = '') {
-  const safeLanguageId = String(languageId || '').trim();
-  if (safeLanguageId !== 'assuntos_gerais') return safeLanguageId;
-  const safeTopicId = String(topicId || '').trim();
-  return LEGACY_LANGUAGE_REDIRECT_BY_TOPIC[safeTopicId] || 'mundo_cultura';
-}
-
-function getLegacyGeneralKnowledgeQuizKey(languageId = '', topicId = '', difficulty = 'easy') {
-  const safeLanguageId = String(languageId || '').trim();
-  const safeTopicId = String(topicId || '').trim();
-  if (!safeTopicId) return '';
-  if (!['mundo_cultura', 'historia_sociedade', 'ciencia_criatividade'].includes(safeLanguageId)) return '';
-  if (!LEGACY_LANGUAGE_REDIRECT_BY_TOPIC[safeTopicId]) return '';
-  return getQuizKey('assuntos_gerais', safeTopicId, difficulty);
-}
-
-const LANGUAGE_THEME_GROUPS = [
-  {
-    id: 'foundations',
-    area: 'programming',
-    label: 'Fundamentos e Logica',
-    desc: 'Base de raciocínio, lógica e matemática para programação.',
-    languages: [
-      'zero_to_code',
-      'logic_prog',
-      'fundamentos_programacao',
-      'math'
-    ]
-  },
-  {
-    id: 'computing_core',
-    area: 'programming',
-    label: 'Computação e História',
-    desc: 'Fundamentos de computação, sistemas e evolução da tecnologia.',
-    languages: [
-      'fundamentos_computacao',
-      'historia_computacao'
-    ]
-  },
-  {
-    id: 'web',
-    area: 'programming',
-    label: 'Desenvolvimento Web',
-    desc: 'Trilhas para criar interfaces e apps na web.',
-    languages: ['javascript', 'html_css', 'sql']
-  },
-  {
-    id: 'backend',
-    area: 'programming',
-    label: 'Linguagens de Programação',
-    desc: 'Aprofunde em linguagens usadas no mercado.',
-    languages: ['python', 'java', 'c']
-  },
-  {
-    id: 'general_world',
-    area: 'general_knowledge',
-    label: 'Mundo e Sociedade',
-    desc: 'Curiosidades, geografia, história e vida em sociedade em trilhas mais claras.',
-    languages: ['mundo_cultura', 'historia_sociedade']
-  },
-  {
-    id: 'general_creative',
-    area: 'general_knowledge',
-    label: 'Ciência e Criatividade',
-    desc: 'Descobertas, universo, artes e entretenimento com organização própria.',
-    languages: ['ciencia_criatividade']
-  },
-  {
-    id: 'bible',
-    area: 'theology',
-    label: 'Estudos Biblicos',
-    desc: 'Antigo e Novo Testamento, parabolas e historia sagrada.',
-    languages: ['biblia_at', 'biblia_nt']
-  },
-  {
-    id: 'doctrine_history',
-    area: 'theology',
-    label: 'Doutrinas e Historia',
-    desc: 'Fundamentos da fe crista e a historia da Igreja.',
-    languages: ['doutrinas', 'historia_igreja']
-  }
-];
-
-function getKnowledgeAreaIndex(areaId = '') {
-  const safeAreaId = String(areaId || '').trim();
-  const idx = KNOWLEDGE_AREAS.findIndex((area) => area.id === safeAreaId);
-  return idx >= 0 ? idx : 0;
-}
-
-function getLanguageIdsByKnowledgeArea(areaId = '') {
-  const safeAreaId = String(areaId || '').trim();
-  const unique = new Set();
-  LANGUAGE_THEME_GROUPS.forEach((group) => {
-    if (String(group?.area || '').trim() !== safeAreaId) return;
-    const ids = Array.isArray(group?.languages) ? group.languages : [];
-    ids.forEach((id) => {
-      const safeId = String(id || '').trim();
-      if (safeId) unique.add(safeId);
-    });
-  });
-  return Array.from(unique);
-}
-
-function resolveKnowledgeAreaByLanguageId(languageId = '') {
-  const safeLanguageId = normalizeLegacyLanguageId(languageId);
-  if (!safeLanguageId) return KNOWLEDGE_AREAS[0]?.id || 'programming';
-  const group = LANGUAGE_THEME_GROUPS.find((row) => (
-    Array.isArray(row?.languages) && row.languages.includes(safeLanguageId)
-  ));
-  const resolved = String(group?.area || '').trim();
-  if (KNOWLEDGE_AREAS.some((area) => area.id === resolved)) return resolved;
-  return KNOWLEDGE_AREAS[0]?.id || 'programming';
-}
-
-function getPreferredLanguageByKnowledgeArea(areaId = '', fallbackLanguageId = '') {
-  const areaLanguageIds = getLanguageIdsByKnowledgeArea(areaId);
-  const fallbackId = normalizeLegacyLanguageId(fallbackLanguageId);
-  if (fallbackId && areaLanguageIds.includes(fallbackId)) return fallbackId;
-  return areaLanguageIds[0] || fallbackId || LANGUAGES[0]?.id || '';
-}
-
-const ADMIN_HISTORY_FILTER_OPTIONS = [
-  { id: 'all', label: 'Todos' },
-  { id: 'pvp', label: 'Somente PVP' },
-  { id: 'users', label: 'Partidas de usuários' },
-  { id: 'quiz', label: 'Somente quiz' },
-  { id: 'user_quiz', label: 'Quiz de usuários' }
-];
-
-const QUEUE_DEBUG_LOG_MAX_ENTRIES = 1000;
-const queueDebugLogBuffer = [];
-
-function appendQueueDebugLogLine(line = '') {
-  const safeLine = String(line || '').trim();
-  if (!safeLine) return;
-  queueDebugLogBuffer.push(safeLine);
-  if (queueDebugLogBuffer.length > QUEUE_DEBUG_LOG_MAX_ENTRIES) {
-    queueDebugLogBuffer.splice(0, queueDebugLogBuffer.length - QUEUE_DEBUG_LOG_MAX_ENTRIES);
-  }
-  try {
-    if (typeof window !== 'undefined') {
-      window.__CODEQUIZ_QUEUE_DEBUG_LOGS = [...queueDebugLogBuffer];
-    }
-  } catch {
-    // ignore debug mirror failures
-  }
-}
-
-function withTimeout(promise, timeoutMs, label = 'operation') {
-  const baseTimeoutMs = Math.max(1000, Number(timeoutMs || 0));
-  const isMobile = isLikelyMobileWeb();
-  let timeoutMultiplier = 1;
-  if (isMobile) {
-    if (baseTimeoutMs <= 1200) timeoutMultiplier = 3;
-    else if (baseTimeoutMs <= 2200) timeoutMultiplier = 2.4;
-    else if (baseTimeoutMs <= 5000) timeoutMultiplier = 2;
-    else timeoutMultiplier = 1.5;
-  }
-  const safeTimeoutMs = Math.max(1000, Math.min(45000, Math.round(baseTimeoutMs * timeoutMultiplier)));
-  const safeLabel = String(label || 'operation').trim() || 'operation';
-  let timerId = null;
-  const timeoutPromise = new Promise((_, reject) => {
-    timerId = setTimeout(() => {
-      const timeoutError = new Error(`timeout:${safeLabel}`);
-      timeoutError.code = 'app/timeout';
-      timeoutError.label = safeLabel;
-      timeoutError.timeout_ms = safeTimeoutMs;
-      if (isMobile) {
-        appendQueueDebugLogLine(
-          `[MOBILE_TIMEOUT ${new Date().toISOString()}] ${safeLabel} | timeoutMs=${safeTimeoutMs}`
-        );
-        console.warn('[MOBILE_TIMEOUT]', {
-          label: safeLabel,
-          timeoutMs: safeTimeoutMs
-        });
-      }
-      reject(timeoutError);
-    }, safeTimeoutMs);
-  });
-
-  return Promise.race([Promise.resolve(promise), timeoutPromise]).finally(() => {
-    if (timerId) clearTimeout(timerId);
-  });
-}
-
-function getQueueDisconnectGraceMs() {
-  return isLikelyMobileWeb()
-    ? PVP_QUEUE_DISCONNECT_GRACE_MOBILE_MS
-    : PVP_QUEUE_DISCONNECT_GRACE_MS;
-}
-
-function queueFlowLog(step, meta = {}) {
-  try {
-    const safeStep = String(step || '').trim() || 'unknown_step';
-    const safeMeta = meta && typeof meta === 'object' ? meta : {};
-    const stamp = new Date().toISOString();
-    const STEP_ALIAS = {
-      'join_queue:start': 'join:start',
-      'join_queue:upsert_success': 'join:ok',
-      'join_queue:cancelled_after_upsert': 'join:cancelled',
-      'join_queue:error': 'join:err',
-      'cancel_queue:start': 'cancel:start',
-      'cancel_queue:override_busy': 'cancel:override',
-      'cancel_queue:done': 'cancel:ok',
-      'resume_queue_after_refused:start': 'resume:start',
-      'resume_queue_after_refused:success': 'resume:ok',
-      'resume_queue_after_refused:error': 'resume:err',
-      'attach_match:start': 'attach:start',
-      'attach_match:done': 'attach:ok',
-      'matchmaking_tick:start': 'mm:start',
-      'matchmaking_tick:open_match_found': 'mm:open_match',
-      'matchmaking_tick:open_match_ignored_old_session': 'mm:open_old_session',
-      'matchmaking_tick:open_match_before_min_window': 'mm:open_before_15s',
-      'matchmaking_tick:closed_stale_pending_accept': 'mm:close_stale_pending',
-      'matchmaking_tick:queue_missing_or_not_waiting': 'mm:queue_missing',
-      'matchmaking_tick:no_bot_match_at': 'mm:wait_bot_time',
-      'matchmaking_tick:human_match_created': 'mm:human_created',
-      'matchmaking_tick:no_bot_candidates': 'mm:no_bot',
-      'matchmaking_tick:bot_lock_failed': 'mm:lock_fail',
-      'matchmaking_tick:bot_lock_acquired': 'mm:lock_ok',
-      'matchmaking_tick:context_fetch_start': 'mm:ctx_start',
-      'matchmaking_tick:context_fetch_done': 'mm:ctx_done',
-      'matchmaking_tick:my_open_match_reused': 'mm:reuse_my_match',
-      'matchmaking_tick:bot_open_match_busy': 'mm:bot_busy',
-      'matchmaking_tick:queue_recovered_from_local_snapshot': 'mm:queue_local_ok',
-      'matchmaking_tick:queue_recreated_after_lock': 'mm:queue_recreated',
-      'matchmaking_tick:queue_fetch_missing_after_lock': 'mm:queue_missing_after_lock',
-      'matchmaking_tick:my_queue_not_waiting_after_lock': 'mm:queue_not_waiting',
-      'matchmaking_tick:bot_category_override': 'mm:bot_cat_override',
-      'matchmaking_tick:no_questions_for_bot_match': 'mm:no_questions',
-      'matchmaking_tick:bot_match_create_failed': 'mm:bot_create_fail',
-      'matchmaking_tick:bot_create_blocked_before_min_window': 'mm:bot_blocked_15s',
-      'matchmaking_tick:bot_busy_mark_failed': 'mm:bot_busy_mark_fail',
-      'matchmaking_tick:bot_busy_mark_failed_non_blocking': 'mm:bot_busy_mark_fail',
-      'matchmaking_tick:bot_prepared': 'mm:prepared',
-      'matchmaking_tick:bot_match_created': 'mm:bot_created',
-      'matchmaking_tick:error': 'mm:error',
-      'runtime_preload:start': 'pre:start',
-      'runtime_preload:done': 'pre:ok',
-      'queue_action_busy:watchdog_reset': 'ui:queue_busy_reset',
-      'match_accept_busy:watchdog_reset': 'ui:accept_busy_reset',
-      'queue_connection_watch:recover_match': 'conn:recover_match',
-      'queue_connection_watch:queue_kept': 'conn:queue_kept',
-      'progress_validator:local_cache_missing_remote_available': 'sync:local_missing',
-      'progress_sync:blocked_rollback_guard': 'sync:block',
-      'progress_recovery:restored_remote': 'sync:recover'
-    };
-    const KEY_ALIAS = {
-      userId: 'u',
-      botId: 'b',
-      matchId: 'm',
-      status: 'st',
-      currentStatus: 'cst',
-      queueStatus: 'qst',
-      difficulty: 'dif',
-      elapsedMs: 'ms',
-      queue_elapsed_seconds: 'qsec',
-      sla_in_window_17_5_24s: 'sla',
-      screen: 'scr',
-      message: 'msg'
-    };
-    const pickKeys = [
-      'userId', 'botId', 'matchId', 'status', 'currentStatus', 'queueStatus',
-      'difficulty', 'elapsedMs', 'queue_elapsed_seconds', 'sla_in_window_17_5_24s',
-      'screen', 'message'
-    ];
-    const shortStep = STEP_ALIAS[safeStep] || safeStep;
-    const parts = [];
-    pickKeys.forEach((key) => {
-      if (!(key in safeMeta)) return;
-      const label = KEY_ALIAS[key] || key;
-      const value = safeMeta[key];
-      if (value === null || typeof value === 'undefined') return;
-      let rendered = '';
-      if (typeof value === 'boolean') rendered = value ? '1' : '0';
-      else if (typeof value === 'number') rendered = Number.isFinite(value) ? String(value) : 'nan';
-      else if (typeof value === 'string') rendered = value.length > 28 ? `${value.slice(0, 28)}...` : value;
-      else rendered = '[obj]';
-      if (!rendered) return;
-      parts.push(`${label}=${rendered}`);
-    });
-    const suffix = parts.length ? ` | ${parts.join(' ')}` : '';
-    const line = `[QF ${stamp}] ${shortStep}${suffix}`;
-    appendQueueDebugLogLine(line);
-    console.log(line);
-  } catch {
-    // ignore logging failures
-  }
-}
-
-const MENU_MUSIC_TRACKS = [
-  {
-    id: 'skyline_arcade',
-    name: 'Skyline Arcade',
-    engine: 'menu_balanced',
-    tempoMs: 320,
-    melody: [
-      261.63, 293.66, 329.63, 392.0, 329.63, 293.66, 261.63, null,
-      293.66, 329.63, 369.99, 440.0, 392.0, 329.63, 293.66, null,
-      329.63, 369.99, 415.3, 493.88, 440.0, 392.0, 369.99, null,
-      293.66, 329.63, 349.23, 392.0, 349.23, 329.63, 293.66, null
-    ],
-    bass: [
-      98.0, 98.0, 110.0, 123.47, 92.5, 92.5, 98.0, 110.0
-    ],
-    chords: [146.83, 164.81, 185.0, 220.0, 138.59, 146.83, 164.81, 196.0]
-  },
-  {
-    id: 'ode_to_joy_arcade',
-    name: 'Ode to Joy Arcade',
-    engine: 'menu_balanced',
-    tempoMs: 330,
-    melody: [
-      329.63, 329.63, 349.23, 392.0, 392.0, 349.23, 329.63, 293.66,
-      261.63, 261.63, 293.66, 329.63, 329.63, 293.66, 293.66, null,
-      329.63, 329.63, 349.23, 392.0, 392.0, 349.23, 329.63, 293.66,
-      261.63, 261.63, 293.66, 329.63, 293.66, 261.63, 261.63, null
-    ],
-    bass: [
-      130.81, 130.81, 146.83, 164.81, 174.61, 164.81, 146.83, 130.81
-    ],
-    chords: [196.0, 220.0, 246.94, 261.63, 220.0, 196.0, 174.61, 196.0]
-  },
-  {
-    id: 'greensleeves_reverie',
-    name: 'Greensleeves Reverie',
-    engine: 'menu_balanced',
-    tempoMs: 350,
-    melody: [
-      440.0, 523.25, 587.33, 659.25, 698.46, 659.25, 587.33, 493.88,
-      392.0, 440.0, 493.88, 523.25, 587.33, 493.88, 392.0, 440.0,
-      440.0, 523.25, 587.33, 659.25, 698.46, 659.25, 587.33, 493.88,
-      392.0, 440.0, 493.88, 523.25, 493.88, 440.0, 392.0, null
-    ],
-    bass: [
-      220.0, 196.0, 174.61, 164.81, 146.83, 164.81, 174.61, 196.0
-    ],
-    chords: [329.63, 349.23, 392.0, 440.0, 349.23, 329.63, 293.66, 329.63]
-  },
-  {
-    id: 'alla_turca_arcade',
-    name: 'Alla Turca Arcade',
-    engine: 'menu_balanced',
-    tempoMs: 310,
-    melody: [
-      659.25, 698.46, 783.99, 880.0, 783.99, 698.46, 659.25, 587.33,
-      523.25, 587.33, 659.25, 698.46, 659.25, 587.33, 523.25, null,
-      659.25, 698.46, 783.99, 880.0, 987.77, 880.0, 783.99, 698.46,
-      659.25, 783.99, 880.0, 987.77, 880.0, 783.99, 698.46, null
-    ],
-    bass: [
-      164.81, 164.81, 174.61, 196.0, 220.0, 196.0, 174.61, 164.81
-    ],
-    chords: [246.94, 261.63, 293.66, 329.63, 349.23, 329.63, 293.66, 261.63]
-  },
-  {
-    id: 'blue_danube_lounge',
-    name: 'Blue Danube Lounge',
-    engine: 'menu_balanced',
-    tempoMs: 338,
-    melody: [
-      392.0, 493.88, 587.33, 698.46, 587.33, 493.88, 392.0, null,
-      440.0, 523.25, 659.25, 783.99, 659.25, 523.25, 440.0, null,
-      493.88, 587.33, 698.46, 880.0, 698.46, 587.33, 493.88, null,
-      440.0, 523.25, 659.25, 783.99, 698.46, 587.33, 523.25, null
-    ],
-    bass: [
-      130.81, 146.83, 164.81, 174.61, 196.0, 174.61, 164.81, 146.83
-    ],
-    chords: [196.0, 220.0, 246.94, 293.66, 261.63, 246.94, 220.0, 196.0]
-  },
-  {
-    id: 'menuet_grid_drive',
-    name: 'Menuet Grid Drive',
-    engine: 'menu_balanced',
-    tempoMs: 326,
-    melody: [
-      493.88, 554.37, 587.33, 493.88, 440.0, 392.0, 369.99, 440.0,
-      493.88, 554.37, 587.33, 659.25, 622.25, 587.33, 554.37, 493.88,
-      440.0, 493.88, 554.37, 440.0, 369.99, 329.63, 293.66, 369.99,
-      440.0, 493.88, 554.37, 587.33, 554.37, 493.88, 440.0, null
-    ],
-    bass: [
-      123.47, 92.5, 110.0, 123.47, 92.5, 98.0, 110.0, 123.47
-    ],
-    chords: [246.94, 277.18, 293.66, 329.63, 311.13, 293.66, 277.18, 246.94]
-  },
-  {
-    id: 'kalinka_sunset_run',
-    name: 'Kalinka Sunset Run',
-    engine: 'menu_balanced',
-    tempoMs: 334,
-    melody: [
-      440.0, 440.0, 493.88, 523.25, 493.88, 440.0, 392.0, 329.63,
-      440.0, 440.0, 493.88, 523.25, 587.33, 523.25, 493.88, 440.0,
-      392.0, 392.0, 440.0, 493.88, 440.0, 392.0, 349.23, 329.63,
-      392.0, 440.0, 493.88, 523.25, 493.88, 440.0, 392.0, null
-    ],
-    bass: [
-      146.83, 146.83, 164.81, 174.61, 196.0, 174.61, 164.81, 146.83
-    ],
-    chords: [220.0, 246.94, 261.63, 293.66, 329.63, 293.66, 261.63, 220.0]
-  },
-  {
-    id: 'fur_elise_neon',
-    name: 'Fur Elise Neon',
-    engine: 'menu_balanced',
-    tempoMs: 324,
-    melody: [
-      659.25, 622.25, 659.25, 622.25, 659.25, 493.88, 587.33, 523.25,
-      440.0, null, 261.63, 329.63, 440.0, 493.88, null, 329.63,
-      659.25, 622.25, 659.25, 622.25, 659.25, 493.88, 587.33, 523.25,
-      440.0, null, 523.25, 587.33, 659.25, 587.33, 523.25, 493.88
-    ],
-    bass: [
-      110.0, 82.41, 110.0, 82.41, 98.0, 82.41, 98.0, 110.0
-    ],
-    chords: [220.0, 261.63, 329.63, 293.66, 246.94, 220.0, 246.94, 261.63]
-  },
-  {
-    id: 'canon_d_lights',
-    name: 'Canon D Lights',
-    engine: 'menu_balanced',
-    tempoMs: 336,
-    melody: [
-      369.99, 329.63, 293.66, 277.18, 246.94, 220.0, 246.94, 277.18,
-      293.66, 329.63, 369.99, 440.0, 369.99, 329.63, 293.66, 277.18,
-      246.94, 220.0, 246.94, 277.18, 293.66, 329.63, 349.23, 369.99,
-      392.0, 440.0, 493.88, 440.0, 392.0, 369.99, 329.63, null
-    ],
-    bass: [
-      146.83, 110.0, 123.47, 92.5, 98.0, 73.42, 98.0, 110.0
-    ],
-    chords: [220.0, 246.94, 261.63, 233.08, 196.0, 220.0, 246.94, 293.66]
-  }
-];
-
-const BATTLE_MUSIC_TRACKS = [
-  {
-    id: 'assault_convoy',
-    name: 'Assault Convoy',
-    engine: 'battle_chase',
-    tempoMs: 220,
-    melody: [
-      293.66, 329.63, 349.23, 392.0, 349.23, 329.63, 293.66, 261.63,
-      293.66, 329.63, 349.23, 440.0, 392.0, 349.23, 329.63, 293.66
-    ],
-    bass: [
-      82.41, 82.41, 82.41, 98.0, 82.41, 82.41, 73.42, 73.42
-    ],
-    kick: [52, null, 52, null, 58, null, 52, null]
-  },
-  {
-    id: 'infernal_cancan_rush',
-    name: 'Infernal Can-Can Rush',
-    engine: 'battle_chase',
-    tempoMs: 198,
-    melody: [
-      392.0, 329.63, 329.63, 349.23, 293.66, 293.66, 261.63, 293.66,
-      329.63, 349.23, 392.0, 440.0, 392.0, 349.23, 329.63, 293.66,
-      261.63, 329.63, 392.0, 440.0, 392.0, 329.63, 261.63, 293.66,
-      329.63, 349.23, 392.0, 349.23, 329.63, 293.66, 261.63, null
-    ],
-    bass: [
-      98.0, 98.0, 110.0, 123.47, 130.81, 123.47, 110.0, 98.0
-    ],
-    kick: [60, null, 60, null, 64, null, 60, null]
-  },
-  {
-    id: 'mountain_king_charge',
-    name: 'Mountain King Charge',
-    engine: 'battle_assault',
-    tempoMs: 186,
-    melody: [
-      220.0, 246.94, 261.63, 293.66, 329.63, 261.63, 329.63, 261.63,
-      220.0, 246.94, 261.63, 293.66, 329.63, 349.23, 392.0, 440.0,
-      440.0, 392.0, 349.23, 329.63, 293.66, 261.63, 246.94, 220.0,
-      220.0, 246.94, 261.63, 293.66, 329.63, 349.23, 392.0, 440.0
-    ],
-    bass: [
-      110.0, 110.0, 123.47, 130.81, 146.83, 130.81, 123.47, 110.0
-    ],
-    kick: [52, null, 52, null, 57, null, 62, null]
-  },
-  {
-    id: 'william_tell_overdrive',
-    name: 'William Tell Overdrive',
-    engine: 'battle_chase',
-    tempoMs: 196,
-    melody: [
-      392.0, 493.88, 587.33, 659.25, 587.33, 493.88, 392.0, 493.88,
-      587.33, 659.25, 783.99, 659.25, 587.33, 493.88, 440.0, 392.0,
-      493.88, 587.33, 659.25, 783.99, 880.0, 783.99, 659.25, 587.33,
-      493.88, 440.0, 392.0, 440.0, 493.88, 587.33, 659.25, null
-    ],
-    bass: [
-      98.0, 98.0, 110.0, 123.47, 130.81, 123.47, 110.0, 98.0
-    ],
-    kick: [58, null, 58, null, 64, null, 58, null]
-  },
-  {
-    id: 'bumblebee_barrage',
-    name: 'Bumblebee Barrage',
-    engine: 'battle_assault',
-    tempoMs: 182,
-    melody: [
-      659.25, 698.46, 739.99, 783.99, 830.61, 880.0, 932.33, 987.77,
-      1046.5, 987.77, 932.33, 880.0, 830.61, 783.99, 739.99, 698.46,
-      659.25, 622.25, 587.33, 554.37, 523.25, 554.37, 587.33, 622.25,
-      659.25, 698.46, 739.99, 783.99, 830.61, 880.0, 932.33, null
-    ],
-    bass: [
-      123.47, 123.47, 130.81, 146.83, 164.81, 146.83, 130.81, 123.47
-    ],
-    kick: [62, null, 62, null, 67, null, 62, null]
-  },
-  {
-    id: 'korobeiniki_overclock',
-    name: 'Korobeiniki Overclock',
-    engine: 'battle_chase',
-    tempoMs: 188,
-    melody: [
-      659.25, 493.88, 523.25, 587.33, 523.25, 493.88, 440.0, 440.0,
-      523.25, 659.25, 587.33, 523.25, 493.88, 523.25, 587.33, 659.25,
-      523.25, 440.0, 440.0, null, 587.33, 698.46, 880.0, 783.99,
-      698.46, 659.25, 523.25, 659.25, 587.33, 523.25, 493.88, null
-    ],
-    bass: [
-      98.0, 98.0, 110.0, 123.47, 130.81, 123.47, 110.0, 98.0
-    ],
-    kick: [58, null, 58, null, 64, null, 58, null]
-  },
-  {
-    id: 'sugar_plum_blitz',
-    name: 'Sugar Plum Blitz',
-    engine: 'battle_assault',
-    tempoMs: 184,
-    melody: [
-      523.25, 587.33, 523.25, 440.0, 466.16, 523.25, 466.16, 392.0,
-      440.0, 523.25, 440.0, 349.23, 392.0, 440.0, 392.0, 329.63,
-      523.25, 587.33, 523.25, 440.0, 466.16, 523.25, 466.16, 392.0,
-      440.0, 523.25, 587.33, 659.25, 587.33, 523.25, 440.0, null
-    ],
-    bass: [
-      87.31, 87.31, 98.0, 110.0, 123.47, 110.0, 98.0, 87.31
-    ],
-    kick: [56, null, 56, null, 61, null, 56, null]
-  },
-  {
-    id: 'valkyrie_stormfront',
-    name: 'Valkyrie Stormfront',
-    engine: 'battle_assault',
-    tempoMs: 190,
-    melody: [
-      493.88, 587.33, 739.99, 880.0, 739.99, 587.33, 493.88, 587.33,
-      739.99, 880.0, 987.77, 880.0, 739.99, 587.33, 493.88, 440.0,
-      493.88, 587.33, 739.99, 880.0, 739.99, 587.33, 493.88, 587.33,
-      659.25, 739.99, 880.0, 987.77, 880.0, 739.99, 659.25, 587.33
-    ],
-    bass: [
-      98.0, 98.0, 110.0, 123.47, 130.81, 123.47, 110.0, 98.0
-    ],
-    kick: [60, null, 60, null, 66, null, 60, null]
-  },
-  {
-    id: 'hungarian_dance_overheat',
-    name: 'Hungarian Dance Overheat',
-    engine: 'battle_chase',
-    tempoMs: 194,
-    melody: [
-      369.99, 440.0, 554.37, 493.88, 440.0, 369.99, 329.63, 369.99,
-      440.0, 493.88, 554.37, 659.25, 554.37, 493.88, 440.0, 369.99,
-      329.63, 369.99, 440.0, 493.88, 440.0, 369.99, 329.63, 293.66,
-      369.99, 440.0, 493.88, 554.37, 493.88, 440.0, 369.99, null
-    ],
-    bass: [
-      92.5, 92.5, 110.0, 123.47, 130.81, 123.47, 110.0, 92.5
-    ],
-    kick: [58, null, 58, null, 64, null, 58, null]
-  }
-];
-
-function normalizeAudioSettings(raw) {
-  const next = raw && typeof raw === 'object' ? raw : {};
-  return {
-    musicEnabled: next.musicEnabled !== false,
-    musicVolume: Math.max(0, Math.min(1, Number(next.musicVolume ?? AUDIO_DEFAULTS.musicVolume))),
-    sfxEnabled: next.sfxEnabled !== false,
-    sfxVolume: Math.max(0, Math.min(1, Number(next.sfxVolume ?? AUDIO_DEFAULTS.sfxVolume)))
-  };
-}
-
-function hasMeaningfulProgress(rawProgress) {
-  const progress = normalizeProgress(rawProgress);
-  const defaultCoins = Math.max(0, Number(defaultProgress().coins || 0));
-  if (Math.max(0, Number(getProgressTotalXp(progress) || 0)) > 0) return true;
-  if (Math.max(0, Number(progress.bestStreak || 0)) > 0) return true;
-  if (Math.max(0, Number(progress.totalCorrect || 0)) > 0) return true;
-  if (Math.max(0, Number(progress.totalAnswered || 0)) > 0) return true;
-  if (Math.max(0, Number(progress.quizzes || 0)) > 0) return true;
-  if (Math.max(0, Number(progress.rankingPoints || 0)) > 0) return true;
-  if (Math.max(0, Number(progress.pvpPoints || 0)) > 0) return true;
-  if (Math.max(0, Number(progress.pvpBattles || 0)) > 0) return true;
-  if (Object.keys(progress.topicProgress || {}).length > 0) return true;
-  if (Object.keys(progress.quizBestScores || {}).length > 0) return true;
-  if (Object.keys(progress.quizBestStars || {}).length > 0) return true;
-  if (Object.keys(progress.quizRewarded || {}).length > 0) return true;
-  if (Array.isArray(progress.achievements) && progress.achievements.length > 0) return true;
-  if (Math.max(0, Number(progress.coins || 0)) !== defaultCoins) return true;
-  return false;
-}
-
-function buildProgressSnapshot(rawProgress) {
-  const progress = normalizeProgress(rawProgress);
-  const meaningful = hasMeaningfulProgress(progress);
-  const totalXp = Math.max(0, Number(getProgressTotalXp(progress) || 0));
-  const updatedAtMs = Math.max(0, Number(progress.updatedAt || 0));
-  const defaultCoins = Math.max(0, Number(defaultProgress().coins || 0));
-  const coinsSignal = Math.abs(
-    Math.max(0, Number(progress.coins || 0)) - defaultCoins
-  );
-  const signalScore = (
-    totalXp
-    + Math.max(0, Number(progress.pvpPoints || 0)) * 20
-    + Math.max(0, Number(progress.pvpBattles || 0)) * 10
-    + Math.max(0, Number(progress.rankingPoints || 0))
-    + Math.max(0, Number(progress.totalCorrect || 0))
-    + coinsSignal
-  );
-  return {
-    meaningful,
-    totalXp,
-    updatedAtMs,
-    signalScore
-  };
-}
-
-function buildStatsFromLegacyProgress(rawProgress, fallbackCoins = 0) {
-  const progress = normalizeProgress(rawProgress);
-  const pvpBattles = Math.max(0, Math.trunc(Number(progress.pvpBattles || 0)));
-  const pvpWins = Math.min(pvpBattles, Math.max(0, Math.trunc(Number(progress.pvpWins || 0))));
-
-  return {
-    total_xp: Math.max(0, Math.trunc(Number(getProgressTotalXp(progress) || 0))),
-    level: Math.max(1, Math.trunc(Number(progress.level || 1))),
-    ranking_points: Math.max(0, Math.trunc(Number(progress.rankingPoints || 0))),
-    pvp_points: Math.max(0, Math.trunc(Number(progress.pvpPoints || 0))),
-    coins: Math.max(0, Math.trunc(Number(fallbackCoins || 0))),
-    pvp_battles: pvpBattles,
-    pvp_wins: pvpWins,
-    pvp_losses: Math.max(0, pvpBattles - pvpWins),
-    best_streak: Math.max(0, Math.trunc(Number(progress.bestStreak || 0))),
-    total_correct: Math.max(0, Math.trunc(Number(progress.totalCorrect || 0))),
-    total_answered: Math.max(0, Math.trunc(Number(progress.totalAnswered || 0))),
-    quizzes_completed: Math.max(0, Math.trunc(Number(progress.quizzes || 0))),
-    topic_progress: progress.topicProgress && typeof progress.topicProgress === 'object'
-      ? progress.topicProgress
-      : {},
-    quiz_best_scores: progress.quizBestScores && typeof progress.quizBestScores === 'object'
-      ? progress.quizBestScores
-      : {},
-    quiz_best_stars: progress.quizBestStars && typeof progress.quizBestStars === 'object'
-      ? progress.quizBestStars
-      : {},
-    achievement_ids: Array.isArray(progress.achievements) ? progress.achievements : [],
-    quiz_rewarded: progress.quizRewarded && typeof progress.quizRewarded === 'object'
-      ? progress.quizRewarded
-      : {},
-    pvp_processed_matches: progress.pvpProcessedMatches && typeof progress.pvpProcessedMatches === 'object'
-      ? progress.pvpProcessedMatches
-      : {},
-    progress_updated_at_ms: Math.max(0, Number(progress.updatedAt || 0))
-  };
-}
+import { getQuizKey, getXPForLevel, normalizeDifficulty } from './lib/utils';
+import {
+  ADMIN_PANEL_PASSWORD,
+  AUDIO_DEFAULTS,
+  AUDIO_STORAGE_KEY,
+  AUTH_BOOTSTRAP_GUARD_MS,
+  AUTH_OPERATION_TIMEOUT_MS,
+  AUTH_POPUP_TIMEOUT_MS,
+  BATTLE_MUSIC_TRACKS,
+  BOT_CONFIG_DEFAULT,
+  COOKIE_CONSENT_COOKIE_KEY,
+  COOKIE_CONSENT_MAX_AGE_SECONDS,
+  COOKIE_CONSENT_STORAGE_KEY,
+  DATA_SUBSCRIBE_MAX_RETRIES,
+  DATA_SUBSCRIBE_RETRY_DELAY_MS,
+  DATA_SUBSCRIBE_RETRY_TIMEOUT_MS,
+  DEFAULT_BATTLE_EMOJIS,
+  ENABLE_CLIENT_BOT_AUTOMATION,
+  GOOGLE_AUTH_MODAL_DISABLED_STATE,
+  KNOWLEDGE_AREAS,
+  LANGUAGE_THEME_GROUPS,
+  LAST_CONFIRMED_BUILD_SHA_STORAGE_KEY,
+  LEAGUE_TRANSITION_VISIBLE_MS,
+  MENU_MUSIC_TRACKS,
+  MOBILE_SW_CLEANUP_STORAGE_KEY,
+  MUSIC_AUTO_SKIP_INTERVAL_MS,
+  MUSIC_SKIP_FADE_IN_MS,
+  MUSIC_SKIP_FADE_OUT_MS,
+  MUSIC_SKIP_SWITCH_DELAY_MS,
+  NICKNAME_RULE_COPY,
+  PASS_CLAIM_FX_VISIBLE_MS,
+  PASS_CLAIM_STAGE_FLASH_MS,
+  PRELOAD_RUNTIME_CHALLENGE_INTERVAL_MS,
+  PRELOAD_RUNTIME_MIN_INTERVAL_MS,
+  PROGRESS_FORCED_RESET_GUARD_MS,
+  PROGRESS_RECOVERY_RETRY_MS,
+  PVP_BOT_DECISION_DELAY_MAX_MS,
+  PVP_BOT_DECISION_DELAY_MIN_MS,
+  PVP_BOT_DECISION_POST_TRANSITION_BUFFER_MS,
+  PVP_ELIMINATION_ACCEPT_START_DELAY_MS,
+  PVP_ELIMINATION_ACCEPT_TIMEOUT_MS,
+  PVP_ELIMINATION_BATTLE_INTRO_MS,
+  PVP_ELIMINATION_MAX_TOTAL_BATTLES,
+  PVP_ELIMINATION_QUEUE_BOT_FILL_MIN_ELAPSED_MS,
+  PVP_ELIMINATION_QUEUE_BOT_FILL_RETRY_MS,
+  PVP_ELIMINATION_QUEUE_BOT_REFUSAL_CHANCE,
+  PVP_ELIMINATION_QUEUE_RETRY_MS,
+  PVP_ELIMINATION_REJECT_RESOLVE_DELAY_MS,
+  PVP_ELIMINATION_ROOM_CAPACITY,
+  PVP_ELIMINATION_ROUNDS_PER_CYCLE,
+  PVP_EMOJI_PICKER_OPTIONS,
+  PVP_EMOJI_SPAM_BURST_LIMIT,
+  PVP_EMOJI_SPAM_COOLDOWN_MS,
+  PVP_EMOJI_SPAM_WINDOW_MS,
+  PVP_EMOJI_STORAGE_PREFIX,
+  PVP_MATCH_ACCEPT_TIMEOUT_MS,
+  PVP_MATCH_FOUND_TRANSITION_MS,
+  PVP_MATCH_REJECT_RESOLVE_DELAY_MS,
+  PVP_MATCH_START_DELAY_MS,
+  PVP_MODE_DUEL,
+  PVP_MODE_ELIMINATION,
+  PVP_MODE_TEAM_BATTLE,
+  PVP_QUEUE_BOT_FIRST_DELAY_MAX_SECONDS,
+  PVP_QUEUE_BOT_FIRST_DELAY_MIN_SECONDS,
+  PVP_QUEUE_BOT_FIRST_THRESHOLD_MS,
+  PVP_QUEUE_BOT_HARD_DEADLINE_MS,
+  PVP_QUEUE_BOT_NEAR_DUE_PRIORITIZE_MS,
+  PVP_QUEUE_BOT_REFUSAL_DELAY_MAX_SECONDS,
+  PVP_QUEUE_BOT_REFUSAL_DELAY_MIN_SECONDS,
+  PVP_QUEUE_DISCONNECT_RECOVERY_TIMEOUT_MS,
+  PVP_QUEUE_RESUME_MODE_REFUSAL,
+  PVP_ROUND_EXTRA_ANSWER_MS,
+  PVP_ROUND_RESULT_DURATION_MS,
+  PVP_SEQUENCE_RECENT_STARTS_MAX,
+  PVP_TEAM_BATTLE_TOTAL_ROUNDS,
+  QUICK_BOOT_CHECKS_MS,
+  SETTINGS_SECTION_DEFAULTS,
+  SHOP_CATEGORY_OPEN_DEFAULT,
+  SHOP_UI_STATE_STORAGE_PREFIX,
+  THEME_INTRO_PVE_DURATION_MS,
+  THEME_INTRO_PVE_SELECTED_HOLD_MS,
+  THEME_INTRO_PVP_DURATION_MS,
+  THEME_INTRO_PVP_SELECTED_HOLD_MS,
+  THEME_INTRO_ROULETTE_CHIP_CENTER_OFFSET_PX,
+  UI_ACTION_WATCHDOG_MS,
+  VERSION_CHECK_MS,
+  appendPlayerQuizHistoryLocal,
+  appendQueueDebugLogLine,
+  applyEmojiToDraft,
+  buildDefaultShopCategoryState,
+  buildFallbackPvpConfig,
+  buildLeagueSnapshot,
+  buildProgressSnapshot,
+  buildPveQuestionReviewEntry,
+  buildPveRoundReviewList,
+  buildPvpEliminationCycleRounds,
+  buildPvpEliminationCycleScoreMap,
+  buildPvpEliminationMatchId,
+  buildPvpEliminationRoomId,
+  buildPvpEliminationRoomStartBlockedNotice,
+  buildPvpTeamBattleSchedule,
+  buildPvpTeamMatchId,
+  buildPvpTeamRoomId,
+  buildPvpTeamRoomStartBlockedNotice,
+  buildQueueSessionId,
+  buildRewardParticleBurst,
+  buildShopFallbackFromProfile,
+  buildStatsFromLegacyProgress,
+  buildThemeContextKey,
+  buildThemeIntroRoulette,
+  computeQueueBotMatchAtMs,
+  doesAdminHistoryRowMatchFilter,
+  ensureValidPvpConfig,
+  extendPvpQuestionSetIfNeeded,
+  formatBuildBadgeValue,
+  formatSettingsUpdatedAtValue,
+  formatSignedPoints,
+  getAdminMatchStartMs,
+  getBackgroundVisualMeta,
+  getBotAnswerDelayMs,
+  getBotDefaultStrengthById,
+  getBotEmojiPool,
+  getBotStrengthFromMatchRow,
+  getDidacticExplainText,
+  getEvolutionPassPreferredStage,
+  getInvalidFinishedMatchReason,
+  getKnowledgeAreaIndex,
+  getLanguageNameById,
+  getLeagueMetaByKey,
+  getLeagueRankByKey,
+  getLegacyGeneralKnowledgeQuizKey,
+  getMatchBotUserId,
+  getMatchHumanUserId,
+  getMatchPlayerAcceptState,
+  getMatchRefusalQueueFlow,
+  getMatchRefusalQueueStatusText,
+  getMissingEmojiSlotIndexes,
+  getNextEmptyEmojiSlot,
+  getPendingAcceptAutoCloseReason,
+  getPreferredLanguageByKnowledgeArea,
+  getPveRoundSeconds,
+  getPvpAnswerTargetRoundNo,
+  getPvpDifficultyFromPoints,
+  getPvpEliminationActiveMemberIds,
+  getPvpEliminationActivePair,
+  getPvpEliminationMemberById,
+  getPvpEliminationMembers,
+  getPvpEliminationNextPlayablePair,
+  getPvpEliminationPairFromRounds,
+  getPvpEliminationPlacementForUser,
+  getPvpEliminationPlacementLabel,
+  getPvpEliminationResultKeyByPlacement,
+  getPvpEliminationRewardScaleByPlacement,
+  getPvpEliminationRoomAcceptBotDecisionAtMap,
+  getPvpEliminationRoomAcceptBotWillRejectMap,
+  getPvpEliminationRoomAcceptState,
+  getPvpEliminationRoomAcceptStateMap,
+  getPvpEliminationRoomHostUserId,
+  getPvpEliminationRoomLaunchCheck,
+  getPvpEliminationRoundEntry,
+  getPvpEliminationRoundLabel,
+  getPvpQueueDifficultyFromConfig,
+  getPvpQueueDifficultyFromStats,
+  getPvpRewardsByDifficulty,
+  getPvpRoundAnswerFeedback,
+  getPvpRoundAnswersForRound,
+  getPvpSequenceCursorMapKey,
+  getPvpSequenceRecentStartsStorageKey,
+  getPvpSequenceStorageKey,
+  getPvpTeamActivePairMembers,
+  getPvpTeamBattleDisplayLabel,
+  getPvpTeamBattleEntry,
+  getPvpTeamCurrentBattleAnswers,
+  getPvpTeamMatchBattleNo,
+  getPvpTeamMembersBySide,
+  getPvpTeamOpponentSide,
+  getPvpTeamResultForUser,
+  getPvpTeamRoomHostUserId,
+  getPvpTeamRoomLaunchCheck,
+  getPvpTeamRoomReadyMemberIds,
+  getPvpTeamSideColorLabel,
+  getPvpTeamUserSide,
+  getQueueDisconnectGraceMs,
+  getTopicEmojiById,
+  getTopicEmojiPool,
+  getTopicNameById,
+  hasMeaningfulProgress,
+  hashPvpTeamRoomPassword,
+  isAdminLiveMatchRow,
+  isInvalidFinishedMatch,
+  isLikelyMobileWeb,
+  isPvpTeamRoomMemberReady,
+  isQueueEntryFreshWaiting,
+  isShopCategoryOpenStateEqual,
+  normalizeAudioSettings,
+  normalizeBattleEmojis,
+  normalizeBotPersonality,
+  normalizeBotStrength,
+  normalizeEmojiDraftSlots,
+  normalizeLegacyLanguageId,
+  normalizePvpEliminationAcceptState,
+  normalizePvpSequenceCursorEntry,
+  normalizePvpSequenceCursorState,
+  normalizePvpSequenceRecentStartsState,
+  normalizePvpTeamRoomName,
+  normalizePvpTeamRoomNameForCompare,
+  normalizePvpTeamSide,
+  normalizeQuestionForSequence,
+  normalizeShopCategoryOpenState,
+  normalizeShopOwnershipFilter,
+  normalizeShopTab,
+  nowIso,
+  pickBotAnswerIndex,
+  pickPveRoundQuestionsByTopicSequence,
+  pickPvpQuestionSetBySequence,
+  queueFlowLog,
+  readHomeTourSeenLocal,
+  readLeagueSnapshotLocal,
+  readPlayerQuizHistoryLocal,
+  readPvpKnowledgeAreaLocal,
+  removeEmojiFromDraftByIndex,
+  resolveKnowledgeAreaByLanguageId,
+  resolveMatchQueueJoinedAtMs,
+  resolveQuestionThemeContext,
+  shouldResumeQueueAfterMatchRefused,
+  toAdminDayKey,
+  toMillis,
+  withTimeout,
+  writeHomeTourSeenLocal,
+  writeLeagueSnapshotLocal,
+  writePvpKnowledgeAreaLocal
+} from './app/helpers';
+import HomeScreen from './screens/HomeScreen';
+import PlayModeScreen from './screens/PlayModeScreen';
+import KnowledgeAreaScreen from './screens/KnowledgeAreaScreen';
+import TrackSelectScreen from './screens/TrackSelectScreen';
+import TopicScreen from './screens/TopicScreen';
+import DifficultyScreen from './screens/DifficultyScreen';
+import QuizScreen from './screens/QuizScreen';
+import FeedbackScreen from './screens/FeedbackScreen';
+import ResultScreen from './screens/ResultScreen';
+import PassScreen from './screens/PassScreen';
+import RankingsScreen from './screens/RankingsScreen';
+import AdminMonitorScreen from './screens/AdminMonitorScreen';
+import AdminLiveScreen from './screens/AdminLiveScreen';
+import AdminHistoryScreen from './screens/AdminHistoryScreen';
+import LoginScreen from './screens/LoginScreen';
+import NicknameSetupScreen from './screens/NicknameSetupScreen';
+import SettingsScreen from './screens/SettingsScreen';
+import ShopScreen from './screens/ShopScreen';
+import PvpLobbyScreen from './screens/PvpLobbyScreen';
+import PvpDuelScreen from './screens/PvpDuelScreen';
+import PvpTeamScreen from './screens/PvpTeamScreen';
+import PvpEliminationScreen from './screens/PvpEliminationScreen';
+import PvpEliminationResultScreen from './screens/PvpEliminationResultScreen';
+import PvpTeamResultScreen from './screens/PvpTeamResultScreen';
+import PvpResultScreen from './screens/PvpResultScreen';
+import TeamRoomCreateModal from './overlays/TeamRoomCreateModal';
+import TeamJoinPromptModal from './overlays/TeamJoinPromptModal';
+import TeamRoomNoticeModal from './overlays/TeamRoomNoticeModal';
+import EliminationRoomNoticeModal from './overlays/EliminationRoomNoticeModal';
+import EliminationExitPromptModal from './overlays/EliminationExitPromptModal';
+import HeroMenuPopover from './overlays/HeroMenuPopover';
+import ShopItemPreviewModal from './overlays/ShopItemPreviewModal';
+import PlayerHistoryModal from './overlays/PlayerHistoryModal';
+import PassDetailModal from './overlays/PassDetailModal';
+import AdminAuthModal from './overlays/AdminAuthModal';
+import UpdateNoticeBar from './overlays/UpdateNoticeBar';
+import CookieConsentBanner from './overlays/CookieConsentBanner';
+import HomeTourOverlay from './overlays/HomeTourOverlay';
+import GoogleAuthModal from './overlays/GoogleAuthModal';
+import SignOutConfirmModal from './overlays/SignOutConfirmModal';
+import LeagueTransitionOverlay from './overlays/LeagueTransitionOverlay';
+import AuthTransitionOverlay from './overlays/AuthTransitionOverlay';
+import ThemeIntroOverlay from './overlays/ThemeIntroOverlay';
+import QuizMenuModal from './overlays/QuizMenuModal';
+import PvpEmojiPickerModal from './overlays/PvpEmojiPickerModal';
+import RewardCollectModal from './overlays/RewardCollectModal';
+import PvpOpponentLeftOverlay from './overlays/PvpOpponentLeftOverlay';
+import PvpCompensationModal from './overlays/PvpCompensationModal';
+import PassClaimFx from './overlays/PassClaimFx';
+import RewardParticles from './overlays/RewardParticles';
+import MusicPlayer from './overlays/MusicPlayer';
 
 export default function CodeQuizApp() {
   const [screen, setScreen] = useState('login');
@@ -18905,4318 +15158,786 @@ export default function CodeQuizApp() {
   return (
     <>
       <div id="app" className={appRootClassName}>
-        <div className={homeScreenClassName}>
-          {showHomeProfileHero ? (
-            <div
-              className={[
-                'user-profile-hero',
-                playerHeroMenuOpen ? 'menu-open' : '',
-                heroBackgroundMeta.className
-              ].filter(Boolean).join(' ')}
-              data-tour-anchor="home-hero"
-              data-bg-id={heroBackgroundMeta.id}
-              data-bg-rarity={heroBackgroundMeta.rarity}
-              style={{ background: heroBackground }}
-            >
-              <div className="hero-bg-glow" />
-              <div className="hero-menu-shell hero-menu-shell-legacy" aria-hidden="true">
-                <button
-                  type="button"
-                  className={`hero-menu-btn ${playerHeroMenuOpen ? 'active' : ''}`}
-                  onClick={togglePlayerHeroMenu}
-                  aria-label="Abrir menu do perfil"
-                  aria-haspopup="menu"
-                  aria-expanded={playerHeroMenuOpen}
-                >
-                  <span />
-                  <span />
-                  <span />
-                </button>
-                {playerHeroMenuOpen ? (
-                  <div className="hero-menu-popover" role="menu" aria-label="Menu do perfil">
-                    <button type="button" className="hero-menu-item" onClick={openPlayerHistoryPanel}>
-                      <span className="hero-menu-item-icon" aria-hidden="true">🕘</span>
-                      <span className="hero-menu-item-copy">
-                        <span className="hero-menu-item-label">Historico de partidas</span>
-                        <span className="hero-menu-item-desc">Acompanhe seus resultados de PVP e PVE.</span>
-                      </span>
-                    </button>
-                  </div>
-                ) : null}
-              </div>
-              <div className="hero-content">
-                <div className="hero-avatar-wrap">
-                  <span className={`hero-avatar ${avatarFrameClass}`} style={avatarFrameStyle}>
-                    {isImageAvatarValue(displayAvatar) ? (
-                      <AvatarImage className="hero-avatar-image" src={displayAvatar} alt="Avatar do jogador" fallback="🙂" />
-                    ) : displayAvatar}
-                  </span>
-                  <div className="hero-avatar-glow" />
-                </div>
-                <div className="hero-info">
-                  <div className="hero-name-row">
-                    <div className="hero-name">{heroNickname}</div>
-                    <div className="hero-menu-shell" ref={playerHeroMenuRef}>
-                      <button
-                        type="button"
-                        className={`hero-menu-btn ${playerHeroMenuOpen ? 'active' : ''}`}
-                        onClick={togglePlayerHeroMenu}
-                        aria-label="Abrir menu do perfil"
-                        aria-haspopup="menu"
-                        aria-expanded={playerHeroMenuOpen}
-                      >
-                        <span />
-                        <span />
-                        <span />
-                      </button>
-                      {playerHeroMenuOpen ? (
-                        <div className="hero-menu-popover" role="menu" aria-label="Menu do perfil">
-                          <button type="button" className="hero-menu-item" onClick={openPlayerHistoryPanel}>
-                            <span className="hero-menu-item-icon" aria-hidden="true">🕘</span>
-                            <span className="hero-menu-item-copy">
-                              <span className="hero-menu-item-label">Histórico de partidas</span>
-                              <span className="hero-menu-item-desc">Acompanhe seus resultados de PVP e PVE.</span>
-                            </span>
-                          </button>
-                        </div>
-                      ) : null}
-                    </div>
-                  </div>
-                  <div className="hero-badges-line">
-                    <div className="hero-badges-group">
-                      <span className={`tier-badge tier-badge-compact tier-${pveCategory.key}`}>PVE {pveCategory.label}</span>
-                      <span className={`tier-badge tier-badge-compact tier-${pvpCategory.key}`}>PVP {pvpCategory.label}</span>
-                    </div>
-                    <span className="hero-coins" aria-label={`Moedas ${safeCoins}`}>
-                      <span className="hero-coins-icon" aria-hidden="true">🪙</span>
-                      <span className="hero-coins-value">{safeCoins}</span>
-                    </span>
-                  </div>
-                  <div className="hero-xp-bar">
-                    <div className="hero-xp-fill" style={{ width: `${xpPercent}%` }} />
-                  </div>
-                  <div className="hero-xp-label">
-                    <span className="hero-xp-level">Nv. {safeLevel}</span>
-                    <span className="hero-xp-progress">{safeXp} / {xpForNextLevel} XP</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          ) : null}
-
-          {!showHomeProfileHero ? (
-            <>
-              <div className="home-header">
-                <div className="logo-icon">{'</>'}</div>
-                <h1>Code Quiz</h1>
-                <p className="subtitle">Next.js + React + Cloudflare Workers</p>
-              </div>
-
-              <div className="player-stats-modern">
-                <div className="stat-card-modern stat-level">
-                  <span className="stat-icon stat-icon-float">🏅</span>
-                  <div className="stat-value">{progress.level}</div>
-                  <div className="stat-label">Nivel</div>
-                </div>
-                <div className="stat-card-modern stat-xp">
-                  <span className="stat-icon stat-icon-float">⭐</span>
-                  <div className="stat-value">{progress.rankingPoints}</div>
-                  <div className="stat-label">Pontos PVE</div>
-                </div>
-                <div className="stat-card-modern stat-streak">
-                  <span className="stat-icon stat-icon-float">⚔️</span>
-                  <div className="stat-value">{progress.pvpPoints}</div>
-                  <div className="stat-label">Pontos PVP</div>
-                </div>
-              </div>
-            </>
-          ) : null}
-
-          <div className="home-actions">
-            <button
-              className="btn btn-primary btn-lg btn-modern home-play-btn"
-              data-tour-anchor="home-play"
-              onClick={() => setScreen('play-mode')}
-            >
-              <span className="btn-icon">▶</span>
-              <span className="btn-text">Jogar Agora</span>
-              <span className="btn-arrow">›</span>
-            </button>
-
-            <div className="home-actions-grid" data-tour-anchor="home-tools">
-              <button className="btn btn-secondary btn-modern home-tool-btn home-tool-btn-rankings" onClick={() => setScreen('rankings')}>
-                <span className="btn-icon">🏆</span>
-                <span className="btn-text">Rankings</span>
-              </button>
-              <button className="btn btn-secondary btn-modern home-tool-btn home-tool-btn-shop" onClick={() => setScreen('shop')}>
-                <span className="btn-icon">🛒</span>
-                <span className="btn-text">Loja</span>
-              </button>
-              <button className="btn btn-secondary btn-modern home-tool-btn home-tool-btn-pass" onClick={() => setScreen('achievements')}>
-                <span className="btn-icon">🎟️</span>
-                <span className="btn-text">Passe de Evolução</span>
-              </button>
-              <button
-                className="btn btn-secondary btn-modern home-tool-btn home-tool-btn-settings"
-                onClick={() => setScreen(homeAuthUser ? 'settings' : 'login')}
-              >
-                <span className="btn-icon">⚙️</span>
-                <span className="btn-text">Configurações</span>
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <div className={`screen ${screen === 'play-mode' ? 'active' : ''}`}>
-          <div className="screen-top">
-            <button className="btn-back" onClick={() => triggerAppBackNavigation('button')}>←</button>
-            <h2>Escolha o modo</h2>
-          </div>
-          <div className="challenge-panel play-mode-panel">
-            <h3>Selecione seu modo</h3>
-            <div className="play-mode-actions">
-              <button className="btn btn-primary btn-lg btn-modern play-mode-btn" onClick={() => setScreen('knowledge-area')}>
-                <span className="play-mode-icon">🎯</span>
-                <span className="play-mode-title">PVE</span>
-                <span className="play-mode-subtitle">Quiz Solo</span>
-              </button>
-              <button
-                className="btn btn-secondary btn-lg btn-modern play-mode-btn"
-                onClick={() => {
-                  resetPvpTeamState();
-                  setPvpMode('');
-                  setScreen('challenge');
-                }}
-              >
-                <span className="play-mode-icon">⚔️</span>
-                <span className="play-mode-title">PVP</span>
-                <span className="play-mode-subtitle">Online</span>
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <div className={`screen ${screen === 'knowledge-area' ? 'active' : ''}`}>
-          <div className="screen-top">
-            <button className="btn-back" onClick={() => triggerAppBackNavigation('button')}>←</button>
-            <h2>Área do Quiz</h2>
-          </div>
-          <p className="ka-subtitle">Escolha a área de conhecimento</p>
-          <div className="ka-carousel-container">
-            <button
-              className="ka-arrow-btn ka-arrow-left"
-              disabled={kaCarouselIndex <= 0}
-              onClick={() => shiftKnowledgeAreaCarousel('pve', -1)}
-              aria-label="Anterior"
-            >
-              ◀
-            </button>
-            <div
-              className="ka-carousel-track"
-              onTouchStart={(e) => handleKnowledgeAreaTouchStart('pve', e)}
-              onTouchEnd={(e) => handleKnowledgeAreaTouchEnd('pve', e)}
-            >
-              <div
-                className="ka-carousel-slider"
-                style={{ transform: `translateX(-${kaCarouselIndex * 100}%)` }}
-              >
-                {KNOWLEDGE_AREAS.map((area) => (
-                  <div key={area.id} className="ka-card" style={{ '--ka-color': area.color }}>
-                    <div className="ka-card-icon">{area.icon}</div>
-                    <div className="ka-card-name">{area.name}</div>
-                    <div className="ka-card-desc">{area.desc}</div>
-                    <button
-                      className="ka-card-btn"
-                      onClick={() => chooseKnowledgeAreaForPve(area.id)}
-                    >
-                      Escolher
-                    </button>
-                  </div>
-                ))}
-              </div>
-            </div>
-            <button
-              className="ka-arrow-btn ka-arrow-right"
-              disabled={kaCarouselIndex >= KNOWLEDGE_AREAS.length - 1}
-              onClick={() => shiftKnowledgeAreaCarousel('pve', 1)}
-              aria-label="Próximo"
-            >
-              ▶
-            </button>
-          </div>
-          <div className="ka-dots">
-            {KNOWLEDGE_AREAS.map((area, idx) => (
-              <button
-                key={area.id}
-                className={`ka-dot ${idx === kaCarouselIndex ? 'active' : ''}`}
-                onClick={() => {
-                  if (idx === kaCarouselIndex) return;
-                  setKaCarouselIndex(idx);
-                  playSfx('click');
-                }}
-                aria-label={area.name}
-              />
-            ))}
-          </div>
-        </div>
-
-        <div className={`screen ${screen === 'select' ? 'active' : ''}`}>
-          <div className="screen-top">
-            <button className="btn-back" onClick={() => triggerAppBackNavigation('button')}>←</button>
-            <h2>Escolha o Tema</h2>
-          </div>
-          <p className="select-subtitle">Organizado por trilhas para facilitar sua progressão no PVE.</p>
-          <div className="lang-grid">
-            {languageThemeSections.map((section) => (
-              <section key={section.id} className="category-section">
-                <div className="category-header">
-                  <p className="category-label">{section.label}</p>
-                  <p className="category-desc">{section.desc}</p>
-                </div>
-                <div className="category-cards">
-                  {section.items.map((language) => (
-                    <button
-                      key={language.id}
-                      className={`lang-card ${selectedLanguage === language.id ? 'active' : ''}`}
-                      style={{ '--card-accent': language.color }}
-                      onClick={() => {
-                        setSelectedLanguage(language.id);
-                        const topics = getTopicsByLanguage(TOPICS, language.id);
-                        setSelectedTopic(topics[0]?.id || '');
-                        setScreen('topic');
-                      }}
-                    >
-                      <div className="lang-icon">{language.icon}</div>
-                      <div className="lang-info">
-                        <div className="lang-name">{language.name}</div>
-                        <div className="lang-desc">{language.desc}</div>
-                        <div className="lang-meta">
-                          <div className="lang-progress">
-                            <div
-                              className="lang-progress-fill"
-                              style={{ width: `${languageProgress.get(language.id) || 0}%` }}
-                            />
-                          </div>
-                          <span className="lang-pct">{languageProgress.get(language.id) || 0}%</span>
-                        </div>
-                      </div>
-                      <span className="lang-arrow">›</span>
-                    </button>
-                  ))}
-                </div>
-              </section>
-            ))}
-          </div>
-        </div>
-
-        <div className={`screen ${screen === 'topic' ? 'active' : ''}`}>
-          <div className="screen-top">
-            <button className="btn-back" onClick={() => triggerAppBackNavigation('button')}>←</button>
-            <h2>{selectedLanguageMeta?.name || 'Tópicos'}</h2>
-          </div>
-          <div className="topic-header-card">
-            <div className="topic-header-kicker">Trilhas do tema</div>
-            <div className="topic-header-title">{selectedLanguageMeta?.name || 'Tópicos'}</div>
-            <div className="topic-header-desc">
-              {selectedLanguageMeta?.desc || 'Escolha um topico para iniciar o quiz.'}
-            </div>
-            <div className="topic-header-meta">
-              <span>{selectedTopics.length} topicos</span>
-              <span>{languageProgress.get(selectedLanguage) || 0}% de progresso total</span>
-            </div>
-          </div>
-          <div className="topic-list">
-            {selectedTopics.map((topic) => {
-              const pct = topicProgress.get(topic.id) || 0;
-              const badgeClass = pct >= 80 ? 'completed' : pct > 0 ? 'started' : 'new';
-              const badgeLabel = pct >= 80 ? 'Dominado' : pct > 0 ? `${pct}%` : 'Novo';
-              const perDiff = topicQuestionCountByDifficulty.get(topic.id) || { easy: 0, medium: 0, hard: 0 };
-              const totalQuestions = Math.max(0, Number(perDiff.easy || 0), Number(perDiff.medium || 0), Number(perDiff.hard || 0));
-              const topicCountLabel = totalQuestions > 0
-                ? `Inic./Inter./Avan.: ${perDiff.easy}/${perDiff.medium}/${perDiff.hard}`
-                : 'Sem perguntas';
-              return (
-                <button
-                  key={topic.id}
-                  className={`topic-card ${selectedTopic === topic.id ? 'active' : ''}`}
-                  onClick={() => {
-                    setSelectedTopic(topic.id);
-                    setScreen('difficulty');
-                  }}
-                >
-                  <span className="topic-emoji">{topic.emoji}</span>
-                  <div className="topic-info">
-                    <div className="topic-name-row">
-                      <div className="topic-name">{topic.name}</div>
-                      <div className="topic-count">{topicCountLabel}</div>
-                    </div>
-                    <div className="topic-desc">{topic.desc}</div>
-                    <div className="topic-progress-row">
-                      <div className="topic-progress-bar">
-                        <div className="topic-progress-fill" style={{ width: `${pct}%` }} />
-                      </div>
-                      <span className="topic-progress-pct">{pct}%</span>
-                    </div>
-                  </div>
-                  <span className={`topic-badge ${badgeClass}`}>{badgeLabel}</span>
-                  <span className="topic-arrow">›</span>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        <div className={`screen ${screen === 'difficulty' ? 'active' : ''}`}>
-          <div className="screen-top">
-            <button className="btn-back" onClick={() => triggerAppBackNavigation('button')}>←</button>
-            <h2>Dificuldade</h2>
-          </div>
-          <div className="difficulty-list">
-            <button
-              className="diff-card diff-easy"
-              onClick={() => beginPveRound('easy')}
-              disabled={!selectedTopicQuestionCountByDifficulty.easy}
-            >
-              <span className="diff-emoji">🌱</span>
-              <span className="diff-name">{DIFFICULTY_LABELS.easy}</span>
-              <span className="diff-desc">Perguntas introdutórias e fundamentos.</span>
-              <span className="diff-meta">
-                {selectedTopicQuestionCountByDifficulty.easy || 0} perguntas por partida · melhor {selectedTopicDifficultyProgress.easy?.pct || 0}%
-              </span>
-              <div className="diff-progress">
-                <div className="diff-progress-fill" style={{ width: `${selectedTopicDifficultyProgress.easy?.pct || 0}%` }} />
-              </div>
-              <span className="diff-mult">x1 recompensas</span>
-            </button>
-            <button
-              className="diff-card diff-medium"
-              onClick={() => beginPveRound('medium')}
-              disabled={!selectedTopicQuestionCountByDifficulty.medium}
-            >
-              <span className="diff-emoji">🔥</span>
-              <span className="diff-name">{DIFFICULTY_LABELS.medium}</span>
-              <span className="diff-desc">Aplicação prática e análise intermediária.</span>
-              <span className="diff-meta">
-                {selectedTopicQuestionCountByDifficulty.medium || 0} perguntas por partida · melhor {selectedTopicDifficultyProgress.medium?.pct || 0}%
-              </span>
-              <div className="diff-progress">
-                <div className="diff-progress-fill" style={{ width: `${selectedTopicDifficultyProgress.medium?.pct || 0}%` }} />
-              </div>
-              <span className="diff-mult">x2 recompensas</span>
-            </button>
-            <button
-              className="diff-card diff-hard"
-              onClick={() => beginPveRound('hard')}
-              disabled={!selectedTopicQuestionCountByDifficulty.hard}
-            >
-              <span className="diff-emoji">⚡</span>
-              <span className="diff-name">{DIFFICULTY_LABELS.hard}</span>
-              <span className="diff-desc">Cenarios avancados e detalhes tecnicos.</span>
-              <span className="diff-meta">
-                {selectedTopicQuestionCountByDifficulty.hard || 0} perguntas por partida · melhor {selectedTopicDifficultyProgress.hard?.pct || 0}%
-              </span>
-              <div className="diff-progress">
-                <div className="diff-progress-fill" style={{ width: `${selectedTopicDifficultyProgress.hard?.pct || 0}%` }} />
-              </div>
-              <span className="diff-mult">x3 recompensas</span>
-            </button>
-          </div>
-        </div>
-
-        <div className={`screen ${screen === 'quiz' ? 'active' : ''}`}>
-          <div className="pve-quiz-shell">
-            <div className="pve-quiz-topline">
-              <span className="pve-quiz-mode">Modo PVE</span>
-              <span className={`pve-quiz-difficulty pve-quiz-difficulty-${quizState?.difficulty || 'easy'}`}>
-                {DIFFICULTY_LABELS[quizState?.difficulty] || DIFFICULTY_LABELS.easy}
-              </span>
-            </div>
-            <div className="pve-quiz-meta">
-              <span>{selectedLanguageMeta?.name || quizState?.language || 'Linguagem'}</span>
-              <span className="pve-quiz-dot">·</span>
-              <span>{selectedTopicMeta?.name || quizState?.topic || 'Tema'}</span>
-            </div>
-          </div>
-
-          <div className="quiz-header">
-            <div className="quiz-info pve-quiz-info">
-              <div className="quiz-info-main">
-                <span>{quizState ? `${quizState.index + 1}/${quizState.questions.length}` : '0/0'}</span>
-                <span>{quizState ? `${quizState.score} pts` : '0 pts'}</span>
-                <div className="quiz-lives">
-                  {[0, 1, 2].map((idx) => (
-                    <span key={idx} className={`heart ${quizState && idx >= quizState.lives ? 'lost' : ''}`}>❤️</span>
-                  ))}
-                </div>
-              </div>
-              <button className="btn-quiz-menu" onClick={openQuizMenu} aria-label="Abrir menu do quiz">☰</button>
-            </div>
-            {quizState?.streak ? (
-              <div className="quiz-streak">{quizState.streak} em sequencia</div>
-            ) : null}
-          </div>
-
-          <div className="quiz-timer">
-            <div
-              className={`timer-bar ${quizTimerClass}`}
-              style={{
-                width: `${quizTimerPct}%`
-              }}
-            />
-          </div>
-
-          <div className="quiz-body pve-quiz-body">
-            <div className="question-card">
-              <div
-                ref={quizQuestionScrollRef}
-                className={`question-scroll-wrap ${quizQuestionHasOverflow ? 'has-overflow' : ''}`}
-              >
-                <p className="question-text">{currentQuestion?.q || 'Carregando pergunta...'}</p>
-                {currentQuestion?.code ? (
-                  <pre className="question-code">{currentQuestion.code}</pre>
-                ) : null}
-              </div>
-              {quizQuestionHasOverflow ? (
-                <span className="question-scroll-indicator" aria-hidden="true" />
-              ) : null}
-            </div>
-            <div className="options-list">
-              {(currentQuestion?.opts || []).map((option, index) => (
-                <button
-                  key={`${quizState?.index || 0}_${index}`}
-                  className={`option-btn ${quizState?.selectedIndex === index ? 'selected' : ''} ${quizState?.answered ? 'disabled' : ''}`}
-                  disabled={!!quizState?.answered}
-                  onClick={() => handleAnswer(index)}
-                >
-                  <span className="opt-letter">{String.fromCharCode(65 + index)}</span>
-                  <span>{option}</span>
-                </button>
-              ))}
-            </div>
-            <button
-              className="btn btn-primary quiz-confirm-btn"
-              disabled={!quizState || quizState.answered || !Number.isFinite(Number(quizState.selectedIndex)) || Number(quizState.selectedIndex) < 0}
-              onClick={confirmQuizAnswer}
-            >
-              Confirmar resposta
-            </button>
-          </div>
-        </div>
-
-        <div className={`screen ${screen === 'feedback' ? 'active' : ''}`}>
-          <div className="feedback-content">
-            <div className="feedback-emoji">
-              {feedbackState?.isTimeout ? '⏰' : feedbackState?.isCorrect ? '✅' : '❌'}
-            </div>
-            <div className="feedback-title">
-              {feedbackState?.isTimeout ? 'Tempo esgotado!' : feedbackState?.isCorrect ? 'Boa resposta!' : 'Resposta incorreta'}
-            </div>
-            <div className="feedback-explain">
-              {getDidacticExplainText(feedbackState?.question)}
-            </div>
-            <button className="btn btn-primary" onClick={() => nextQuestion()}>
-              Continuar
-            </button>
-          </div>
-        </div>
-
-        <div className={`screen ${screen === 'result' ? 'active' : ''}`}>
-          <div className="result-content pve-result-content">
-            <div className="result-emoji">
-              {(resultState?.scorePct || 0) >= 80 ? '🏆' : (resultState?.scorePct || 0) >= 50 ? '👏' : '📚'}
-            </div>
-            <div className="result-title">Resultado do Quiz</div>
-            <div className="result-subtitle">
-              {(selectedLanguageMeta?.name || resultState?.language || '')} · {(selectedTopicMeta?.name || resultState?.topic || '')}
-            </div>
-            <div className="result-stats">
-              <div className="result-stat">
-                <div className="result-stat-value">{resultState?.correctCount || 0}/{resultState?.totalQuestions || 0}</div>
-                <div className="result-stat-label">Acertos</div>
-              </div>
-              <div className="result-stat">
-                <div className="result-stat-value">{resultState?.scorePct || 0}%</div>
-                <div className="result-stat-label">Precisao</div>
-              </div>
-              <div className="result-stat">
-                <div className="result-stat-value">+{resultState?.awardedXp || 0}</div>
-                <div className="result-stat-label">XP</div>
-              </div>
-              <div className="result-stat">
-                <div className="result-stat-value">+{resultState?.awardedCoins || 0}</div>
-                <div className="result-stat-label">Moedas</div>
-              </div>
-            </div>
-            <div className="result-xp-bar">
-              <div className="result-xp-fill" style={{ width: `${xpPercent}%` }} />
-            </div>
-            <div className="result-level-info">
-              Nivel {progress.level} · {progress.xp}/{xpForNextLevel} XP
-            </div>
-
-            {resultState?.unlockedAchievements?.length ? (
-              <div className="result-leaderboard">
-                <div className="result-leaderboard-title">Etapas do passe prontas para coleta</div>
-                <div className="result-leaderboard-list">
-                  {resultState.unlockedAchievements.map((achievement) => (
-                    <div key={achievement.id} className="result-leaderboard-item">
-                      <span className="result-leaderboard-pos">{achievement.icon}</span>
-                      <span>
-                        {achievement.name}
-                        {' '}
-                        (+{Math.max(0, Number(achievement?.rewardXp || 0))} XP · +{Math.max(0, Number(achievement?.rewardCoins || 0))} moedas)
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ) : null}
-
-            {resultState?.questionReview?.length ? (
-              <div className="result-leaderboard">
-                <div className="result-leaderboard-title">Revisao didatica da rodada</div>
-                <div className="pve-result-review-list">
-                  {resultState.questionReview.map((row, index) => {
-                    const correctIndex = Number(row?.correctIndex ?? -1);
-                    const selectedIndex = Number(row?.selectedIndex ?? -1);
-                    const options = Array.isArray(row?.opts) ? row.opts : [];
-                    const correctOption = (
-                      correctIndex >= 0
-                      && correctIndex < options.length
-                    ) ? options[correctIndex] : '--';
-                    const selectedOption = (
-                      selectedIndex >= 0
-                      && selectedIndex < options.length
-                    ) ? options[selectedIndex] : '';
-                    const statusIcon = row?.isCorrect
-                      ? '✅'
-                      : (row?.isTimeout ? '⏰' : (row?.wasAnswered === false ? '📘' : '❌'));
-                    const statusLabel = row?.isCorrect
-                      ? 'Acertou'
-                      : (row?.isTimeout ? 'Tempo esgotado' : (row?.wasAnswered === false ? 'Não respondida' : 'Errou'));
-
-                    return (
-                      <div key={`pve_review_${index}`} className="pve-result-review-item">
-                        <div className="pve-result-review-head">
-                          <span className="result-leaderboard-pos">{statusIcon}</span>
-                          <span className="pve-result-review-question">
-                            {Math.max(1, Number(row?.index || (index + 1)))}. {row?.q || 'Pergunta sem texto'}
-                          </span>
-                        </div>
-                        <div className="pve-result-review-meta">
-                          <span>{statusLabel}</span>
-                          <span>Correta: {correctOption}</span>
-                          {selectedOption ? (
-                            <span>Sua resposta: {selectedOption}</span>
-                          ) : null}
-                        </div>
-                        <div className="feedback-explain pve-result-review-explain">
-                          {getDidacticExplainText(row)}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            ) : null}
-
-            <div className="result-leaderboard">
-              <div className="result-leaderboard-title">Ranking deste quiz</div>
-              {quizRankingLoading ? (
-                <div className="ranking-loading">Carregando ranking...</div>
-              ) : quizRankingRows.length ? (
-                <div className="result-leaderboard-list">
-                  {quizRankingRows.slice(0, 5).map((row, index) => {
-                    const rowShop = buildCosmeticSnapshot(
-                      row.equipped_frame,
-                      row.equipped_background,
-                      row.equipped_emoji
-                    );
-                    const rowAvatar = getDisplayAvatar(row.avatar || '🤓', rowShop);
-                    return (
-                      <div key={`${row.user_id}_${index}`} className="result-leaderboard-item">
-                        <span className="result-leaderboard-pos">#{index + 1}</span>
-                        <span>{rowAvatar} {row.nickname || 'Jogador'}</span>
-                        <span style={{ marginLeft: 'auto' }}>{row.correct_count}/{row.total_questions}</span>
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : (
-                <div className="ranking-empty">Sem dados ainda para este quiz.</div>
-              )}
-            </div>
-
-            <button className="btn btn-primary result-action-btn result-action-btn-primary" onClick={() => setScreen('difficulty')}>
-              Novo desafio
-            </button>
-            <button
-              className="btn btn-secondary result-action-btn result-action-btn-secondary"
-              onClick={() => {
-                resetQuizFlow();
-                setScreen('home');
-              }}
-            >
-              Voltar ao inicio
-            </button>
-          </div>
-        </div>
-
-        <div className={`screen screen-achievements ${screen === 'achievements' ? 'active' : ''}`}>
-          <div className="screen-top">
-            <button className="btn-back" onClick={() => triggerAppBackNavigation('button')}>←</button>
-            <h2>Passe de Evolução</h2>
-          </div>
-          <div className="evo-pass-shell">
-            <div className="evo-pass-hero-card">
-              <div className="evo-pass-hero-head">
-                <div className="evo-pass-hero-title">Passe de Evolução</div>
-                <div className="evo-pass-hero-level">
-                  Nível {evolutionPass.currentLevel}/{evolutionPass.totalLevels}
-                </div>
-              </div>
-              <div className="evo-pass-hero-subtitle">
-                {evolutionPass.activeStage
-                  ? `${evolutionPass.activeStage.icon} ${evolutionPass.activeStage.name}`
-                  : 'Passe concluído'}
-              </div>
-              <div className="evo-pass-bar">
-                <div
-                  className="evo-pass-bar-fill"
-                  style={{ width: `${Math.max(0, Math.min(100, Number(evolutionPass.currentStageProgressPct || 0)))}%` }}
-                />
-              </div>
-              <div className="evo-pass-hero-meta">
-                Progresso da etapa atual: {Math.round(Math.max(0, Number(evolutionPass.currentStageProgressPct || 0)))}%
-              </div>
-              <div className="evo-pass-hero-note">
-                Cada etapa pode ser concluída pela trilha PVE ou pela trilha PVP.
-              </div>
-              <div className="evo-pass-summary-grid">
-                <div className="evo-pass-summary-item">
-                  <span className="evo-pass-summary-label">Etapas concluídas</span>
-                  <strong>{evolutionPass.completedCount}/{evolutionPass.totalLevels}</strong>
-                </div>
-                <div className="evo-pass-summary-item">
-                  <span className="evo-pass-summary-label">Passe total</span>
-                  <strong>{Math.round(Math.max(0, Number(evolutionPass.overallProgressPct || 0)))}%</strong>
-                </div>
-                <div className="evo-pass-summary-item">
-                  <span className="evo-pass-summary-label">Prontas para coletar</span>
-                  <strong>{evolutionPass.claimableCount}</strong>
-                </div>
-              </div>
-            </div>
-
-            {evolutionPassFocusedStage ? (() => {
-              const stage = evolutionPassFocusedStage;
-              const isLockedStage = stage.locked && !stage.claimed;
-              const stageStatus = getEvolutionPassStageStatus(stage);
-              const isClaiming = passClaimingStageId === stage.id;
-              const collectDisabled = (
-                stage.claimed
-                || isLockedStage
-                || !stage.completed
-                || (Boolean(passClaimingStageId) && !isClaiming)
-              );
-              const collectLabel = stage.claimed
-                ? 'Recompensa coletada'
-                : (isClaiming ? 'Coletando...' : (stage.completed ? 'Coletar recompensa' : 'Complete para coletar'));
-              const missionPaths = Array.isArray(stage.missionPaths) ? stage.missionPaths : [];
-              const cosmeticRewards = (Array.isArray(stage?.reward?.shopItems) ? stage.reward.shopItems : [])
-                .map((itemId) => getShopItem(itemId))
-                .filter(Boolean);
-              return (
-                <div className="evo-pass-stage-frame">
-                  <div className="evo-pass-stage-nav-card">
-                    <div className="evo-pass-stage-nav-head">
-                      <button
-                        type="button"
-                        className="btn evo-pass-stage-arrow"
-                        onClick={() => focusAdjacentEvolutionPassStage(-1)}
-                        disabled={evolutionPassFocusedStageIndex <= 0}
-                        aria-label="Etapa anterior"
-                      >
-                        &lt;
-                      </button>
-                      <div className="evo-pass-stage-nav-copy">
-                        <span className="evo-pass-stage-nav-label">Etapa em foco</span>
-                        <strong>Nível {stage.level} de {evolutionPass.totalLevels}</strong>
-                      </div>
-                      <button
-                        type="button"
-                        className="btn evo-pass-stage-arrow"
-                        onClick={() => focusAdjacentEvolutionPassStage(1)}
-                        disabled={evolutionPassFocusedStageIndex >= evolutionPassStages.length - 1}
-                        aria-label="Proxima etapa"
-                      >
-                        &gt;
-                      </button>
-                    </div>
-                    <div className="evo-pass-stage-dots" role="tablist" aria-label="Selecionar etapa do passe">
-                      {evolutionPassStages.map((stageOption) => {
-                        const optionId = String(stageOption?.id || '').trim();
-                        const optionActive = optionId === String(stage.id || '').trim();
-                        const optionStatus = getEvolutionPassStageStatus(stageOption);
-                        return (
-                          <button
-                            key={optionId}
-                            type="button"
-                            className={[
-                              'evo-pass-stage-dot-btn',
-                              optionActive ? 'active' : '',
-                              stageOption.claimed ? 'claimed' : '',
-                              (!stageOption.claimed && stageOption.completed) ? 'ready' : '',
-                              (stageOption.locked && !stageOption.claimed) ? 'locked' : ''
-                            ].filter(Boolean).join(' ')}
-                            onClick={() => focusEvolutionPassStage(optionId)}
-                            aria-label={`Nível ${stageOption.level}: ${optionStatus}`}
-                            aria-pressed={optionActive}
-                          >
-                            <span className="evo-pass-stage-dot-icon" aria-hidden="true">{stageOption.icon}</span>
-                            <span className="evo-pass-stage-dot-level">{stageOption.level}</span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-
-                  <div
-                    className={[
-                      'evo-pass-focus-card',
-                      stage.claimed ? 'claimed' : '',
-                      isLockedStage ? 'locked' : '',
-                      passRecentClaimStageId === stage.id ? 'claim-burst' : ''
-                    ].filter(Boolean).join(' ')}
-                  >
-                    <div className="evo-stage-top">
-                      <span className="evo-stage-level">Nível {stage.level}</span>
-                      <span className="evo-stage-status">{stageStatus}</span>
-                    </div>
-
-                    <div className="evo-pass-focus-head">
-                      <div className="evo-stage-title">{stage.icon} {stage.name}</div>
-                      <div className="evo-stage-desc">
-                        {isLockedStage ? 'Conclua o nivel anterior para desbloquear esta etapa.' : stage.desc}
-                      </div>
-                      <div className="evo-stage-hint">
-                        {isLockedStage ? 'As missões aparecem assim que a etapa for liberada.' : stage.hint}
-                      </div>
-                    </div>
-
-                    {!isLockedStage ? (
-                      <>
-                        <div className="evo-pass-route-grid">
-                          {missionPaths.map((path) => {
-                            const pathGoals = Array.isArray(path.goals) ? path.goals : [];
-                            const completedGoals = pathGoals.filter((goal) => goal.complete).length;
-                            return (
-                              <div
-                                key={`${stage.id}_${path.id}`}
-                                className={[
-                                  'evo-stage-path',
-                                  'evo-pass-route-card',
-                                  path.complete ? 'done' : '',
-                                  stage.leadingPathId === path.id ? 'is-leading' : ''
-                                ].filter(Boolean).join(' ')}
-                              >
-                                <div className="evo-stage-path-head">
-                                  <span className="evo-stage-path-title">{path.icon} {path.label}</span>
-                                  <span className="evo-stage-path-status">
-                                    {path.complete ? 'Concluida' : `${Math.round(Math.max(0, Number(path.progressPct || 0)))}%`}
-                                  </span>
-                                </div>
-                                <div className="evo-pass-route-summary">
-                                  {path.complete
-                                    ? 'Rota concluída e pronta para liberar a etapa.'
-                                    : `${completedGoals}/${pathGoals.length} metas concluídas nesta rota.`}
-                                </div>
-                                <div className="evo-stage-progress">
-                                  <div
-                                    className="evo-stage-progress-fill"
-                                    style={{ width: `${Math.max(0, Math.min(100, Number(path.progressPct || 0)))}%` }}
-                                  />
-                                </div>
-                                <button
-                                  type="button"
-                                  className="btn evo-pass-inline-btn"
-                                  onClick={() => openEvolutionPassDetailModal('path', stage.id, path.id)}
-                                >
-                                  Ver metas
-                                </button>
-                              </div>
-                            );
-                          })}
-                        </div>
-
-                        <div className="evo-stage-route-note">
-                          {stage.completedPathLabel
-                            ? `Etapa concluída pela ${stage.completedPathLabel}.`
-                            : 'Complete a trilha PVE ou a trilha PVP para liberar a coleta desta etapa.'}
-                        </div>
-
-                        <div className="evo-pass-reward-strip">
-                          <span className="evo-stage-reward evo-stage-reward-stat">
-                            <span className="evo-stage-reward-icon" aria-hidden="true">⭐</span>
-                            <span className="evo-stage-reward-text">+{Math.max(0, Number(stage?.reward?.xp || 0))} XP</span>
-                          </span>
-                          <span className="evo-stage-reward evo-stage-reward-stat">
-                            <span className="evo-stage-reward-icon" aria-hidden="true">🪙</span>
-                            <span className="evo-stage-reward-text">+{Math.max(0, Number(stage?.reward?.coins || 0))} moedas</span>
-                          </span>
-                          {cosmeticRewards.length ? (
-                            <span className="evo-pass-reward-summary-pill">
-                              <span className="evo-pass-reward-summary-icons" aria-hidden="true">
-                                {cosmeticRewards.slice(0, 3).map((item, itemIndex) => (
-                                  <span key={`${stage.id}_${item?.id || itemIndex}`}>{item?.icon || '🎁'}</span>
-                                ))}
-                              </span>
-                              <span>{cosmeticRewards.length} cosmético{cosmeticRewards.length > 1 ? 's' : ''}</span>
-                            </span>
-                          ) : null}
-                        </div>
-
-                        <div className="evo-pass-focus-actions">
-                          <button
-                            type="button"
-                            className="btn evo-pass-inline-btn"
-                            onClick={() => openEvolutionPassDetailModal('rewards', stage.id)}
-                          >
-                            Ver recompensas
-                          </button>
-                          <button
-                            type="button"
-                            className={[
-                              'btn',
-                              'evo-stage-claim-btn',
-                              stage.claimed ? 'claimed' : '',
-                              (!stage.claimed && stage.completed) ? 'ready' : '',
-                              (!stage.completed && !stage.claimed) ? 'locked' : '',
-                              isClaiming ? 'is-claiming' : ''
-                            ].filter(Boolean).join(' ')}
-                            disabled={collectDisabled}
-                            onClick={(event) => handleClaimEvolutionPassStage(stage.id, event)}
-                          >
-                            {collectLabel}
-                          </button>
-                        </div>
-                      </>
-                    ) : (
-                      <div className="evo-pass-focus-locked">
-                        <div className="evo-stage-locked-icon">ðŸ”’</div>
-                        <div className="evo-pass-focus-locked-copy">
-                          <strong>Etapa bloqueada</strong>
-                          <span>Finalize a etapa anterior para revelar as missões e recompensas.</span>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              );
-            })() : (
-              <div className="evo-pass-empty-state">
-                Nenhuma etapa do passe está disponível no momento.
-              </div>
-            )}
-
-            <div className="evo-pass-timeline-hint">Deslize a trilha para navegar pelos níveis do passe.</div>
-            <div className="evo-pass-timeline-scroll">
-              <div className="evo-pass-timeline">
-                {evolutionPass.stages.map((stage, index) => {
-                  const isLockedStage = stage.locked && !stage.claimed;
-                  const isClaiming = passClaimingStageId === stage.id;
-                  const collectDisabled = (
-                    stage.claimed
-                    || isLockedStage
-                    || !stage.completed
-                    || (Boolean(passClaimingStageId) && !isClaiming)
-                  );
-                  const collectLabel = stage.claimed
-                    ? 'Recompensa coletada'
-                    : (isClaiming ? 'Coletando...' : (stage.completed ? 'Coletar recompensa' : 'Complete para coletar'));
-                  return (
-                    <div
-                      key={stage.id}
-                      className={[
-                        'evo-stage-column',
-                        stage.claimed ? 'claimed' : '',
-                        stage.active ? 'active' : '',
-                        stage.locked ? 'locked' : '',
-                        passRecentClaimStageId === stage.id ? 'claim-burst' : ''
-                      ].filter(Boolean).join(' ')}
-                    >
-                      <div className="evo-stage-track-head">
-                        <span className="evo-stage-track-dot" aria-hidden="true">{stage.icon}</span>
-                        <span className="evo-stage-track-level">Nível {stage.level}</span>
-                        {index < evolutionPass.stages.length - 1 ? (
-                          <span
-                            className={[
-                              'evo-stage-track-link',
-                              stage.claimed || stage.completed ? 'filled' : '',
-                              stage.active ? 'active' : ''
-                            ].filter(Boolean).join(' ')}
-                            aria-hidden="true"
-                          />
-                        ) : null}
-                      </div>
-                      <div className="evo-stage-card">
-                        <div className="evo-stage-top">
-                          <div className="evo-stage-title">{stage.icon} {stage.name}</div>
-                          <span className="evo-stage-level">Nível {stage.level}</span>
-                        </div>
-
-                        <div className="evo-stage-paths">
-                          {!isLockedStage ? (
-                            (Array.isArray(stage.missionPaths) ? stage.missionPaths : []).map((path) => {
-                              const pathGoals = Array.isArray(path.goals) ? path.goals : [];
-                              return (
-                                <div
-                                  key={`${stage.id}_${path.id}`}
-                                  className={[
-                                    'evo-stage-path',
-                                    path.complete ? 'done' : '',
-                                    stage.leadingPathId === path.id ? 'is-leading' : ''
-                                  ].filter(Boolean).join(' ')}
-                                >
-                                  <div className="evo-stage-path-head">
-                                    <span className="evo-stage-path-title">{path.icon} {path.label}</span>
-                                    <span className="evo-stage-path-status">
-                                      {path.complete ? 'Concluída' : `${Math.round(Math.max(0, Number(path.progressPct || 0)))}%`}
-                                    </span>
-                                  </div>
-                                  <div className="evo-stage-goals">
-                                    {pathGoals.map((goal) => (
-                                      <div
-                                        key={`${stage.id}_${path.id}_${goal.metric}_${goal.target}`}
-                                        className={`evo-stage-goal ${goal.complete ? 'done' : ''}`}
-                                      >
-                                        <span className="evo-stage-goal-label">{goal.label}</span>
-                                        <span className="evo-stage-goal-value">
-                                          {Math.min(goal.target, Math.max(0, Math.trunc(Number(goal.value || 0))))}/{goal.target}
-                                        </span>
-                                      </div>
-                                    ))}
-                                  </div>
-                                  <div className="evo-stage-progress">
-                                    <div
-                                      className="evo-stage-progress-fill"
-                                      style={{ width: `${Math.max(0, Math.min(100, Number(path.progressPct || 0)))}%` }}
-                                    />
-                                  </div>
-                                </div>
-                              );
-                            })
-                          ) : (
-                            <div className="evo-stage-path evo-stage-path-locked">
-                              <div className="evo-stage-path-head">
-                                <span className="evo-stage-path-title">🔒 Missões ocultas</span>
-                                <span className="evo-stage-path-status">Bloqueada</span>
-                              </div>
-                              <div className="evo-stage-goals">
-                                <div className="evo-stage-goal">
-                                  <span className="evo-stage-goal-label">
-                                    Conclua o nível anterior para revelar as missões desta etapa.
-                                  </span>
-                                </div>
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                        <button
-                          type="button"
-                          className={[
-                            'btn',
-                            'evo-stage-claim-btn',
-                            stage.claimed ? 'claimed' : '',
-                            (!stage.claimed && stage.completed) ? 'ready' : '',
-                            (!stage.completed && !stage.claimed) ? 'locked' : '',
-                            isClaiming ? 'is-claiming' : ''
-                          ].filter(Boolean).join(' ')}
-                          disabled={collectDisabled}
-                          onClick={(event) => handleClaimEvolutionPassStage(stage.id, event)}
-                        >
-                          {collectLabel}
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className={`screen ${screen === 'rankings' ? 'active' : ''}`}>
-          <div className="screen-top">
-            <button className="btn-back" onClick={() => triggerAppBackNavigation('button')}>←</button>
-            <h2>Rankings</h2>
-          </div>
-          <div className="ranking-tabs">
-            <button
-              className={`ranking-tab ${rankingsMode === 'pve' ? 'active' : ''}`}
-              onClick={() => setRankingsMode('pve')}
-            >
-              PVE
-            </button>
-            <button
-              className={`ranking-tab ${rankingsMode === 'pvp' ? 'active' : ''}`}
-              onClick={() => setRankingsMode('pvp')}
-            >
-              PVP
-            </button>
-          </div>
-          <div className="ranking-content">
-            {rankingsLoading ? (
-              <div className="ranking-loading">Carregando...</div>
-            ) : rankingsRows.length ? (
-              <div className="ranking-list">
-                {rankingsRows.map((row, index) => {
-                  const isSelf = String(row.user_id || '') === String(authUser?.uid || '');
-                  const rowShop = buildCosmeticSnapshot(
-                    row.equipped_frame,
-                    row.equipped_background,
-                    row.equipped_emoji
-                  );
-                  const rowAvatar = getDisplayAvatar(row.avatar || '🤓', rowShop);
-                  const rowFrameStyle = getAvatarFrameStyle(rowShop);
-                  const rowFrameClass = getAvatarFrameClass(rowShop);
-                  const rowBackgroundMeta = getBackgroundVisualMeta(rowShop);
-                  const itemClasses = [
-                    'ranking-item',
-                    isSelf ? 'ranking-self' : '',
-                    index === 0 ? 'ranking-top1' : '',
-                    index === 1 ? 'ranking-top2' : '',
-                    index === 2 ? 'ranking-top3' : '',
-                    rowBackgroundMeta.className
-                  ].filter(Boolean).join(' ');
-                  const points = rankingsMode === 'pvp'
-                    ? Math.max(0, Number(row.pvp_points || 0))
-                    : Math.max(0, Number(row.ranking_points || 0));
-                  const category = getCategoryByPoints(points);
-                  const meta = rankingsMode === 'pvp'
-                    ? `${Math.max(0, Number(row.pvp_wins || 0))}V · ${Math.max(0, Number(row.pvp_battles || 0))}P`
-                    : `${Math.max(0, Number(row.total_correct || 0))} corretas · Lv ${Math.max(1, Number(row.level || 1))}`;
-
-                  return (
-                    <div
-                      key={`${row.user_id}_${index}`}
-                      className={itemClasses}
-                      data-bg-id={rowBackgroundMeta.id}
-                      data-bg-rarity={rowBackgroundMeta.rarity}
-                      style={{ background: getHeroBackgroundStyle(rowShop) }}
-                    >
-                      <span className="rank-pos">#{index + 1}</span>
-                      <span className={`rank-avatar ${rowFrameClass}`} style={rowFrameStyle}>{rowAvatar}</span>
-                      <div className="rank-info">
-                        <div className="rank-name-row">
-                          <span className="rank-name">{row.nickname || 'Jogador'}</span>
-                          <span className={`tier-badge tier-badge-compact tier-badge-rank tier-${category.key}`}>
-                            {rankingsMode === 'pvp' ? 'PVP' : 'PVE'} {category.label}
-                          </span>
-                        </div>
-                        <div className="rank-meta">{meta}</div>
-                      </div>
-                      <span className="rank-xp">{points} PTS</span>
-                    </div>
-                  );
-                })}
-              </div>
-            ) : (
-              <div className="ranking-empty">Sem ranking disponível ainda.</div>
-            )}
-          </div>
-        </div>
-
-        <div className={`screen ${screen === 'admin-monitor' ? 'active' : ''}`}>
-          <div className="screen-top">
-            <button className="btn-back" onClick={() => triggerAppBackNavigation('button')}>←</button>
-            <h2>Monitoramento Admin</h2>
-          </div>
-          <div className="admin-screen-shell">
-            <div className="admin-screen-hero">
-              <div className="admin-screen-hero-title">Painel de monitoramento</div>
-              <div className="admin-screen-hero-subtitle">Acompanhe partidas em tempo real e histórico diário.</div>
-            </div>
-
-            <div className="admin-screen-stats">
-              <div className="admin-screen-stat-card">
-                <span>Online</span>
-                <strong>{arenaMetrics.online}</strong>
-              </div>
-              <div className="admin-screen-stat-card">
-                <span>Fila</span>
-                <strong>{arenaMetrics.queue}</strong>
-              </div>
-              <div className="admin-screen-stat-card">
-                <span>Ao vivo</span>
-                <strong>{adminLiveMatches.length}</strong>
-              </div>
-              <div className="admin-screen-stat-card">
-                <span>Historico hoje</span>
-                <strong>{adminHistoryTodayBaseMatches.length}</strong>
-              </div>
-            </div>
-
-            <div className="admin-screen-updated-at">
-              Atualizado em {adminMatchesUpdatedAtMs ? new Date(adminMatchesUpdatedAtMs).toLocaleTimeString('pt-BR') : '--:--:--'}
-            </div>
-
-            <div className="admin-daemon-control">
-              <div className="admin-daemon-head">
-                <span className={`admin-daemon-dot ${botArenaBattlesEnabled ? 'enabled' : 'disabled'}`} aria-hidden="true" />
-                <div className="admin-daemon-copy">
-                  <strong>{botArenaBattlesEnabled ? 'Automação de bots ativa' : 'Automação de bots desativada'}</strong>
-                  <span>
-                    PVP: {botArenaPvpEnabled ? 'ativado' : 'desativado'}
-                    {' · '}
-                    Quiz: {botArenaQuizEnabled ? 'ativado' : 'desativado'}
-                    {' · '}
-                    Daemon: {botArenaDaemonModeLabel}
-                    {' · '}
-                    Atualizado: {botArenaDaemonUpdatedAtLabel}
-                  </span>
-                </div>
-              </div>
-              <div className="admin-daemon-toggles">
-                <div className="admin-daemon-toggle-row">
-                  <div className="admin-daemon-toggle-copy">
-                    <strong>Batalhas PVP dos bots</strong>
-                    <span>{botArenaPvpEnabled ? 'Ativado' : 'Desativado'}</span>
-                  </div>
-                  <label className="settings-switch" aria-label="Ativar batalhas PVP dos bots">
-                    <input
-                      type="checkbox"
-                      checked={botArenaPvpEnabled}
-                      disabled={adminBotDaemonBusy}
-                      onChange={(event) => setAdminBotArenaAutomationEnabled('pvp', event.target.checked)}
-                    />
-                    <span className="settings-switch-track">
-                      <span className="settings-switch-thumb" />
-                    </span>
-                  </label>
-                </div>
-
-                <div className="admin-daemon-toggle-row">
-                  <div className="admin-daemon-toggle-copy">
-                    <strong>Partidas de quiz dos bots</strong>
-                    <span>{botArenaQuizEnabled ? 'Ativado' : 'Desativado'}</span>
-                  </div>
-                  <label className="settings-switch" aria-label="Ativar partidas de quiz dos bots">
-                    <input
-                      type="checkbox"
-                      checked={botArenaQuizEnabled}
-                      disabled={adminBotDaemonBusy}
-                      onChange={(event) => setAdminBotArenaAutomationEnabled('quiz', event.target.checked)}
-                    />
-                    <span className="settings-switch-track">
-                      <span className="settings-switch-thumb" />
-                    </span>
-                  </label>
-                </div>
-              </div>
-            </div>
-
-            <div className="admin-screen-actions">
-              <button className="btn btn-primary btn-lg" onClick={() => setScreen('admin-live')}>
-                Partidas ao vivo
-              </button>
-              <button className="btn btn-secondary btn-lg" onClick={() => setScreen('admin-history')}>
-                Historico de partidas do dia
-              </button>
-              <button className="btn btn-secondary" disabled={adminBusy} onClick={() => refreshAdminMetrics().catch(() => null)}>
-                Atualizar painel
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <div className={`screen ${screen === 'admin-live' ? 'active' : ''}`}>
-          <div className="screen-top">
-            <button className="btn-back" onClick={() => triggerAppBackNavigation('button')}>←</button>
-            <h2>Partidas Ao Vivo</h2>
-          </div>
-          <div className="admin-monitor-list">
-            {adminMatchesLoading ? (
-              <div className="ranking-loading">Carregando partidas...</div>
-            ) : adminLiveMatches.length ? adminLiveMatches.map((row) => {
-              const isBotQuizLive = row?.is_bot_quiz === true;
-              const status = String(row?.status || '').trim().toLowerCase();
-              const statusLabel = isBotQuizLive
-                ? 'Quiz em andamento'
-                : status === 'pending_accept'
-                  ? 'Aguardando aceite'
-                  : status === 'matched'
-                    ? 'Pareando'
-                    : status === 'starting'
-                      ? 'Inicializando'
-                      : status === 'round_result'
-                        ? 'Resultado da rodada'
-                        : 'Em andamento';
-              const quizBatchId = String(row?.bot_quiz_batch_id || row?.id || '').trim();
-              const displayCode = isBotQuizLive
-                ? `QUIZ-${quizBatchId ? quizBatchId.slice(-6) : 'LIVE'}`
-                : (adminMatchCodeById.get(String(row?.id || '')) || String(row?.id || '--'));
-              const quizData = isBotQuizLive ? getAdminQuizCardData(row) : null;
-              const quizBotLabel = String(row?.player1_nickname || 'Bot').trim() || 'Bot';
-              const botClassSummary = getAdminBotClassSummary(row);
-              const startedAtLabel = toMillis(row.created_at)
-                ? new Date(toMillis(row.created_at)).toLocaleTimeString('pt-BR')
-                : '--:--';
-              const updatedAtLabel = toMillis(row.updated_at)
-                ? new Date(toMillis(row.updated_at)).toLocaleTimeString('pt-BR')
-                : '--:--';
-              const durationLabel = getAdminMatchDurationLabel(row, Date.now());
-              const matchTypeLabel = getAdminMatchTypeLabel(row);
-              if (isBotQuizLive) {
-                return (
-                  <div key={`live_${row.id}`} className="admin-monitor-item admin-monitor-item-quiz">
-                    <div className="admin-monitor-item-head">
-                      <span className="admin-monitor-item-id">{displayCode}</span>
-                      <span className={`admin-monitor-status status-${status}`}>{statusLabel}</span>
-                    </div>
-                    <div className="admin-monitor-quiz-header">
-                      <strong className="admin-monitor-quiz-title">Quiz Solo</strong>
-                      <span className="admin-monitor-quiz-bot">{quizBotLabel}</span>
-                    </div>
-                    <div className="admin-monitor-quiz-chips">
-                      <span className="admin-monitor-quiz-chip">{quizData?.difficultyLabel || DIFFICULTY_LABELS.easy}</span>
-                      <span className="admin-monitor-quiz-chip">{quizData?.languageLabel || '--'}</span>
-                      <span className="admin-monitor-quiz-chip">{quizData?.topicLabel || '--'}</span>
-                      <span className="admin-monitor-quiz-chip">{Math.max(1, Number(quizData?.totalQuestions || QUESTIONS_PER_ROUND))} questões</span>
-                      {botClassSummary ? <span className="admin-monitor-quiz-chip">{botClassSummary}</span> : null}
-                    </div>
-                    <div className="admin-monitor-quiz-meta-grid">
-                      <div className="admin-monitor-quiz-meta-item">
-                        <span>Iniciada</span>
-                        <strong>{startedAtLabel}</strong>
-                      </div>
-                      <div className="admin-monitor-quiz-meta-item">
-                        <span>Atualizada</span>
-                        <strong>{updatedAtLabel}</strong>
-                      </div>
-                      <div className="admin-monitor-quiz-meta-item">
-                        <span>Duracao</span>
-                        <strong>{durationLabel}</strong>
-                      </div>
-                    </div>
-                  </div>
-                );
-              }
-              return (
-                <div key={`live_${row.id}`} className="admin-monitor-item admin-monitor-item-pvp admin-monitor-item-pvp-live">
-                  <div className="admin-monitor-item-head">
-                    <span className="admin-monitor-item-id">{displayCode}</span>
-                    <span className={`admin-monitor-status status-${status}`}>{statusLabel}</span>
-                  </div>
-                  <div className="admin-monitor-versus">
-                    <span className="admin-monitor-player-name">{row.player1_nickname || 'Jogador 1'}</span>
-                    <strong className="admin-monitor-score-pill">{Math.max(0, Number(row.player1_score || 0))} x {Math.max(0, Number(row.player2_score || 0))}</strong>
-                    <span className="admin-monitor-player-name">{row.player2_nickname || 'Jogador 2'}</span>
-                  </div>
-                  <div className="admin-monitor-meta-row">
-                    <span className="admin-monitor-meta-chip">Iniciada {startedAtLabel}</span>
-                    <span className="admin-monitor-meta-chip">Atualizada {updatedAtLabel}</span>
-                    <span className="admin-monitor-meta-chip">Rodadas {getAdminMatchRoundsLabel(row)}</span>
-                    <span className="admin-monitor-meta-chip">Duracao {durationLabel}</span>
-                    <span className="admin-monitor-meta-chip">Tipo {matchTypeLabel}</span>
-                    {botClassSummary ? <span className="admin-monitor-meta-chip">{botClassSummary}</span> : null}
-                  </div>
-                </div>
-              );
-            }) : (
-              <div className="ranking-empty">Nenhuma partida em tempo real no momento.</div>
-            )}
-          </div>
-        </div>
-
-        <div className={`screen ${screen === 'admin-history' ? 'active' : ''}`}>
-          <div className="screen-top">
-            <button className="btn-back" onClick={() => triggerAppBackNavigation('button')}>←</button>
-            <h2>Historico Do Dia</h2>
-          </div>
-          <div className="admin-monitor-date-label">Data: {adminHistoryDateLabel}</div>
-          <div className="admin-monitor-filters">
-            {ADMIN_HISTORY_FILTER_OPTIONS.map((filter) => (
-              <button
-                key={filter.id}
-                className={`admin-monitor-filter-btn ${adminHistoryFilter === filter.id ? 'active' : ''}`}
-                onClick={() => setAdminHistoryFilter(filter.id)}
-                type="button"
-              >
-                {filter.label}
-              </button>
-            ))}
-          </div>
-          <div className="admin-monitor-filter-summary">
-            Exibindo {adminHistoryTodayMatches.length} de {adminHistoryTodayBaseMatches.length} registros.
-          </div>
-          <div className="admin-monitor-list">
-            {adminMatchesLoading ? (
-              <div className="ranking-loading">Carregando histórico...</div>
-            ) : adminHistoryTodayMatches.length ? adminHistoryTodayMatches.map((row) => {
-              const isBotQuizHistory = row?.is_bot_quiz === true;
-              const winnerId = String(row?.winner_user_id || '').trim();
-              const player1Id = String(row?.player1_user_id || '').trim();
-              const winnerName = winnerId
-                ? (winnerId === player1Id ? (row.player1_nickname || 'Jogador 1') : (row.player2_nickname || 'Jogador 2'))
-                : 'Empate';
-              const quizBatchId = String(row?.bot_quiz_batch_id || row?.id || '').trim();
-              const displayCode = isBotQuizHistory
-                ? `QUIZ-${quizBatchId ? quizBatchId.slice(-6) : 'HIST'}`
-                : (adminMatchCodeById.get(String(row?.id || '')) || String(row?.id || '--'));
-              const botClassSummary = getAdminBotClassSummary(row);
-              const startedAtLabel = toMillis(row.created_at)
-                ? new Date(toMillis(row.created_at)).toLocaleTimeString('pt-BR')
-                : '--:--';
-              const endedAtLabel = toMillis(row.ended_at || row.updated_at)
-                ? new Date(toMillis(row.ended_at || row.updated_at)).toLocaleTimeString('pt-BR')
-                : '--:--';
-              const durationLabel = getAdminMatchDurationLabel(row, Date.now());
-              if (isBotQuizHistory) {
-                const quizData = getAdminQuizCardData(row);
-                const quizBotLabel = String(row?.player1_nickname || 'Bot').trim() || 'Bot';
-                return (
-                  <div key={`history_${row.id}`} className="admin-monitor-item admin-monitor-item-quiz">
-                    <div className="admin-monitor-item-head">
-                      <span className="admin-monitor-item-id">{displayCode}</span>
-                      <span className="admin-monitor-status status-finished">Quiz finalizado</span>
-                    </div>
-                    <div className="admin-monitor-quiz-header">
-                      <strong className="admin-monitor-quiz-title">Quiz Solo</strong>
-                      <span className="admin-monitor-quiz-bot">{quizBotLabel}</span>
-                    </div>
-                    <div className="admin-monitor-quiz-result">
-                      <strong className="admin-monitor-quiz-score">
-                        {quizData.correctCount}/{quizData.totalQuestions} acertos
-                      </strong>
-                      <span className="admin-monitor-quiz-accuracy">{quizData.accuracyPct}% precisao</span>
-                    </div>
-                    <div className="admin-monitor-quiz-chips">
-                      <span className="admin-monitor-quiz-chip">{quizData.difficultyLabel}</span>
-                      <span className="admin-monitor-quiz-chip">{quizData.languageLabel}</span>
-                      <span className="admin-monitor-quiz-chip">{quizData.topicLabel}</span>
-                      {botClassSummary ? <span className="admin-monitor-quiz-chip">{botClassSummary}</span> : null}
-                    </div>
-                    <div className="admin-monitor-quiz-meta-grid">
-                      <div className="admin-monitor-quiz-meta-item">
-                        <span>Inicio</span>
-                        <strong>{startedAtLabel}</strong>
-                      </div>
-                      <div className="admin-monitor-quiz-meta-item">
-                        <span>Fim</span>
-                        <strong>{endedAtLabel}</strong>
-                      </div>
-                      <div className="admin-monitor-quiz-meta-item">
-                        <span>Duracao</span>
-                        <strong>{durationLabel}</strong>
-                      </div>
-                    </div>
-                  </div>
-                );
-              }
-              return (
-                <div key={`history_${row.id}`} className="admin-monitor-item admin-monitor-item-pvp admin-monitor-item-pvp-history">
-                  <div className="admin-monitor-item-head">
-                    <span className="admin-monitor-item-id">{displayCode}</span>
-                    <span className="admin-monitor-status status-finished">
-                      Finalizada
-                    </span>
-                  </div>
-                  <div className="admin-monitor-versus">
-                    <span className="admin-monitor-player-name">{row.player1_nickname || 'Jogador 1'}</span>
-                    <strong className="admin-monitor-score-pill">{Math.max(0, Number(row.player1_score || 0))} x {Math.max(0, Number(row.player2_score || 0))}</strong>
-                    <span className="admin-monitor-player-name">{row.player2_nickname || 'Jogador 2'}</span>
-                  </div>
-                  <div className="admin-monitor-meta-row">
-                    <span className="admin-monitor-meta-chip">Vencedor {winnerName}</span>
-                    <span className="admin-monitor-meta-chip">Inicio {startedAtLabel}</span>
-                    <span className="admin-monitor-meta-chip">Fim {endedAtLabel}</span>
-                    <span className="admin-monitor-meta-chip">Rodadas {getAdminMatchRoundsLabel(row)}</span>
-                    <span className="admin-monitor-meta-chip">Duracao {durationLabel}</span>
-                    {botClassSummary ? <span className="admin-monitor-meta-chip">{botClassSummary}</span> : null}
-                  </div>
-                </div>
-              );
-            }) : (
-              <div className="ranking-empty">
-                {adminHistoryFilter === 'all'
-                  ? 'Sem partidas finalizadas hoje.'
-                  : 'Sem partidas para este filtro hoje.'}
-              </div>
-            )}
-          </div>
-        </div>
-
-        <div id="screen-login" className={`screen ${screen === 'login' ? 'active' : ''}`}>
-          <div className="login-shell">
-            <div className="login-bg-orb login-bg-orb-a" aria-hidden="true" />
-            <div className="login-bg-orb login-bg-orb-b" aria-hidden="true" />
-            <div className="login-bg-grid" aria-hidden="true" />
-
-            <div className="login-card">
-              <div className="login-brand-stack">
-                <div className="login-logo-wrap">
-                  <span className="login-logo-symbol">{'</>'}</span>
-                </div>
-                <h1 className="login-title">Code Quiz</h1>
-                <p className="login-subtitle">
-                  Plataforma de treino com quizzes por tema, ranqueamento em tempo real e arena competitiva.
-                </p>
-              </div>
-
-              <div className="login-pill-row" aria-hidden="true">
-                <span className="login-pill">PVE por temas</span>
-                <span className="login-pill">Arena PVP</span>
-                <span className="login-pill">Ranking global</span>
-              </div>
-
-              <div className="login-auth-panel">
-                <div className="login-auth-label">Entrar com Google</div>
-                <div
-                  ref={googleButtonContainerRef}
-                  className={`login-google-gsi ${googleSignInBusy ? 'is-busy' : ''}`}
-                  aria-busy={googleSignInBusy}
-                />
-                <p className="login-auth-note">
-                  Autenticação segura via Google com sincronização automática de progresso no banco remoto.
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className={`screen nickname-setup-screen ${screen === 'nickname-setup' ? 'active' : ''}`}>
-          {!homeAuthUser ? (
-            <div className="profile-content">
-              <div className="challenge-status">Faça login para criar seu apelido.</div>
-              <button className="btn btn-primary" onClick={() => setScreen('login')}>Ir para login</button>
-            </div>
-          ) : (
-            <div className="nickname-setup-shell">
-              <div className="nickname-setup-card">
-                <div className="nickname-setup-kicker">Boas-vindas ao Code Quiz</div>
-                <h2 className="nickname-setup-title">Escolha seu apelido antes de entrar</h2>
-                <p className="nickname-setup-subtitle">
-                  Esse nome será exibido para outros jogadores em rankings, partidas e recompensas.
-                </p>
-
-                <div className="nickname-setup-account">
-                  <div className="settings-account-avatar" aria-hidden="true">
-                    {isImageAvatarValue(googleAccountAvatar) ? (
-                      <AvatarImage src={googleAccountAvatar} fallback={<span>{googleAccountInitial}</span>} />
-                    ) : (
-                      <span>{googleAccountInitial}</span>
-                    )}
-                  </div>
-                  <div className="settings-account-meta">
-                    <strong className="settings-account-name">{googleAccountName}</strong>
-                    <span className="settings-account-email">{googleAccountEmail || 'E-mail Google indisponível.'}</span>
-                  </div>
-                </div>
-
-                <div className="settings-personal-form nickname-setup-form">
-                  <label className="settings-input-label" htmlFor="nickname-setup-input">Apelido</label>
-                  <input
-                    id="nickname-setup-input"
-                    type="text"
-                    className="profile-input settings-input"
-                    placeholder="Digite seu apelido"
-                    maxLength={12}
-                    autoCapitalize="none"
-                    autoCorrect="off"
-                    spellCheck={false}
-                    value={profileDraft.nickname}
-                    onChange={(event) =>
-                      setProfileDraft((prev) => ({ ...prev, nickname: event.target.value }))
-                    }
-                  />
-                  <div className={`settings-personal-hint ${nicknameHintClass}`}>{nicknameHintText}</div>
-                  <button
-                    className="btn btn-primary btn-lg nickname-setup-save"
-                    disabled={profileSaving || !nicknameCanSave}
-                    onClick={saveProfile}
-                  >
-                    {profileSaving ? 'Salvando apelido...' : 'Entrar no app'}
-                  </button>
-                </div>
-
-                <div className="nickname-setup-actions">
-                  <button
-                    className="btn btn-secondary"
-                    onClick={handleSwitchGoogleAccount}
-                    disabled={googleSignInBusy}
-                  >
-                    Trocar conta Google
-                  </button>
-                  <button className="btn btn-secondary" onClick={handleSignOut}>
-                    Sair
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-
-        <div className={`screen settings-screen ${screen === 'settings' ? 'active' : ''}`}>
-          <div className="screen-top">
-            <button className="btn-back" onClick={() => triggerAppBackNavigation('button')}>←</button>
-            <h2>{'Configura\u00e7\u00f5es'}</h2>
-          </div>
-          {!homeAuthUser ? (
-            <div className="profile-content">
-              <div className="challenge-status">{'Fa\u00e7a login para abrir as configura\u00e7\u00f5es.'}</div>
-              <button className="btn btn-primary" onClick={() => setScreen('login')}>Ir para login</button>
-            </div>
-          ) : (
-            <div className="audio-settings">
-              <div className="settings-personal-data">
-                <div className="settings-section-head">
-                  <div className="audio-option-header">
-                    <div className="audio-option-icon" aria-hidden="true">{'\u{1F464}'}</div>
-                    <div className="audio-option-text">
-                      <div className="settings-personal-title">Conta</div>
-                      <div className="settings-personal-subtitle">
-                        {onboardingRequired
-                          ? 'Expanda para confirmar sua conta Google e definir o apelido.'
-                          : 'Conta Google conectada e apelido p\u00fablico do perfil.'}
-                      </div>
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    className="settings-section-toggle"
-                    aria-expanded={settingsSections.account === true}
-                    aria-label={settingsSections.account ? 'Recolher se\u00e7\u00e3o Conta' : 'Expandir se\u00e7\u00e3o Conta'}
-                    onClick={() => toggleSettingsSection('account')}
-                  >
-                    <span className={`settings-section-chevron ${settingsSections.account ? 'is-open' : ''}`} aria-hidden="true">{'\u203A'}</span>
-                  </button>
-                </div>
-                {settingsSections.account ? (
-                  <div className="settings-section-content">
-                    <div className="settings-account-card">
-                      <div className="settings-account-avatar" aria-hidden="true">
-                        {isImageAvatarValue(googleAccountAvatar) ? (
-                          <AvatarImage src={googleAccountAvatar} fallback={<span>{googleAccountInitial}</span>} />
-                        ) : (
-                          <span>{googleAccountInitial}</span>
-                        )}
-                      </div>
-                      <div className="settings-account-meta">
-                        <strong className="settings-account-name">{googleAccountName}</strong>
-                        <span className="settings-account-email">
-                          {googleAccountEmail || 'E-mail Google indispon\u00edvel.'}
-                        </span>
-                        <span className="settings-account-status">Conta Google ativa</span>
-                      </div>
-                    </div>
-                    <div className="settings-account-actions">
-                      <button
-                        className="btn btn-secondary"
-                        onClick={handleSwitchGoogleAccount}
-                        disabled={googleSignInBusy}
-                      >
-                        Trocar conta Google
-                      </button>
-                      <button className="btn btn-secondary" onClick={openSettingsSignOutConfirm} disabled={googleSignInBusy}>
-                        Sair
-                      </button>
-                    </div>
-                    <div className="settings-personal-form">
-                      <label className="settings-input-label" htmlFor="settings-nickname">Apelido</label>
-                      <input
-                        id="settings-nickname"
-                        type="text"
-                        className="profile-input settings-input"
-                        placeholder="Seu apelido"
-                        maxLength={12}
-                        autoCapitalize="none"
-                        autoCorrect="off"
-                        spellCheck={false}
-                        value={profileDraft.nickname}
-                        onChange={(event) =>
-                          setProfileDraft((prev) => ({ ...prev, nickname: event.target.value }))
-                        }
-                      />
-                      <div className={`settings-personal-hint ${nicknameHintClass}`}>{nicknameHintText}</div>
-                      <div className="settings-personal-hint">O nome da conta segue o nome da sua conta Google.</div>
-                      <button
-                        className="btn btn-primary"
-                        disabled={profileSaving || !nicknameCanSave}
-                        onClick={saveProfile}
-                      >
-                        {profileSaving ? 'Salvando...' : (onboardingRequired ? 'Salvar apelido e continuar' : 'Salvar apelido')}
-                      </button>
-                    </div>
-                  </div>
-                ) : null}
-              </div>
-
-              <div className="audio-option">
-                <div className="settings-section-head">
-                  <div className="audio-option-header">
-                    <div className="audio-option-icon" aria-hidden="true">{'\u{1F3A7}'}</div>
-                    <div className="audio-option-text">
-                      <div className="audio-option-title">{'\u00c1udio'}</div>
-                      <div className="audio-option-desc">{'Controle m\u00fasica e efeitos sonoros em uma \u00fanica se\u00e7\u00e3o.'}</div>
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    className="settings-section-toggle"
-                    aria-expanded={settingsSections.audio === true}
-                    aria-label={settingsSections.audio ? 'Recolher se\u00e7\u00e3o \u00c1udio' : 'Expandir se\u00e7\u00e3o \u00c1udio'}
-                    onClick={() => toggleSettingsSection('audio')}
-                  >
-                    <span className={`settings-section-chevron ${settingsSections.audio ? 'is-open' : ''}`} aria-hidden="true">{'\u203A'}</span>
-                  </button>
-                </div>
-                {settingsSections.audio ? (
-                  <div className="settings-section-content">
-                    <div className="settings-audio-card">
-                      <div className="settings-audio-card-head">
-                        <div className="settings-audio-card-copy">
-                          <div className="settings-audio-card-title">{'M\u00fasica'}</div>
-                          <div className="settings-audio-card-desc">Menu com trilha calma e partidas com trilha intensa.</div>
-                        </div>
-                        <label className="settings-switch" aria-label={'Ativar m\u00fasica'}>
-                          <input
-                            type="checkbox"
-                            checked={audioSettings.musicEnabled}
-                            onChange={(event) => updateAudioSetting('musicEnabled', event.target.checked)}
-                          />
-                          <span className="settings-switch-track">
-                            <span className="settings-switch-thumb" />
-                          </span>
-                        </label>
-                      </div>
-                      <div className="audio-slider-row">
-                        <input
-                          className="vol-slider"
-                          type="range"
-                          min="0"
-                          max="1"
-                          step="0.01"
-                          value={audioSettings.musicVolume}
-                          onChange={(event) => updateAudioSetting('musicVolume', Number(event.target.value))}
-                        />
-                        <span className="vol-label">{Math.round(audioSettings.musicVolume * 100)}%</span>
-                      </div>
-                    </div>
-
-                    <div className="settings-audio-card">
-                      <div className="settings-audio-card-head">
-                        <div className="settings-audio-card-copy">
-                          <div className="settings-audio-card-title">Efeitos sonoros</div>
-                          <div className="settings-audio-card-desc">{'Som para bot\u00f5es, respostas e a\u00e7\u00f5es do jogo.'}</div>
-                        </div>
-                        <label className="settings-switch" aria-label="Ativar efeitos sonoros">
-                          <input
-                            type="checkbox"
-                            checked={audioSettings.sfxEnabled}
-                            onChange={(event) => updateAudioSetting('sfxEnabled', event.target.checked)}
-                          />
-                          <span className="settings-switch-track">
-                            <span className="settings-switch-thumb" />
-                          </span>
-                        </label>
-                      </div>
-                      <div className="audio-slider-row">
-                        <input
-                          className="vol-slider"
-                          type="range"
-                          min="0"
-                          max="1"
-                          step="0.01"
-                          value={audioSettings.sfxVolume}
-                          onChange={(event) => updateAudioSetting('sfxVolume', Number(event.target.value))}
-                        />
-                        <span className="vol-label">{Math.round(audioSettings.sfxVolume * 100)}%</span>
-                      </div>
-                      <button className="btn btn-secondary settings-sfx-test" onClick={() => playSfx('notify')}>
-                        Testar som
-                      </button>
-                    </div>
-                  </div>
-                ) : null}
-              </div>
-
-              <div className="audio-option settings-admin-tools">
-                <div className="settings-section-head">
-                  <div className="audio-option-header">
-                    <div className="audio-option-icon" aria-hidden="true">{'\u{1F6E0}\uFE0F'}</div>
-                    <div className="audio-option-text">
-                      <div className="audio-option-title">Build e monitoramento</div>
-                      <div className="audio-option-desc">{'Informa\u00e7\u00f5es da build atual e acesso administrativo.'}</div>
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    className="settings-section-toggle"
-                    aria-expanded={settingsSections.admin === true}
-                    aria-label={settingsSections.admin ? 'Recolher se\u00e7\u00e3o Build e monitoramento' : 'Expandir se\u00e7\u00e3o Build e monitoramento'}
-                    onClick={() => toggleSettingsSection('admin')}
-                  >
-                    <span className={`settings-section-chevron ${settingsSections.admin ? 'is-open' : ''}`} aria-hidden="true">{'\u203A'}</span>
-                  </button>
-                </div>
-                {settingsSections.admin ? (
-                  <div className="settings-section-content">
-                    <div className="settings-app-version">
-                      <span className="settings-app-version-code">{buildBadgeValue}</span>
-                    </div>
-                    <button className="btn btn-secondary settings-admin-btn" onClick={openAdminScreen}>
-                      Abrir monitoramento admin
-                    </button>
-                  </div>
-                ) : null}
-              </div>
-              <div className="settings-screen-updated-at">{settingsUpdatedAtValue}</div>
-            </div>
-          )}
-        </div>
-
-        <div className={`screen ${screen === 'shop' ? 'active' : ''}`}>
-          <div className="screen-top">
-            <button className="btn-back" onClick={() => triggerAppBackNavigation('button')}>←</button>
-            <h2>Loja</h2>
-            <div className="shop-coins-badge">🪙 {progress.coins}</div>
-          </div>
-          <div className="shop-tabs">
-            <button className={`shop-tab ${shopTab === 'frame' ? 'active' : ''}`} onClick={() => setShopTab('frame')}>
-              🖼️ Molduras
-            </button>
-            <button className={`shop-tab ${shopTab === 'background' ? 'active' : ''}`} onClick={() => setShopTab('background')}>
-              🎨 Fundos
-            </button>
-            <button className={`shop-tab ${shopTab === 'emoji' ? 'active' : ''}`} onClick={() => setShopTab('emoji')}>
-              😎 Emojis
-            </button>
-          </div>
-          <div className="shop-ownership-filters" role="group" aria-label="Filtro de itens da loja">
-            <button
-              type="button"
-              className={`shop-ownership-filter-btn ${safeShopOwnershipFilter === 'all' ? 'active' : ''}`}
-              onClick={() => setShopOwnershipFilter('all')}
-            >
-              Todas
-            </button>
-            <button
-              type="button"
-              className={`shop-ownership-filter-btn ${safeShopOwnershipFilter === 'owned' ? 'active' : ''}`}
-              onClick={() => setShopOwnershipFilter('owned')}
-            >
-              Adquiridas
-            </button>
-            <button
-              type="button"
-              className={`shop-ownership-filter-btn ${safeShopOwnershipFilter === 'unowned' ? 'active' : ''}`}
-              onClick={() => setShopOwnershipFilter('unowned')}
-            >
-              Não adquiridas
-            </button>
-          </div>
-          <div className="shop-grid">
-            {groupedShopItems.map((group) => {
-              const groupRarity = group.rarity || 'common';
-              const groupLabel = SHOP_RARITY_LABELS[groupRarity] || 'Comum';
-              const isOpen = Boolean(activeShopCategoryOpen[groupRarity] ?? true);
-              const groupItems = Array.isArray(group.items) ? group.items : [];
-              return (
-                <section key={`${shopTab}_${groupRarity}`} className={`shop-rarity-section rarity-${groupRarity}`}>
-                  <button
-                    type="button"
-                    className={`shop-rarity-toggle rarity-${groupRarity} ${isOpen ? 'open' : ''}`}
-                    onClick={() => toggleShopCategory(shopTab, groupRarity)}
-                  >
-                    <span className="shop-rarity-title">{groupLabel}</span>
-                    <span className="shop-rarity-count">{groupItems.length}</span>
-                    <span className={`shop-rarity-arrow ${isOpen ? 'open' : ''}`} aria-hidden="true">▾</span>
-                  </button>
-                  {isOpen ? (
-                    groupItems.length ? (
-                      <div className="shop-rarity-grid">
-                        {groupItems.map((item) => {
-                          const itemRarity = item?.rarity || 'common';
-                          const itemRarityLabel = SHOP_RARITY_LABELS[itemRarity] || 'Categoria';
-                          const owned = ownedShopSet.has(item.id);
-                          const equipped = equippedShopId === item.id;
-                          const unlockSource = String(item?.unlockSource || '').trim().toLowerCase();
-                          const isPassRewardOnly = unlockSource === 'evolution_pass';
-                          const passUnlockLevel = Math.max(0, Number(item?.unlockLevel || 0));
-                          const isPassLocked = isPassRewardOnly && !owned;
-                          const canBuyCheck = canPurchaseItem(shopData, item.id, progress.coins);
-                          const canBuy = canBuyCheck.ok;
-                          const previewState = getShopPreviewState(item);
-                          const previewAvatar = getDisplayAvatar(profile?.avatar || '🤓', previewState);
-                          const previewFrameStyle = getAvatarFrameStyle(previewState);
-                          const previewFrameClass = getAvatarFrameClass(previewState);
-                          const previewBgStyle = getHeroBackgroundStyle(previewState);
-                          const previewBgMeta = getBackgroundVisualMeta(previewState);
-                          const itemClasses = [
-                            'shop-item',
-                            owned ? 'owned' : '',
-                            equipped ? 'equipped' : '',
-                            isPassLocked ? 'locked-pass' : ''
-                          ].filter(Boolean).join(' ');
-                          return (
-                            <div key={item.id} className={itemClasses} data-rarity={itemRarity}>
-                              <button
-                                type="button"
-                                className="shop-item-preview-btn"
-                                onClick={() => openShopItemPreview(item)}
-                                aria-label={`Visualizar ${item.name}`}
-                              >
-                                <div className="shop-item-preview">
-                                  {item.type === 'frame' ? (
-                                    <div className="shop-preview-cosmetic shop-preview-frame-wrap" data-rarity={itemRarity}>
-                                      <div className={`shop-preview-frame ${previewFrameClass}`} style={previewFrameStyle}>
-                                        <span className="shop-preview-avatar-core">{previewAvatar}</span>
-                                      </div>
-                                    </div>
-                                  ) : null}
-                                  {item.type === 'background' ? (
-                                    <div
-                                      className={[
-                                        'shop-preview-cosmetic',
-                                        'shop-preview-bg'
-                                      ].filter(Boolean).join(' ')}
-                                      data-rarity={itemRarity}
-                                      data-bg-id={previewBgMeta.id}
-                                    >
-                                      <div
-                                        className={[
-                                          'shop-preview-bg-canvas',
-                                          previewBgMeta.className
-                                        ].filter(Boolean).join(' ')}
-                                        style={{ background: previewBgStyle }}
-                                      />
-                                      <span className="shop-preview-particles" aria-hidden="true" />
-                                    </div>
-                                  ) : null}
-                                  {item.type === 'emoji' ? (
-                                    <div className="shop-preview-emoji-wrap" data-rarity={itemRarity}>
-                                      <div className="shop-preview-emoji">{item.icon || '✨'}</div>
-                                    </div>
-                                  ) : null}
-                                </div>
-                              </button>
-                              <div className="shop-item-name">{item.name}</div>
-                              <span className={`shop-item-rarity rarity-${itemRarity}`}>{itemRarityLabel}</span>
-                              {owned ? (
-                                <button
-                                  className={`shop-btn shop-btn-equip ${equipped ? 'is-equipped' : ''}`}
-                                  disabled={Boolean(equipped && item.isDefault)}
-                                  onClick={() => handleToggleOwnedShopItem(item)}
-                                >
-                                  {equipped
-                                    ? (item.isDefault ? 'Equipado' : 'Desequipar')
-                                    : 'Equipar'}
-                                </button>
-                              ) : (
-                                <button
-                                  className={`shop-btn shop-btn-buy ${canBuyCheck.reason === 'pass_reward_only' ? 'pass-only' : ''} ${canBuy ? '' : 'disabled'}`}
-                                  disabled={!canBuy}
-                                  onClick={() => handleBuyShopItem(item.id)}
-                                >
-                                  {canBuyCheck.reason === 'pass_reward_only'
-                                    ? `Passe Nv. ${passUnlockLevel || '?'}`
-                                    : `🪙 ${item.price}`
-                                  }
-                                </button>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    ) : (
-                      <div className="shop-rarity-empty">Sem itens nesta categoria.</div>
-                    )
-                  ) : null}
-                </section>
-              );
-            })}
-          </div>
-        </div>
-
-        <div className={`screen screen-challenge ${screen === 'challenge' ? 'active' : ''}`}>
-          <div className="screen-top">
-            <button className="btn-back" onClick={() => triggerAppBackNavigation('button')}>←</button>
-            <h2>PVP</h2>
-          </div>
-          {!pvpMode ? (
-            <div className="challenge-panel challenge-mode-menu">
-              <h3>Escolha um modo</h3>
-              <p>Selecione como voce quer disputar no PVP.</p>
-              <div className="pvp-mode-grid">
-                <button className="pvp-mode-banner mode-duel" type="button" onClick={() => openPvpMode(PVP_MODE_DUEL)}>
-                  <div className="pvp-mode-banner-art">
-                    <div className="pvp-mode-banner-strip">
-                      <span className="pvp-mode-banner-code">01 / Solo Queue</span>
-                      <span className="pvp-mode-banner-pill">Mais rapido</span>
-                    </div>
-                    <div className="pvp-mode-banner-roster duel" aria-hidden="true">
-                      <span className="pvp-mode-banner-agent agent-red" />
-                      <span className="pvp-mode-banner-vs">VS</span>
-                      <span className="pvp-mode-banner-agent agent-blue" />
-                    </div>
-                  </div>
-                  <div className="pvp-mode-banner-body">
-                    <strong className="pvp-mode-banner-title">Duelo</strong>
-                  </div>
-                </button>
-                <button className="pvp-mode-banner mode-team" type="button" onClick={() => openPvpMode(PVP_MODE_TEAM_BATTLE)}>
-                  <div className="pvp-mode-banner-art">
-                    <div className="pvp-mode-banner-strip">
-                      <span className="pvp-mode-banner-code">02 / Squad Lobby</span>
-                      <span className="pvp-mode-banner-pill">Tatico</span>
-                    </div>
-                    <div className="pvp-mode-banner-roster team" aria-hidden="true">
-                      <span className="pvp-mode-banner-agent agent-red" />
-                      <span className="pvp-mode-banner-agent agent-red alt" />
-                      <span className="pvp-mode-banner-vs">VS</span>
-                      <span className="pvp-mode-banner-agent agent-blue" />
-                      <span className="pvp-mode-banner-agent agent-blue alt" />
-                    </div>
-                  </div>
-                  <div className="pvp-mode-banner-body">
-                    <strong className="pvp-mode-banner-title">Batalha de Equipes</strong>
-                  </div>
-                </button>
-                <button className="pvp-mode-banner mode-elimination" type="button" onClick={() => openPvpMode(PVP_MODE_ELIMINATION)}>
-                  <div className="pvp-mode-banner-art">
-                    <div className="pvp-mode-banner-strip">
-                      <span className="pvp-mode-banner-code">03 / Last Survivor</span>
-                      <span className="pvp-mode-banner-pill">4 jogadores</span>
-                    </div>
-                    <div className="pvp-mode-banner-roster royale" aria-hidden="true">
-                      <span className="pvp-mode-banner-agent agent-red" />
-                      <span className="pvp-mode-banner-agent agent-blue" />
-                      <span className="pvp-mode-banner-agent agent-gold champion" />
-                      <span className="pvp-mode-banner-agent agent-red alt" />
-                      <span className="pvp-mode-banner-agent agent-blue alt" />
-                    </div>
-                  </div>
-                  <div className="pvp-mode-banner-body">
-                    <strong className="pvp-mode-banner-title">Um Contra Todos</strong>
-                  </div>
-                </button>
-              </div>
-            </div>
-          ) : pvpMode === PVP_MODE_DUEL ? (
-            <div className="challenge-panel challenge-arena">
-            {pvpState.status === 'pending_accept' && pvpMatch ? (
-              showMatchFoundTransition ? (
-                <div className="match-found-transition" role="status" aria-live="polite">
-                  <div className="match-found-transition-card">
-                    <span className="match-found-transition-kicker">Matchmaking</span>
-                    <h3 className="match-found-transition-title">Partida encontrada</h3>
-                    <p className="match-found-transition-subtitle">
-                      Preparando o duelo contra {matchOpponentName}.
-                    </p>
-                    <div className="match-found-transition-players">
-                      <div
-                        className={[
-                          'match-found-transition-player-card',
-                          pvpPlayer1BackgroundMeta.className
-                        ].filter(Boolean).join(' ')}
-                        data-bg-id={pvpPlayer1BackgroundMeta.id}
-                        data-bg-rarity={pvpPlayer1BackgroundMeta.rarity}
-                        style={{ background: getHeroBackgroundStyle(pvpPlayer1Shop) }}
-                      >
-                        <span className={`pvp-player-avatar match-found-transition-avatar ${pvpPlayer1FrameClass}`} style={pvpPlayer1FrameStyle}>{pvpPlayer1Avatar}</span>
-                        <span className="match-found-transition-name">{pvpMatch?.player1_nickname || 'Jogador 1'}</span>
-                      </div>
-                      <div className="match-found-transition-vs" aria-hidden="true">VS</div>
-                      <div
-                        className={[
-                          'match-found-transition-player-card',
-                          pvpPlayer2BackgroundMeta.className
-                        ].filter(Boolean).join(' ')}
-                        data-bg-id={pvpPlayer2BackgroundMeta.id}
-                        data-bg-rarity={pvpPlayer2BackgroundMeta.rarity}
-                        style={{ background: getHeroBackgroundStyle(pvpPlayer2Shop) }}
-                      >
-                        <span className={`pvp-player-avatar match-found-transition-avatar ${pvpPlayer2FrameClass}`} style={pvpPlayer2FrameStyle}>{pvpPlayer2Avatar}</span>
-                        <span className="match-found-transition-name">{pvpMatch?.player2_nickname || 'Jogador 2'}</span>
-                      </div>
-                    </div>
-                    <div className="match-found-transition-loader" aria-hidden="true">
-                      <span />
-                      <span />
-                      <span />
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <div className="match-accept-card">
-                <h3>Partida encontrada:</h3>
-                <div className="match-accept-players">
-                  <div className={`match-accept-player ${matchPlayer1AcceptState}`}>
-                    <div
-                      className={[
-                        'match-accept-player-card',
-                        pvpPlayer1BackgroundMeta.className
-                      ].filter(Boolean).join(' ')}
-                      data-bg-id={pvpPlayer1BackgroundMeta.id}
-                      data-bg-rarity={pvpPlayer1BackgroundMeta.rarity}
-                      style={{ background: getHeroBackgroundStyle(pvpPlayer1Shop) }}
-                    >
-                      <span className="match-accept-dot" />
-                      <div className="pvp-player-identity match-accept-identity">
-                        <span className={`pvp-player-avatar match-accept-avatar ${pvpPlayer1FrameClass}`} style={pvpPlayer1FrameStyle}>{pvpPlayer1Avatar}</span>
-                        <div className="match-accept-name-block">
-                          <span className="pvp-player-name">{pvpMatch?.player1_nickname || 'Jogador 1'}</span>
-                          <span className="match-accept-meta">
-                            Nv. {Math.max(1, Number(pvpMatch?.player1_level || 1))} · {Math.max(0, Number(pvpMatch?.player1_pvp_points || 0))} pts
-                          </span>
-                        </div>
-                      </div>
-                      <div className="match-accept-state">{getMatchAcceptStateLabel(matchPlayer1AcceptState)}</div>
-                    </div>
-                  </div>
-                  <div className={`match-accept-vs ${matchBothAccepted ? 'ready' : ''}`}>⚔️</div>
-                  <div className={`match-accept-player ${matchPlayer2AcceptState}`}>
-                    <div
-                      className={[
-                        'match-accept-player-card',
-                        pvpPlayer2BackgroundMeta.className
-                      ].filter(Boolean).join(' ')}
-                      data-bg-id={pvpPlayer2BackgroundMeta.id}
-                      data-bg-rarity={pvpPlayer2BackgroundMeta.rarity}
-                      style={{ background: getHeroBackgroundStyle(pvpPlayer2Shop) }}
-                    >
-                      <span className="match-accept-dot" />
-                      <div className="pvp-player-identity match-accept-identity">
-                        <span className={`pvp-player-avatar match-accept-avatar ${pvpPlayer2FrameClass}`} style={pvpPlayer2FrameStyle}>{pvpPlayer2Avatar}</span>
-                        <div className="match-accept-name-block">
-                          <span className="pvp-player-name">{pvpMatch?.player2_nickname || 'Jogador 2'}</span>
-                          <span className="match-accept-meta">
-                            Nv. {Math.max(1, Number(pvpMatch?.player2_level || 1))} · {Math.max(0, Number(pvpMatch?.player2_pvp_points || 0))} pts
-                          </span>
-                        </div>
-                      </div>
-                      <div className="match-accept-state">{getMatchAcceptStateLabel(matchPlayer2AcceptState)}</div>
-                    </div>
-                  </div>
-                </div>
-                <div className="match-accept-countdown">{matchAcceptCountdownLabel}</div>
-                {shouldShowAcceptActions ? (
-                  <div className="match-accept-actions">
-                    <button className="btn btn-primary btn-lg" disabled={matchAcceptBusy} onClick={acceptPvpMatchInvite}>
-                      Aceitar
-                    </button>
-                    <button className="btn btn-secondary btn-lg" disabled={matchAcceptBusy} onClick={rejectPvpMatchInvite}>
-                      Recusar
-                    </button>
-                  </div>
-                ) : null}
-                </div>
-              )
-            ) : (
-              <>
-                <h3 className="arena-title">Duelo</h3>
-                <div className="arena-difficulty-selector">
-                  <div className="arena-ka-head">
-                    <span>Dificuldade da fila</span>
-                  </div>
-                  <div className="challenge-diff-list">
-                    {['easy', 'medium', 'hard'].map((difficulty) => {
-                      const isSelected = pvpSelectedDifficulty === difficulty;
-                      return (
-                        <button
-                          key={`arena_diff_${difficulty}`}
-                          className={`challenge-diff-btn arena-diff-btn arena-diff-btn-${difficulty} ${isSelected ? 'active' : ''}`}
-                          disabled={pvpAreaSelectionLocked}
-                          onClick={() => choosePvpDifficulty(difficulty)}
-                        >
-                          {DIFFICULTY_LABELS[difficulty] || difficulty}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-                <div className="arena-ka-selector">
-                  <div className="arena-ka-head">
-                    <span>Area de confronto</span>
-                  </div>
-                  <div className="arena-ka-carousel-container">
-                    <button
-                      className="ka-arrow-btn arena-ka-arrow-btn arena-ka-arrow-left"
-                      disabled={pvpAreaSelectionLocked || arenaKaCarouselIndex <= 0}
-                      onClick={() => shiftKnowledgeAreaCarousel('pvp', -1)}
-                      aria-label="Area anterior"
-                    >
-                      ◀
-                    </button>
-                    <div
-                      className="arena-ka-carousel-track"
-                      onTouchStart={(e) => handleKnowledgeAreaTouchStart('pvp', e)}
-                      onTouchEnd={(e) => handleKnowledgeAreaTouchEnd('pvp', e)}
-                    >
-                      <div
-                        className="arena-ka-carousel-slider"
-                        style={{ transform: `translateX(-${arenaKaCarouselIndex * 100}%)` }}
-                      >
-                        {KNOWLEDGE_AREAS.map((area) => {
-                          const isSelected = area.id === pvpKnowledgeArea;
-                          return (
-                            <div key={area.id} className={`arena-ka-card ${isSelected ? 'selected' : ''}`} style={{ '--ka-color': area.color }}>
-                              <div className="arena-ka-card-icon">{area.icon}</div>
-                              <div className="arena-ka-card-name">{area.name}</div>
-                              <div className="arena-ka-card-desc">{area.desc}</div>
-                              <button
-                                className={`ka-card-btn arena-ka-card-btn ${isSelected ? 'selected' : ''}`}
-                                disabled={pvpAreaSelectionLocked}
-                                onClick={() => chooseKnowledgeAreaForPvp(area.id)}
-                              >
-                                {isSelected ? 'Selecionada' : 'Escolher'}
-                              </button>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                    <button
-                      className="ka-arrow-btn arena-ka-arrow-btn arena-ka-arrow-right"
-                      disabled={pvpAreaSelectionLocked || arenaKaCarouselIndex >= KNOWLEDGE_AREAS.length - 1}
-                      onClick={() => shiftKnowledgeAreaCarousel('pvp', 1)}
-                      aria-label="Proxima area"
-                    >
-                      ▶
-                    </button>
-                  </div>
-                  <div className="arena-ka-dots">
-                    {KNOWLEDGE_AREAS.map((area, idx) => (
-                      <button
-                        key={`arena_ka_dot_${area.id}`}
-                        className={`arena-ka-dot ${idx === arenaKaCarouselIndex ? 'active' : ''}`}
-                        disabled={pvpAreaSelectionLocked}
-                        onClick={() => {
-                          if (idx === arenaKaCarouselIndex) return;
-                          setArenaKaCarouselIndex(idx);
-                          playSfx('click');
-                        }}
-                        aria-label={area.name}
-                      />
-                    ))}
-                  </div>
-                </div>
-
-                <button className={`${arenaPrimaryAction.className} arena-primary-btn`} onClick={arenaPrimaryAction.onClick} disabled={arenaPrimaryAction.disabled}>
-                  {shouldKeepQueueButtonPressed && !queueActionBusy ? (
-                    <span className="arena-queue-time-label" aria-live="polite">{pvpQueueTimeLabel}</span>
-                  ) : arenaPrimaryAction.label}
-                </button>
-                <button className="btn btn-secondary challenge-edit-emojis-btn arena-secondary-btn" onClick={openPvpEmojiPicker}>
-                  Selecionar Emojis
-                </button>
-                <div className="challenge-emoji-preview">
-                  {pvpBattleEmojis.map((emoji) => (
-                    <span key={`arena_preview_${emoji}`} className="challenge-emoji-chip">{emoji}</span>
-                  ))}
-                </div>
-              </>
-            )}
-            </div>
-          ) : pvpMode === PVP_MODE_TEAM_BATTLE ? (
-            <div className="challenge-panel challenge-arena challenge-team-panel">
-              <div className="challenge-team-head">
-                <h3 className="arena-title">Batalha de Equipes</h3>
-              </div>
-
-              {!pvpTeamRoomId ? (
-                <>
-                  <div className="pvp-team-room-list">
-                    {pvpTeamRooms.length ? pvpTeamRooms.map((room) => {
-                      const roomId = String(room?.id || '').trim();
-                      const roomAreaMeta = knowledgeAreaById.get(String(room?.knowledge_area || '').trim()) || null;
-                      const roomRedMembers = getPvpTeamMembersBySide(room, 'red');
-                      const roomBlueMembers = getPvpTeamMembersBySide(room, 'blue');
-                      const roomMySide = getPvpTeamUserSide(room, authUser?.uid || '');
-                      return (
-                        <button
-                          key={roomId}
-                          type="button"
-                          className={`pvp-team-room-card pvp-team-room-card-button ${roomMySide ? 'is-member' : ''}`}
-                          onClick={() => openPvpTeamRoomLobby(room)}
-                        >
-                          <div className="pvp-team-room-card-head">
-                            <div>
-                              <strong>{room?.name || 'Sala de Equipe'}</strong>
-                              <span>{room?.has_password ? 'Privada' : 'Aberta'} - {getPvpTeamRoomStatusLabel(room)}</span>
-                            </div>
-                            <span className="tier-badge tier-badge-compact tier-badge-arena">
-                              {DIFFICULTY_LABELS[normalizeDifficulty(room?.difficulty || 'easy')] || 'Facil'}
-                            </span>
-                          </div>
-                          <div className="pvp-team-room-card-meta">
-                            <span>{roomAreaMeta?.name || 'Area geral'}</span>
-                            <span>Vermelho {roomRedMembers.length}/2</span>
-                            <span>Azul {roomBlueMembers.length}/2</span>
-                            {roomMySide ? <span>No time {getPvpTeamSideColorLabel(roomMySide)}</span> : null}
-                          </div>
-                        </button>
-                      );
-                    }) : (
-                      <div className="challenge-status pvp-team-empty-state">
-                        Nenhuma sala aberta agora. Crie a primeira para iniciar a batalha.
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="pvp-team-toolbar">
-                    <button className="btn btn-primary arena-primary-btn" disabled={pvpTeamActionBusy} onClick={openPvpTeamRoomCreate}>
-                      Criar sala
-                    </button>
-                  </div>
-                </>
-              ) : (
-                <>
-                  <div className="pvp-team-room-card pvp-team-room-card-active">
-                    <div className="pvp-team-room-card-head">
-                      <div>
-                        <strong>{pvpTeamRoom?.name || 'Sala de Equipe'}</strong>
-                        <span>{pvpTeamRoom?.has_password ? 'Privada' : 'Aberta'} - {getPvpTeamRoomStatusLabel(pvpTeamRoom)}</span>
-                      </div>
-                      <span className="tier-badge tier-badge-compact tier-badge-arena">
-                        {DIFFICULTY_LABELS[normalizeDifficulty(pvpTeamRoom?.difficulty || 'easy')] || 'Facil'}
-                      </span>
-                    </div>
-                    <div className="pvp-team-room-card-meta">
-                      <span>{pvpTeamRoomAreaMeta?.name || 'Area geral'}</span>
-                      <span>{String(pvpTeamRoomHostUserId || '').trim() === String(authUser?.uid || '').trim() ? 'Voce e o lider' : 'Aguardando o lider iniciar'}</span>
-                    </div>
-                  </div>
-
-                  <div className="pvp-team-lobby-grid">
-                    {['red', 'blue'].map((side) => {
-                      const members = getPvpTeamMembersBySide(pvpTeamRoom, side);
-                      const isMine = pvpTeamMySide === side;
-                      return (
-                        <div key={`team_side_${side}`} className={`pvp-team-side-panel ${side} ${isMine ? 'is-mine' : ''}`}>
-                          <div className="pvp-team-side-head">
-                            <strong>Time {getPvpTeamSideColorLabel(side)}</strong>
-                            <span>{members.length}/{PVP_TEAM_ROOM_SIDE_CAPACITY}</span>
-                          </div>
-                          <div className="pvp-team-side-slots">
-                            {Array.from({ length: PVP_TEAM_ROOM_SIDE_CAPACITY }, (_, slotIndex) => {
-                              const member = members[slotIndex] || null;
-                              if (!member) {
-                                return (
-                                  <div key={`team_slot_${side}_${slotIndex}`} className="pvp-team-member-card is-empty">
-                                    <span className="pvp-team-member-avatar">+</span>
-                                    <div className="pvp-team-member-copy">
-                                      <strong>Vaga aberta</strong>
-                                      <span>Aguardando jogador</span>
-                                    </div>
-                                  </div>
-                                );
-                              }
-                              const memberShop = buildCosmeticSnapshot(
-                                member?.equipped_frame,
-                                member?.equipped_background,
-                                member?.equipped_emoji
-                              );
-                              const memberAvatar = getDisplayAvatar(member?.avatar || '\uD83D\uDE42', memberShop);
-                              const memberFrameStyle = getAvatarFrameStyle(memberShop);
-                              const memberFrameClass = getAvatarFrameClass(memberShop);
-                              const memberBgStyle = getHeroBackgroundStyle(memberShop);
-                              const memberBgMeta = getBackgroundVisualMeta(memberShop);
-                              const memberId = String(member?.user_id || '').trim();
-                              const isSelf = memberId === String(authUser?.uid || '').trim();
-                              const isHost = memberId === String(pvpTeamRoomHostUserId || '').trim();
-                              const isReady = pvpTeamRoomReadyMemberIds.includes(memberId);
-                              return (
-                                <div
-                                  key={`team_slot_${side}_${member.user_id}`}
-                                  className={['pvp-team-member-card', isSelf ? 'is-self' : '', memberBgMeta.className].filter(Boolean).join(' ')}
-                                  data-bg-id={memberBgMeta.id}
-                                  data-bg-rarity={memberBgMeta.rarity}
-                                  style={{ background: memberBgStyle }}
-                                >
-                                  <span className={`pvp-player-avatar pvp-team-member-avatar ${memberFrameClass}`} style={memberFrameStyle}>{memberAvatar}</span>
-                                  <div className="pvp-team-member-copy">
-                                    <strong>{member?.nickname || 'Jogador'}</strong>
-                                    <div className="pvp-team-member-flags">
-                                      {isHost ? <span className="pvp-team-member-flag host">Lider</span> : null}
-                                      {isReady ? <span className="pvp-team-member-flag ready">Pronto</span> : null}
-                                    </div>
-                                    <span>Nv. {Math.max(1, Number(member?.level || 1))} - {Math.max(0, Number(member?.pvp_points || 0))} pts</span>
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                          <button
-                            className={`btn ${isMine ? 'btn-secondary' : 'btn-primary'}`}
-                            disabled={pvpTeamActionBusy || isMine}
-                            onClick={() => joinPvpTeamRoomSide(side)}
-                          >
-                            {isMine ? 'Neste lado' : `Entrar no ${getPvpTeamSideColorLabel(side)}`}
-                          </button>
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                  <div className="pvp-team-room-actions">
-                    {String(pvpTeamRoomHostUserId || '').trim() === String(authUser?.uid || '').trim() ? (
-                      <button
-                        className="btn btn-primary"
-                        disabled={pvpTeamActionBusy}
-                        onClick={() => startPvpTeamBattle()}
-                      >
-                        {pvpTeamActionBusy ? 'Iniciando...' : 'Iniciar batalha'}
-                      </button>
-                    ) : (
-                      <button
-                        className={`btn ${pvpTeamCurrentUserReady ? 'btn-secondary pvp-team-ready-btn is-ready' : 'btn-primary pvp-team-ready-btn'}`}
-                        disabled={pvpTeamActionBusy}
-                        onClick={() => togglePvpTeamReadyState()}
-                      >
-                        {pvpTeamCurrentUserReady ? 'Pronto' : 'Pronto'}
-                      </button>
-                    )}
-                  </div>
-                </>
-              )}
-            </div>
-          ) : (
-            <div className="challenge-panel challenge-arena challenge-team-panel challenge-elimination-panel">
-              <div className="challenge-team-head">
-                <h3 className="arena-title">Um Contra Todos</h3>
-              </div>
-
-              {!pvpEliminationPendingAccept ? (
-                <>
-                  <div className="arena-difficulty-selector">
-                    <div className="arena-ka-head">
-                      <span>Dificuldade da fila</span>
-                    </div>
-                    <div className="challenge-diff-list">
-                      {['easy', 'medium', 'hard'].map((difficulty) => {
-                        const isSelected = pvpSelectedDifficulty === difficulty;
-                        return (
-                          <button
-                            key={`elimination_diff_${difficulty}`}
-                            className={`challenge-diff-btn arena-diff-btn arena-diff-btn-${difficulty} ${isSelected ? 'active' : ''}`}
-                            disabled={pvpEliminationAreaSelectionLocked}
-                            onClick={() => choosePvpDifficulty(difficulty)}
-                          >
-                            {DIFFICULTY_LABELS[difficulty] || difficulty}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-
-                  <div className="arena-ka-selector">
-                    <div className="arena-ka-head">
-                      <span>Area de confronto</span>
-                    </div>
-                    <div className="arena-ka-carousel-container">
-                      <button
-                        className="ka-arrow-btn arena-ka-arrow-btn arena-ka-arrow-left"
-                        disabled={pvpEliminationAreaSelectionLocked || arenaKaCarouselIndex <= 0}
-                        onClick={() => shiftKnowledgeAreaCarousel('pvp', -1)}
-                        aria-label="Area anterior"
-                      >
-                        &#9664;
-                      </button>
-                      <div
-                        className="arena-ka-carousel-track"
-                        onTouchStart={(e) => handleKnowledgeAreaTouchStart('pvp', e)}
-                        onTouchEnd={(e) => handleKnowledgeAreaTouchEnd('pvp', e)}
-                      >
-                        <div
-                          className="arena-ka-carousel-slider"
-                          style={{ transform: `translateX(-${arenaKaCarouselIndex * 100}%)` }}
-                        >
-                          {KNOWLEDGE_AREAS.map((area) => {
-                            const isSelected = area.id === pvpKnowledgeArea;
-                            return (
-                              <div key={area.id} className={`arena-ka-card ${isSelected ? 'selected' : ''}`} style={{ '--ka-color': area.color }}>
-                                <div className="arena-ka-card-icon">{area.icon}</div>
-                                <div className="arena-ka-card-name">{area.name}</div>
-                                <div className="arena-ka-card-desc">{area.desc}</div>
-                                <button
-                                  className={`ka-card-btn arena-ka-card-btn ${isSelected ? 'selected' : ''}`}
-                                  disabled={pvpEliminationAreaSelectionLocked}
-                                  onClick={() => chooseKnowledgeAreaForPvp(area.id)}
-                                >
-                                  {isSelected ? 'Selecionada' : 'Escolher'}
-                                </button>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                      <button
-                        className="ka-arrow-btn arena-ka-arrow-btn arena-ka-arrow-right"
-                        disabled={pvpEliminationAreaSelectionLocked || arenaKaCarouselIndex >= KNOWLEDGE_AREAS.length - 1}
-                        onClick={() => shiftKnowledgeAreaCarousel('pvp', 1)}
-                        aria-label="Proxima area"
-                      >
-                        &#9654;
-                      </button>
-                    </div>
-                    <div className="arena-ka-dots">
-                      {KNOWLEDGE_AREAS.map((area, idx) => (
-                        <button
-                          key={`elimination_ka_dot_${area.id}`}
-                          className={`arena-ka-dot ${idx === arenaKaCarouselIndex ? 'active' : ''}`}
-                          disabled={pvpEliminationAreaSelectionLocked}
-                          onClick={() => {
-                            if (idx === arenaKaCarouselIndex) return;
-                            setArenaKaCarouselIndex(idx);
-                            playSfx('click');
-                          }}
-                          aria-label={area.name}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                </>
-              ) : null}
-
-              {pvpEliminationPendingAccept ? (
-                pvpEliminationShowMatchFoundTransition ? (
-                  <div className="match-found-transition" role="status" aria-live="polite">
-                    <div className="match-found-transition-card match-found-transition-card-elimination">
-                      <span className="match-found-transition-kicker">Matchmaking</span>
-                      <h3 className="match-found-transition-title">Grupo encontrado</h3>
-                      <p className="match-found-transition-subtitle">
-                        Confirmando aceite dos 4 jogadores.
-                      </p>
-                      <div className="match-found-transition-players match-found-transition-players-elimination">
-                        {pvpEliminationAcceptMembers.map((member) => {
-                          const memberId = String(member?.user_id || '').trim();
-                          const memberShop = buildCosmeticSnapshot(
-                            member?.equipped_frame,
-                            member?.equipped_background,
-                            member?.equipped_emoji
-                          );
-                          const memberAvatar = getDisplayAvatar(member?.avatar || '\uD83D\uDE42', memberShop);
-                          const memberFrameStyle = getAvatarFrameStyle(memberShop);
-                          const memberFrameClass = getAvatarFrameClass(memberShop);
-                          const memberBgMeta = getBackgroundVisualMeta(memberShop);
-                          return (
-                            <div
-                              key={`elimination_transition_player_${memberId}`}
-                              className={[
-                                'match-found-transition-player-card',
-                                'match-found-transition-player-card-elimination',
-                                memberBgMeta.className
-                              ].filter(Boolean).join(' ')}
-                              data-bg-id={memberBgMeta.id}
-                              data-bg-rarity={memberBgMeta.rarity}
-                              style={{ background: getHeroBackgroundStyle(memberShop) }}
-                            >
-                              <span className={`pvp-player-avatar match-found-transition-avatar ${memberFrameClass}`} style={memberFrameStyle}>{memberAvatar}</span>
-                              <span className="match-found-transition-name">{member?.nickname || 'Jogador'}</span>
-                            </div>
-                          );
-                        })}
-                      </div>
-                      <div className="match-found-transition-loader" aria-hidden="true">
-                        <span />
-                        <span />
-                        <span />
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="match-accept-card match-accept-card-elimination">
-                    <h3>Partida encontrada:</h3>
-                    <div className="match-accept-players match-accept-players-elimination">
-                      {pvpEliminationAcceptMembers.map((member) => {
-                        const memberId = String(member?.user_id || '').trim();
-                        const acceptState = normalizePvpEliminationAcceptState(pvpEliminationAcceptStateMap[memberId]);
-                        const memberShop = buildCosmeticSnapshot(
-                          member?.equipped_frame,
-                          member?.equipped_background,
-                          member?.equipped_emoji
-                        );
-                        const memberAvatar = getDisplayAvatar(member?.avatar || '\uD83D\uDE42', memberShop);
-                        const memberFrameStyle = getAvatarFrameStyle(memberShop);
-                        const memberFrameClass = getAvatarFrameClass(memberShop);
-                        const memberBgMeta = getBackgroundVisualMeta(memberShop);
-                        return (
-                          <div key={`elimination_accept_player_${memberId}`} className={`match-accept-player ${acceptState}`}>
-                            <div
-                              className={[
-                                'match-accept-player-card',
-                                'match-accept-player-card-elimination',
-                                memberBgMeta.className
-                              ].filter(Boolean).join(' ')}
-                              data-bg-id={memberBgMeta.id}
-                              data-bg-rarity={memberBgMeta.rarity}
-                              style={{ background: getHeroBackgroundStyle(memberShop) }}
-                            >
-                              <span className="match-accept-dot" />
-                              <div className="pvp-player-identity match-accept-identity">
-                                <span className={`pvp-player-avatar match-accept-avatar ${memberFrameClass}`} style={memberFrameStyle}>{memberAvatar}</span>
-                                <div className="match-accept-name-block">
-                                  <span className="pvp-player-name">{member?.nickname || 'Jogador'}</span>
-                                </div>
-                              </div>
-                              <div className="match-accept-state">{getMatchAcceptStateLabel(acceptState)}</div>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                    <div className="match-accept-countdown">{pvpEliminationAcceptCountdownLabel}</div>
-                    {pvpEliminationShouldShowAcceptActions ? (
-                      <div className="match-accept-actions">
-                        <button className="btn btn-primary btn-lg" disabled={pvpEliminationInviteBusy} onClick={acceptPvpEliminationRoomInvite}>
-                          Aceitar
-                        </button>
-                        <button className="btn btn-secondary btn-lg" disabled={pvpEliminationInviteBusy} onClick={rejectPvpEliminationRoomInvite}>
-                          Recusar
-                        </button>
-                      </div>
-                    ) : null}
-                  </div>
-                )
-              ) : null}
-
-              <button
-                className={`${pvpEliminationPrimaryAction.className} arena-primary-btn`}
-                onClick={pvpEliminationPrimaryAction.onClick}
-                disabled={pvpEliminationPrimaryAction.disabled}
-              >
-                {pvpEliminationQueueing && !pvpEliminationActionBusy && !pvpEliminationHasLiveMatch ? (
-                  <span className="arena-queue-time-label" aria-live="polite">{pvpEliminationQueueTimeLabel}</span>
-                ) : pvpEliminationPrimaryAction.label}
-              </button>
-            </div>
-          )}
-        </div>
-
-        <div className={`screen screen-pvp ${screen === 'pvp' ? 'active' : ''}`}>
-          <div className="quiz-header pvp-header">
-            <div className="quiz-info">
-              <button className="btn pvp-exit-btn" onClick={() => leavePvpFlow()}>Sair da Partida</button>
-            </div>
-          </div>
-          <div className={`quiz-timer pvp-quiz-timer ${pvpTimerVisualClass}`}>
-            <div className={`timer-bar ${pvpTimerClass}`} style={{ width: `${pvpTimerPct}%` }} />
-          </div>
-          <div className={`pvp-round-indicator ${pvpRoundPhaseClass} ${pvpTimerVisualClass}`}>
-            <span className="pvp-round-main">Rodada {pvpRoundNo}/{pvpTotalRounds}</span>
-            {pvpRoundPhaseLabel ? (
-              <span className="pvp-round-phase">{pvpRoundPhaseLabel}</span>
-            ) : null}
-          </div>
-          <div className="pvp-score-cards">
-            <div
-              className={[
-                'pvp-score-card',
-                'pvp-score-card-left',
-                pvpPlayer1BackgroundMeta.className
-              ].filter(Boolean).join(' ')}
-              data-bg-id={pvpPlayer1BackgroundMeta.id}
-              data-bg-rarity={pvpPlayer1BackgroundMeta.rarity}
-              style={{ background: getHeroBackgroundStyle(pvpPlayer1Shop) }}
-            >
-              <div className="pvp-player-identity">
-                <span className={`pvp-player-avatar ${pvpPlayer1FrameClass}`} style={pvpPlayer1FrameStyle}>{pvpPlayer1Avatar}</span>
-                <span className="pvp-player-name">{pvpMatch?.player1_nickname || 'Jogador 1'}</span>
-              </div>
-              <strong>{Math.max(0, Number(pvpMatch?.player1_score || 0))}</strong>
-            </div>
-            <div
-              className={[
-                'pvp-score-card',
-                'pvp-score-card-right',
-                pvpPlayer2BackgroundMeta.className
-              ].filter(Boolean).join(' ')}
-              data-bg-id={pvpPlayer2BackgroundMeta.id}
-              data-bg-rarity={pvpPlayer2BackgroundMeta.rarity}
-              style={{ background: getHeroBackgroundStyle(pvpPlayer2Shop) }}
-            >
-              <div className="pvp-player-identity">
-                <span className={`pvp-player-avatar ${pvpPlayer2FrameClass}`} style={pvpPlayer2FrameStyle}>{pvpPlayer2Avatar}</span>
-                <span className="pvp-player-name">{pvpMatch?.player2_nickname || 'Jogador 2'}</span>
-              </div>
-              <strong>{Math.max(0, Number(pvpMatch?.player2_score || 0))}</strong>
-            </div>
-          </div>
-          <div className="quiz-body pvp-quiz-body">
-            <div className="question-card pvp-question-card">
-              <div
-                ref={pvpQuestionScrollRef}
-                className={`question-scroll-wrap ${pvpQuestionHasOverflow ? 'has-overflow' : ''}`}
-              >
-                <p className="question-text">{pvpQuestion?.q || 'Aguardando pergunta...'}</p>
-                {pvpQuestion?.code ? <pre className="question-code">{pvpQuestion.code}</pre> : null}
-              </div>
-              {pvpQuestionHasOverflow ? (
-                <span className="question-scroll-indicator" aria-hidden="true" />
-              ) : null}
-            </div>
-            <div className="options-list">
-              {(pvpQuestion?.opts || []).map((option, index) => (
-                <button
-                  key={`pvp_opt_${pvpRoundNo}_${index}`}
-                  className={`option-btn ${pvpState.selectedIndex === index ? 'selected' : ''} ${pvpState.submitted ? 'disabled' : ''}`}
-                  disabled={pvpState.submitted || pvpIsRoundResult}
-                  onClick={() => pickPvpAnswer(index)}
-                >
-                  <span className="opt-letter">{String.fromCharCode(65 + index)}</span>
-                  <span>{option}</span>
-                </button>
-              ))}
-            </div>
-            <div className="pvp-answer-footer">
-              <button
-                className="btn btn-primary quiz-confirm-btn pvp-confirm-answer-btn"
-                disabled={pvpState.submitted || pvpIsRoundResult || !Number.isFinite(Number(pvpState.selectedIndex)) || Number(pvpState.selectedIndex) < 0}
-                onClick={confirmPvpAnswer}
-              >
-                Confirmar resposta
-              </button>
-              {pvpWaitingOpponent ? (
-                <div className="challenge-status pvp-waiting-status">
-                  Aguardando oponente responder...
-                </div>
-              ) : null}
-              {!pvpIsRoundResult ? (
-                <div className="pvp-round-emoji-actions">
-                  {pvpBattleEmojis.map((emoji) => (
-                    <button
-                      key={emoji}
-                      className={`pvp-emoji-btn ${pvpEmojiCooldownActive ? 'is-cooldown' : ''}`}
-                      onClick={() => sendPvpEmoji(emoji)}
-                      disabled={pvpEmojiCooldownActive}
-                      aria-label={`Enviar emoji ${emoji}`}
-                    >
-                      <span className="pvp-emoji-glyph" aria-hidden="true">{emoji}</span>
-                      {pvpEmojiCooldownActive ? (
-                        <>
-                          <span
-                            className="pvp-emoji-cooldown-fill"
-                            style={{ height: `${pvpEmojiCooldownFillPct}%` }}
-                            aria-hidden="true"
-                          />
-                          <span className="pvp-emoji-cooldown-label" aria-hidden="true">{pvpEmojiCooldownLabel}</span>
-                        </>
-                      ) : null}
-                    </button>
-                  ))}
-                </div>
-              ) : null}
-            </div>
-          </div>
-          {pvpEmojiFx.length ? (
-            <div className="pvp-emoji-overlay" aria-hidden="true">
-              {pvpEmojiFx.map((fx) => (
-                <span
-                  key={fx.id}
-                  className={`pvp-emoji-fx ${fx.side}`}
-                  style={{
-                    top: `${Number.isFinite(Number(fx?.topPct)) ? Number(fx.topPct) : 58}%`,
-                    [String(fx?.side || '') === 'left' ? 'left' : 'right']: `calc(8% + ${Math.max(0, Number(fx?.offsetPx || 0))}px)`
-                  }}
-                >
-                  {fx.emoji}
-                </span>
-              ))}
-            </div>
-          ) : null}
-          {pvpIsRoundResult ? (
-            <div className="pvp-wait-modal">
-              <div className="pvp-wait-backdrop" />
-              <div className={`reset-modal-card pvp-round-card ${pvpRoundResultPhaseClass}`}>
-                <div className="pvp-round-kicker">{pvpRoundResultKicker}</div>
-                <div className="pvp-round-title">{pvpRoundResultLabel}</div>
-                <div className="pvp-round-scoreline">
-                  <div className="pvp-round-score-item">
-                    <span>{pvpMatch?.player1_nickname || 'Jogador 1'}</span>
-                    <strong>{Math.max(0, Number(pvpMatch?.player1_score || 0))}</strong>
-                  </div>
-                  <div className="pvp-round-score-divider">×</div>
-                  <div className="pvp-round-score-item">
-                    <span>{pvpMatch?.player2_nickname || 'Jogador 2'}</span>
-                    <strong>{Math.max(0, Number(pvpMatch?.player2_score || 0))}</strong>
-                  </div>
-                </div>
-                <div className="pvp-round-answer-feedback">
-                  <div className={`pvp-round-answer-chip ${pvpRoundPlayer1Feedback.cssClass}`}>
-                    <span className="pvp-round-answer-name">{pvpMatch?.player1_nickname || 'Jogador 1'}</span>
-                    <span className="pvp-round-answer-state">{pvpRoundPlayer1Feedback.emoji} {pvpRoundPlayer1Feedback.label}</span>
-                  </div>
-                  <div className={`pvp-round-answer-chip ${pvpRoundPlayer2Feedback.cssClass}`}>
-                    <span className="pvp-round-answer-name">{pvpMatch?.player2_nickname || 'Jogador 2'}</span>
-                    <span className="pvp-round-answer-state">{pvpRoundPlayer2Feedback.emoji} {pvpRoundPlayer2Feedback.label}</span>
-                  </div>
-                </div>
-                <div className={`pvp-round-countdown ${pvpRoundResultCountdownClass}`}>Proxima pergunta em {pvpRoundResultRemainingSec}s</div>
-                <div className="pvp-round-emoji-actions pvp-round-emoji-actions-modal">
-                  {pvpBattleEmojis.map((emoji) => (
-                    <button
-                      key={`modal_${emoji}`}
-                      className={`pvp-emoji-btn ${pvpEmojiCooldownActive ? 'is-cooldown' : ''}`}
-                      onClick={() => sendPvpEmoji(emoji)}
-                      disabled={pvpEmojiCooldownActive}
-                      aria-label={`Enviar emoji ${emoji}`}
-                    >
-                      <span className="pvp-emoji-glyph" aria-hidden="true">{emoji}</span>
-                      {pvpEmojiCooldownActive ? (
-                        <>
-                          <span
-                            className="pvp-emoji-cooldown-fill"
-                            style={{ height: `${pvpEmojiCooldownFillPct}%` }}
-                            aria-hidden="true"
-                          />
-                          <span className="pvp-emoji-cooldown-label" aria-hidden="true">{pvpEmojiCooldownLabel}</span>
-                        </>
-                      ) : null}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-          ) : null}
-        </div>
-
-        <div className={`screen screen-pvp ${screen === 'pvp-team' ? 'active' : ''}`}>
-          <div className="quiz-header pvp-header">
-            <div className="quiz-info">
-              <button className="btn pvp-exit-btn" onClick={() => leavePvpTeamFlow()}>Sair da Batalha</button>
-            </div>
-          </div>
-          <div className={`quiz-timer pvp-quiz-timer ${pvpTeamTimerVisualClass}`}>
-            <div className={`timer-bar ${pvpTeamTimerClass}`} style={{ width: `${pvpTeamTimerPct}%` }} />
-          </div>
-          <div className={`pvp-round-indicator ${pvpTeamTimerVisualClass}`}>
-            <span className="pvp-round-main">{pvpTeamCurrentBattleLabel}</span>
-            <span className="pvp-round-phase">{pvpTeamCurrentPairLabel}</span>
-          </div>
-          <div className="pvp-team-scoreboard">
-            {[
-              {
-                side: 'red',
-                label: 'Vermelho',
-                members: pvpTeamRedMembers,
-                score: Math.max(0, Number(pvpTeamMatch?.red_score || 0)),
-                activeUserId: String(pvpTeamBattleEntry?.red_user_id || '').trim()
-              },
-              {
-                side: 'blue',
-                label: 'Azul',
-                members: pvpTeamBlueMembers,
-                score: Math.max(0, Number(pvpTeamMatch?.blue_score || 0)),
-                activeUserId: String(pvpTeamBattleEntry?.blue_user_id || '').trim()
-              }
-            ].map((team) => (
-              <div key={`battle_team_${team.side}`} className={`pvp-team-score-card ${team.side} ${pvpTeamMySide === team.side ? 'is-mine' : ''}`}>
-                <div className="pvp-team-score-card-head">
-                  <span>Time {team.label}</span>
-                  <strong>{team.score}</strong>
-                </div>
-                <div className="pvp-team-score-members">
-                  {team.members.map((member) => {
-                    const memberId = String(member?.user_id || '').trim();
-                    const memberShop = buildCosmeticSnapshot(
-                      member?.equipped_frame,
-                      member?.equipped_background,
-                      member?.equipped_emoji
-                    );
-                    const memberAvatar = getDisplayAvatar(member?.avatar || '\uD83D\uDE42', memberShop);
-                    const memberFrameStyle = getAvatarFrameStyle(memberShop);
-                    const memberFrameClass = getAvatarFrameClass(memberShop);
-                    const memberScore = Math.max(0, Number(pvpTeamMatch?.member_scores?.[memberId] || 0));
-                    return (
-                      <div key={`battle_team_member_${team.side}_${memberId}`} className={`pvp-team-score-member ${team.activeUserId === memberId ? 'is-active' : ''}`}>
-                        <span className={`pvp-player-avatar pvp-team-score-avatar ${memberFrameClass}`} style={memberFrameStyle}>{memberAvatar}</span>
-                        <div className="pvp-team-score-copy">
-                          <strong>{member?.nickname || 'Jogador'}</strong>
-                          <span>{memberScore} acerto(s)</span>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            ))}
-          </div>
-          <div className="quiz-body pvp-quiz-body">
-            <div className="question-card pvp-question-card">
-              <p className="question-text">{pvpTeamQuestion?.q || 'Aguardando pergunta...'}</p>
-              {pvpTeamQuestion?.code ? <pre className="question-code">{pvpTeamQuestion.code}</pre> : null}
-            </div>
-            <div className="challenge-status pvp-team-active-duel">
-              Duelo atual: {pvpTeamCurrentPairLabel}
-            </div>
-            <div className="options-list">
-              {(pvpTeamQuestion?.opts || []).map((option, index) => (
-                <button
-                  key={`pvp_team_opt_${pvpTeamBattleNo}_${index}`}
-                  className={`option-btn ${pvpTeamSelectedIndex === index ? 'selected' : ''} ${pvpTeamSubmitted || !pvpTeamIsActivePlayer ? 'disabled' : ''}`}
-                  disabled={pvpTeamSubmitted || pvpTeamBattleStatus === 'round_result' || !pvpTeamIsActivePlayer}
-                  onClick={() => pickPvpTeamAnswer(index)}
-                >
-                  <span className="opt-letter">{String.fromCharCode(65 + index)}</span>
-                  <span>{option}</span>
-                </button>
-              ))}
-            </div>
-            <div className="pvp-answer-footer">
-              <button
-                className="btn btn-primary quiz-confirm-btn pvp-confirm-answer-btn"
-                disabled={
-                  !pvpTeamIsActivePlayer
-                  || pvpTeamSubmitted
-                  || pvpTeamBattleStatus === 'round_result'
-                  || !Number.isFinite(Number(pvpTeamSelectedIndex))
-                  || Number(pvpTeamSelectedIndex) < 0
-                }
-                onClick={confirmPvpTeamAnswer}
-              >
-                Confirmar resposta
-              </button>
-              {pvpTeamBattleStatus === 'active' ? (
-                pvpTeamIsActivePlayer ? (
-                  pvpTeamSubmitted ? (
-                    <div className="challenge-status pvp-waiting-status">
-                      Resposta enviada. Aguardando o adversario...
-                    </div>
-                  ) : null
-                ) : (
-                  <div className="challenge-status pvp-waiting-status">
-                    Aguardando o duelo da sua dupla...
-                  </div>
-                )
-              ) : null}
-            </div>
-          </div>
-          {pvpTeamBattleStatus === 'round_result' ? (
-            <div className="pvp-wait-modal">
-              <div className="pvp-wait-backdrop" />
-              <div className="reset-modal-card pvp-round-card">
-                <div className="pvp-round-kicker">{getPvpTeamBattleDisplayLabel(pvpTeamResultEntry)}</div>
-                <div className="pvp-round-title">{pvpTeamRoundResultLabel}</div>
-                <div className="pvp-round-scoreline">
-                  <div className="pvp-round-score-item">
-                    <span>Time Vermelho</span>
-                    <strong>{Math.max(0, Number(pvpTeamMatch?.red_score || 0))}</strong>
-                  </div>
-                  <div className="pvp-round-score-divider">x</div>
-                  <div className="pvp-round-score-item">
-                    <span>Time Azul</span>
-                    <strong>{Math.max(0, Number(pvpTeamMatch?.blue_score || 0))}</strong>
-                  </div>
-                </div>
-                <div className="pvp-round-answer-feedback">
-                  <div className={`pvp-round-answer-chip ${pvpTeamRedFeedback.cssClass}`}>
-                    <span className="pvp-round-answer-name">{pvpTeamResultPair?.red?.nickname || 'Time Vermelho'}</span>
-                    <span className="pvp-round-answer-state">{pvpTeamRedFeedback.emoji} {pvpTeamRedFeedback.label}</span>
-                  </div>
-                  <div className={`pvp-round-answer-chip ${pvpTeamBlueFeedback.cssClass}`}>
-                    <span className="pvp-round-answer-name">{pvpTeamResultPair?.blue?.nickname || 'Time Azul'}</span>
-                    <span className="pvp-round-answer-state">{pvpTeamBlueFeedback.emoji} {pvpTeamBlueFeedback.label}</span>
-                  </div>
-                </div>
-                <div className={`pvp-round-countdown ${pvpTeamRoundResultCountdownClass}`}>Proximo confronto em {pvpTeamRoundResultRemainingSec}s</div>
-              </div>
-            </div>
-          ) : null}
-        </div>
-
-        <div className={`screen screen-pvp screen-pvp-elimination ${screen === 'pvp-elimination' ? 'active' : ''}`}>
-          <div className="quiz-header pvp-header">
-            <div className="quiz-info">
-              <button className="btn pvp-exit-btn" onClick={() => leavePvpEliminationFlow()}>Sair da Partida</button>
-            </div>
-          </div>
-          <div className={`quiz-timer pvp-quiz-timer ${pvpEliminationTimerVisualClass}`}>
-            <div className={`timer-bar ${pvpEliminationTimerClass}`} style={{ width: `${pvpEliminationTimerPct}%` }} />
-          </div>
-          <div className={`pvp-round-indicator ${pvpEliminationTimerVisualClass}`}>
-            <span className="pvp-round-main">{pvpEliminationRoundLabel}</span>
-            <span className="pvp-round-phase">
-              {pvpEliminationPairUser1Label} x {pvpEliminationPairUser2Label}
-            </span>
-          </div>
-          <div className="pvp-elimination-scoreboard-grid">
-            {pvpEliminationLivePairRows.map((entry) => (
-              <div
-                key={`elimination_live_pair_${entry.user_id}`}
-                className={[
-                  'pvp-elimination-live-card',
-                  'is-duel',
-                  entry.isSelf ? 'is-self' : '',
-                  entry.bgClassName
-                ].filter(Boolean).join(' ')}
-                data-bg-id={entry.bgId}
-                data-bg-rarity={entry.bgRarity}
-                style={{ background: entry.bgStyle }}
-              >
-                <span className={`pvp-player-avatar pvp-elimination-live-avatar ${entry.frameClass}`} style={entry.frameStyle}>{entry.avatar}</span>
-                <div className="pvp-elimination-live-copy">
-                  <strong>{entry.nickname}</strong>
-                  <span>{entry.score} acerto(s)</span>
-                </div>
-              </div>
-            ))}
-          </div>
-          <div className="quiz-body pvp-quiz-body">
-            <div className="question-card pvp-question-card">
-              <div className="question-scroll-wrap">
-                <p className="question-text">{pvpEliminationQuestion?.q || 'Aguardando pergunta...'}</p>
-                {pvpEliminationQuestion?.code ? <pre className="question-code">{pvpEliminationQuestion.code}</pre> : null}
-              </div>
-            </div>
-            <div className="challenge-status pvp-team-active-duel">
-              Em duelo agora: {pvpEliminationPairUser1Label} x {pvpEliminationPairUser2Label}
-            </div>
-            <div className="options-list">
-              {(pvpEliminationQuestion?.opts || []).map((option, index) => (
-                <button
-                  key={`pvp_elimination_opt_${pvpEliminationMatch?.battle_no || 1}_${index}`}
-                  className={`option-btn ${pvpEliminationSelectedIndex === index ? 'selected' : ''} ${pvpEliminationSubmitted || !pvpEliminationIsActivePairMember ? 'disabled' : ''}`}
-                  disabled={pvpEliminationSubmitted || pvpEliminationBattleStatus !== 'active' || !pvpEliminationIsActivePairMember || pvpEliminationIsSpectator || pvpEliminationShowBattleIntro}
-                  onClick={() => pickPvpEliminationAnswer(index)}
-                >
-                  <span className="opt-letter">{String.fromCharCode(65 + index)}</span>
-                  <span>{option}</span>
-                </button>
-              ))}
-            </div>
-            <div className="pvp-answer-footer">
-              <button
-                className="btn btn-primary quiz-confirm-btn pvp-confirm-answer-btn"
-                disabled={
-                  pvpEliminationBattleStatus !== 'active'
-                  || pvpEliminationIsSpectator
-                  || !pvpEliminationIsActivePairMember
-                  || pvpEliminationSubmitted
-                  || pvpEliminationShowBattleIntro
-                  || !Number.isFinite(Number(pvpEliminationSelectedIndex))
-                  || Number(pvpEliminationSelectedIndex) < 0
-                }
-                onClick={confirmPvpEliminationAnswer}
-              >
-                Confirmar resposta
-              </button>
-              {pvpEliminationBattleStatus === 'active' ? (
-                pvpEliminationShowBattleIntro ? (
-                  <div className="challenge-status pvp-waiting-status">
-                    Preparando confronto da rodada...
-                  </div>
-                ) : pvpEliminationIsSpectator ? (
-                  <div className="challenge-status pvp-waiting-status">
-                    Voce foi eliminado e esta assistindo aos confrontos.
-                  </div>
-                ) : pvpEliminationIsActivePairMember ? (
-                  pvpEliminationWaitingPairAnswer ? (
-                    <div className="challenge-status pvp-waiting-status">
-                      Resposta enviada. Aguardando o adversario...
-                    </div>
-                  ) : null
-                ) : (
-                  <div className="challenge-status pvp-waiting-status">
-                    Aguardando o duelo de outros jogadores...
-                  </div>
-                )
-              ) : null}
-            </div>
-          </div>
-
-          {pvpEliminationShowBattleIntro ? (
-            <div className="pvp-wait-modal pvp-elimination-intro-modal">
-              <div className="pvp-wait-backdrop" />
-              <div className="reset-modal-card pvp-round-card phase-elimination pvp-elimination-intro-card">
-                <div className="pvp-round-kicker">Proximo confronto</div>
-                <div className="pvp-round-title">{pvpEliminationPairUser1Label} x {pvpEliminationPairUser2Label}</div>
-                <div className="pvp-elimination-intro-versus">
-                  <span className={`pvp-player-avatar pvp-elimination-intro-avatar ${pvpEliminationPairUser1FrameClass}`} style={pvpEliminationPairUser1FrameStyle}>{pvpEliminationPairUser1Avatar}</span>
-                  <span className="pvp-elimination-intro-vs">VS</span>
-                  <span className={`pvp-player-avatar pvp-elimination-intro-avatar ${pvpEliminationPairUser2FrameClass}`} style={pvpEliminationPairUser2FrameStyle}>{pvpEliminationPairUser2Avatar}</span>
-                </div>
-                <div className="pvp-elimination-intro-loader" aria-hidden="true">
-                  <span />
-                  <span />
-                  <span />
-                </div>
-              </div>
-            </div>
-          ) : null}
-
-          {pvpEliminationBattleStatus === 'round_result' && !pvpEliminationShowBattleIntro ? (
-            <div className="pvp-wait-modal">
-              <div className="pvp-wait-backdrop" />
-              <div className="reset-modal-card pvp-round-card">
-                <div className="pvp-round-kicker">{pvpEliminationRoundLabel}</div>
-                <div className="pvp-round-title">{pvpEliminationRoundResultLabel}</div>
-                <div className="pvp-round-hint">Placar geral da partida</div>
-                <div className="pvp-elimination-transition-grid pvp-elimination-round-scoreboard">
-                  {pvpEliminationMatchScoreRows.map((entry, index) => (
-                    <div key={`elimination_round_result_${entry.user_id}`} className={`pvp-elimination-transition-row ${String(entry?.user_id || '') === pvpEliminationMyUserId ? 'is-self' : ''}`}>
-                      <span>{index + 1}º - {entry?.nickname || 'Jogador'}</span>
-                      <strong>{Math.max(0, Number(entry?.score || 0))}</strong>
-                    </div>
-                  ))}
-                </div>
-                <div className={`pvp-round-countdown ${pvpEliminationCountdownClass}`}>
-                  Proximo duelo em {Math.max(0, pvpEliminationCountdownSec)}s
-                </div>
-              </div>
-            </div>
-          ) : null}
-
-          {pvpEliminationBattleStatus === 'elimination_result' ? (
-            <div className="pvp-wait-modal">
-              <div className="pvp-wait-backdrop" />
-              <div className="reset-modal-card pvp-round-card phase-elimination pvp-elimination-round-card">
-                <div className="pvp-round-kicker">Fim do ciclo</div>
-                <div className="pvp-round-title">{pvpEliminationEliminationLabel}</div>
-                <div className="pvp-elimination-transition-grid">
-                  {pvpEliminationResultRows.map((entry) => (
-                    <div key={`elimination_transition_${entry.user_id}`} className={`pvp-elimination-transition-row ${String(entry?.user_id || '') === pvpEliminationEliminatedUserId ? 'is-eliminated' : ''}`}>
-                      <span>{entry?.nickname || 'Jogador'}</span>
-                      <strong>{Math.max(0, Number(entry?.score || 0))}</strong>
-                    </div>
-                  ))}
-                </div>
-                {pvpEliminationWinnerUserId ? (
-                  <div className="pvp-round-hint">
-                    Campeao definido: {pvpEliminationWinnerMember?.nickname || 'Jogador'}.
-                  </div>
-                ) : null}
-                <div className={`pvp-round-countdown ${pvpEliminationCountdownClass}`}>
-                  {pvpEliminationWinnerUserId ? 'Resultado final em ' : 'Novo ciclo em '}
-                  {Math.max(0, pvpEliminationCountdownSec)}s
-                </div>
-              </div>
-            </div>
-          ) : null}
-        </div>
-
-        <div className={`screen ${screen === 'pvp-elimination-result' ? 'active' : ''}`}>
-          <div className="result-content">
-            <div className={`pvp-result-panel pvp-result-panel-dynamic outcome-${pvpEliminationResultKey === 'win' ? 'win' : pvpEliminationResultKey === 'draw' ? 'draw' : 'lose'}`}>
-              <div className="result-emoji pvp-result-seq result-seq-1">{pvpEliminationResultKey === 'win' ? '\uD83C\uDFC6' : pvpEliminationResultKey === 'draw' ? '\uD83E\uDD1D' : '\uD83D\uDE35'}</div>
-              <div className="result-title pvp-result-seq result-seq-2">
-                {pvpEliminationResultKey === 'win' ? 'Campeao da Eliminatoria!' : `Eliminatoria encerrada - ${pvpEliminationPlacementLabel}`}
-              </div>
-              <div className="result-subtitle pvp-result-seq result-seq-3">
-                {pvpEliminationWinnerUserId
-                  ? `Vencedor: ${pvpEliminationWinnerMember?.nickname || 'Jogador'}`
-                  : 'Pontuacao final da eliminatoria'}
-              </div>
-              <div className="pvp-elimination-result-list pvp-result-seq result-seq-4">
-                {pvpEliminationResultRows.map((entry) => {
-                  const memberShop = buildCosmeticSnapshot(
-                    entry?.equipped_frame,
-                    entry?.equipped_background,
-                    entry?.equipped_emoji
-                  );
-                  const memberAvatar = getDisplayAvatar(entry?.avatar || '\uD83D\uDE42', memberShop);
-                  const memberFrameStyle = getAvatarFrameStyle(memberShop);
-                  const memberFrameClass = getAvatarFrameClass(memberShop);
-                  const isSelf = String(entry?.user_id || '').trim() === pvpEliminationMyUserId;
-                  const rowPlacement = Math.max(1, Number(entry?.placement || 0));
-                  return (
-                    <div key={`elimination_result_row_${entry.user_id}`} className={`pvp-elimination-result-row ${isSelf ? 'is-self' : ''}`}>
-                      <span className="pvp-elimination-result-rank">{rowPlacement}o</span>
-                      <span className={`pvp-player-avatar pvp-team-result-avatar ${memberFrameClass}`} style={memberFrameStyle}>{memberAvatar}</span>
-                      <div className="pvp-elimination-result-copy">
-                        <strong>{entry?.nickname || 'Jogador'}</strong>
-                        <span>{Math.max(0, Number(entry?.score || 0))} acerto(s)</span>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-              {pvpEliminationResultReward ? (
-                <>
-                  <div className="reward-collect-list pvp-result-reward-list pvp-result-seq result-seq-5">
-                    <div className="reward-collect-item">
-                      <span className="reward-collect-item-label">Colocacao</span>
-                      <span className="reward-collect-item-value level">{pvpEliminationResultReward.placementLabel || pvpEliminationPlacementLabel}</span>
-                    </div>
-                    <div className="reward-collect-item">
-                      <span className="reward-collect-item-label">Pontos PVP</span>
-                      <span className={`reward-collect-item-value ${Number(pvpEliminationResultReward.points || 0) >= 0 ? 'points' : 'points-loss'}`}>
-                        {formatSignedPoints(pvpEliminationResultReward.points || 0)}
-                      </span>
-                    </div>
-                    <div className="reward-collect-item">
-                      <span className="reward-collect-item-label">XP</span>
-                      <span className="reward-collect-item-value xp">+{Math.max(0, Number(pvpEliminationResultReward.xp || 0))}</span>
-                    </div>
-                    <div className="reward-collect-item">
-                      <span className="reward-collect-item-label">Moedas</span>
-                      <span className="reward-collect-item-value coins">+{Math.max(0, Number(pvpEliminationResultReward.coins || 0))}</span>
-                    </div>
-                  </div>
-                  <button
-                    className="reward-collect-btn pvp-result-reward-btn pvp-result-seq result-seq-6"
-                    disabled={pvpEliminationRewardCollecting}
-                    onClick={(event) => collectPvpEliminationResultRewards(event)}
-                  >
-                    {pvpEliminationRewardCollecting ? 'Coletando...' : 'Coletar Recompensas'}
-                  </button>
-                </>
-              ) : !pvpEliminationResultProcessed ? (
-                <div className="result-subtitle pvp-result-seq result-seq-5 pvp-result-collect-note">
-                  Preparando recompensas...
-                </div>
-              ) : (
-                <button
-                  className="reward-collect-btn pvp-result-reward-btn pvp-result-seq result-seq-5"
-                  onClick={() => {
-                    resetPvpEliminationState();
-                    setPvpMode('');
-                    setScreen('home');
-                  }}
-                >
-                  Voltar ao inicio
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
-
-        <div className={`screen ${screen === 'pvp-team-result' ? 'active' : ''}`}>
-          <div className="result-content">
-            <div className={`pvp-result-panel pvp-result-panel-dynamic outcome-${pvpTeamResultKey === 'win' ? 'win' : pvpTeamResultKey === 'draw' ? 'draw' : 'lose'}`}>
-              <div className="result-emoji pvp-result-seq result-seq-1">{pvpTeamResultKey === 'win' ? '\uD83C\uDFC6' : pvpTeamResultKey === 'draw' ? '\uD83E\uDD1D' : '\uD83D\uDE35'}</div>
-              <div className="result-title pvp-result-seq result-seq-2">
-                {pvpTeamResultKey === 'win' ? 'Vitoria da equipe!' : pvpTeamResultKey === 'draw' ? 'Empate em equipe' : 'Derrota da equipe'}
-              </div>
-              <div className="pvp-result-scoreline pvp-result-seq result-seq-3">
-                <span className={`player-history-versus-name ${String(pvpTeamMatch?.winner_side || '').trim() === 'red' ? 'is-winner' : 'is-loser'}`}>
-                  Vermelho
-                </span>
-                <div className="player-history-score type-pvp pvp-result-score pvp-result-inline-score">
-                  <span className={`player-history-score-value ${String(pvpTeamMatch?.winner_side || '').trim() === 'red' ? 'is-winner' : 'is-loser'}`}>
-                    {Math.max(0, Number(pvpTeamMatch?.red_score || 0))}
-                  </span>
-                  <span className="player-history-score-divider">x</span>
-                  <span className={`player-history-score-value ${String(pvpTeamMatch?.winner_side || '').trim() === 'blue' ? 'is-winner' : 'is-loser'}`}>
-                    {Math.max(0, Number(pvpTeamMatch?.blue_score || 0))}
-                  </span>
-                </div>
-                <span className={`player-history-versus-name ${String(pvpTeamMatch?.winner_side || '').trim() === 'blue' ? 'is-winner' : 'is-loser'}`}>
-                  Azul
-                </span>
-              </div>
-              <div className="pvp-team-result-members pvp-result-seq result-seq-4">
-                {[
-                  { side: 'red', label: 'Time Vermelho', members: pvpTeamRedMembers },
-                  { side: 'blue', label: 'Time Azul', members: pvpTeamBlueMembers }
-                ].map((team) => (
-                  <div key={`team_result_${team.side}`} className={`pvp-team-result-column ${team.side}`}>
-                    <div className="pvp-team-result-column-title">{team.label}</div>
-                    <div className="pvp-team-result-member-list">
-                      {team.members.map((member) => {
-                        const memberId = String(member?.user_id || '').trim();
-                        const memberShop = buildCosmeticSnapshot(
-                          member?.equipped_frame,
-                          member?.equipped_background,
-                          member?.equipped_emoji
-                        );
-                        const memberAvatar = getDisplayAvatar(member?.avatar || '\uD83D\uDE42', memberShop);
-                        const memberFrameStyle = getAvatarFrameStyle(memberShop);
-                        const memberFrameClass = getAvatarFrameClass(memberShop);
-                        return (
-                          <div key={`team_result_member_${team.side}_${memberId}`} className="pvp-team-result-member">
-                            <span className={`pvp-player-avatar pvp-team-result-avatar ${memberFrameClass}`} style={memberFrameStyle}>{memberAvatar}</span>
-                            <div className="pvp-team-result-copy">
-                              <strong>{member?.nickname || 'Jogador'}</strong>
-                              <span>{Math.max(0, Number(pvpTeamMatch?.member_scores?.[memberId] || 0))} acerto(s)</span>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                ))}
-              </div>
-              {pvpTeamResultReward ? (
-                <>
-                  <div className="reward-collect-list pvp-result-reward-list pvp-result-seq result-seq-5">
-                    <div className="reward-collect-item">
-                      <span className="reward-collect-item-label">Pontos PVP</span>
-                      <span className={`reward-collect-item-value ${Number(pvpTeamResultReward.points || 0) >= 0 ? 'points' : 'points-loss'}`}>
-                        {formatSignedPoints(pvpTeamResultReward.points || 0)}
-                      </span>
-                    </div>
-                    <div className="reward-collect-item">
-                      <span className="reward-collect-item-label">XP</span>
-                      <span className="reward-collect-item-value xp">+{Math.max(0, Number(pvpTeamResultReward.xp || 0))}</span>
-                    </div>
-                    <div className="reward-collect-item">
-                      <span className="reward-collect-item-label">Moedas</span>
-                      <span className="reward-collect-item-value coins">+{Math.max(0, Number(pvpTeamResultReward.coins || 0))}</span>
-                    </div>
-                  </div>
-                  <button
-                    className="reward-collect-btn pvp-result-reward-btn pvp-result-seq result-seq-6"
-                    disabled={pvpTeamRewardCollecting}
-                    onClick={(event) => collectPvpTeamResultRewards(event)}
-                  >
-                    {pvpTeamRewardCollecting ? 'Coletando...' : 'Coletar Recompensas'}
-                  </button>
-                </>
-              ) : !pvpTeamResultProcessed ? (
-                <div className="result-subtitle pvp-result-seq result-seq-5 pvp-result-collect-note">
-                  Preparando recompensas...
-                </div>
-              ) : (
-                <button
-                  className="reward-collect-btn pvp-result-reward-btn pvp-result-seq result-seq-5"
-                  onClick={() => {
-                    resetPvpTeamState();
-                    setPvpMode('');
-                    setScreen('home');
-                  }}
-                >
-                  Voltar ao inicio
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
-
-        <div className={`screen ${screen === 'pvp-result' ? 'active' : ''}`}>
-          <div className="result-content">
-            {!pvpHideDefaultResultPanel ? (
-              <div className={`pvp-result-panel pvp-result-panel-dynamic outcome-${pvpResult === 'win' ? 'win' : pvpResult === 'draw' ? 'draw' : 'lose'}`}>
-                <div className="result-emoji pvp-result-seq result-seq-1">{pvpResult === 'win' ? '🏆' : pvpResult === 'draw' ? '🤝' : '😵'}</div>
-                <div className="result-title pvp-result-seq result-seq-2">
-                  {pvpResult === 'win' ? 'Vitoria!' : pvpResult === 'draw' ? 'Empate!' : 'Derrota'}
-                </div>
-                <div className="pvp-result-scoreline pvp-result-seq result-seq-3">
-                  <span className={`player-history-versus-name ${pvpFinalScoreParts.winnerSide === 'player1' ? 'is-winner' : 'is-loser'}`}>
-                    {pvpMatch?.player1_nickname || 'Jogador 1'}
-                  </span>
-                  <div className="player-history-score type-pvp pvp-result-score pvp-result-inline-score">
-                    <span className={`player-history-score-value ${pvpFinalScoreParts.winnerSide === 'player1' ? 'is-winner' : 'is-loser'}`}>
-                      {pvpFinalScoreParts.player1}
-                    </span>
-                    <span className="player-history-score-divider">x</span>
-                    <span className={`player-history-score-value ${pvpFinalScoreParts.winnerSide === 'player2' ? 'is-winner' : 'is-loser'}`}>
-                      {pvpFinalScoreParts.player2}
-                    </span>
-                  </div>
-                  <span className={`player-history-versus-name ${pvpFinalScoreParts.winnerSide === 'player2' ? 'is-winner' : 'is-loser'}`}>
-                    {pvpMatch?.player2_nickname || 'Jogador 2'}
-                  </span>
-                </div>
-                {pvpResultReward ? (
-                  <>
-                    <div className="reward-collect-list pvp-result-reward-list pvp-result-seq result-seq-4">
-                      <div className="reward-collect-item">
-                        <span className="reward-collect-item-label">Pontos PVP</span>
-                        <span className={`reward-collect-item-value ${Number(pvpResultReward.points || 0) >= 0 ? 'points' : 'points-loss'}`}>
-                          {formatSignedPoints(pvpResultReward.points || 0)}
-                        </span>
-                      </div>
-                      <div className="reward-collect-item">
-                        <span className="reward-collect-item-label">XP</span>
-                        <span className="reward-collect-item-value xp">+{Math.max(0, Number(pvpResultReward.xp || 0))}</span>
-                      </div>
-                      <div className="reward-collect-item">
-                        <span className="reward-collect-item-label">Moedas</span>
-                        <span className="reward-collect-item-value coins">+{Math.max(0, Number(pvpResultReward.coins || 0))}</span>
-                      </div>
-                    </div>
-                    <button
-                      className="reward-collect-btn pvp-result-reward-btn pvp-result-seq result-seq-5"
-                      disabled={pvpRewardCollecting}
-                      onClick={(event) => collectPvpResultRewards(event)}
-                    >
-                      {pvpRewardCollecting ? 'Coletando...' : 'Coletar Recompensas'}
-                    </button>
-                    <div className="result-subtitle pvp-result-seq result-seq-6 pvp-result-collect-note">
-                      O retorno ao inicio sera liberado apos a coleta.
-                    </div>
-                  </>
-                ) : (
-                  <div className="result-subtitle pvp-result-seq result-seq-4 pvp-result-collect-note">
-                    Preparando recompensas...
-                  </div>
-                )}
-              </div>
-            ) : null}
-          </div>
-        </div>
+        {screen === 'home' ? (
+          <HomeScreen vm={{
+            avatarFrameClass,
+            avatarFrameStyle,
+            displayAvatar,
+            heroBackground,
+            heroBackgroundMeta,
+            heroNickname,
+            homeAuthUser,
+            homeScreenClassName,
+            openPlayerHistoryPanel,
+            playerHeroMenuOpen,
+            playerHeroMenuRef,
+            progress,
+            pveCategory,
+            pvpCategory,
+            safeCoins,
+            safeLevel,
+            safeXp,
+            setScreen,
+            showHomeProfileHero,
+            togglePlayerHeroMenu,
+            xpForNextLevel,
+            xpPercent
+          }} />
+        ) : null}
+
+        {screen === 'play-mode' ? (
+          <PlayModeScreen vm={{
+            resetPvpTeamState,
+            screen,
+            setPvpMode,
+            setScreen,
+            triggerAppBackNavigation
+          }} />
+        ) : null}
+
+        {screen === 'knowledge-area' ? (
+          <KnowledgeAreaScreen vm={{
+            chooseKnowledgeAreaForPve,
+            handleKnowledgeAreaTouchEnd,
+            handleKnowledgeAreaTouchStart,
+            kaCarouselIndex,
+            playSfx,
+            screen,
+            setKaCarouselIndex,
+            shiftKnowledgeAreaCarousel,
+            triggerAppBackNavigation
+          }} />
+        ) : null}
+
+        {screen === 'select' ? (
+          <TrackSelectScreen vm={{
+            languageProgress,
+            languageThemeSections,
+            screen,
+            selectedLanguage,
+            setScreen,
+            setSelectedLanguage,
+            setSelectedTopic,
+            triggerAppBackNavigation
+          }} />
+        ) : null}
+
+        {screen === 'topic' ? (
+          <TopicScreen vm={{
+            languageProgress,
+            screen,
+            selectedLanguage,
+            selectedLanguageMeta,
+            selectedTopic,
+            selectedTopics,
+            setScreen,
+            setSelectedTopic,
+            topicProgress,
+            topicQuestionCountByDifficulty,
+            triggerAppBackNavigation
+          }} />
+        ) : null}
+
+        {screen === 'difficulty' ? (
+          <DifficultyScreen vm={{
+            beginPveRound,
+            screen,
+            selectedTopicDifficultyProgress,
+            selectedTopicQuestionCountByDifficulty,
+            triggerAppBackNavigation
+          }} />
+        ) : null}
+
+        {screen === 'quiz' ? (
+          <QuizScreen vm={{
+            confirmQuizAnswer,
+            currentQuestion,
+            handleAnswer,
+            openQuizMenu,
+            quizQuestionHasOverflow,
+            quizQuestionScrollRef,
+            quizState,
+            quizTimerClass,
+            quizTimerPct,
+            screen,
+            selectedLanguageMeta,
+            selectedTopicMeta
+          }} />
+        ) : null}
+
+        {screen === 'feedback' ? (
+          <FeedbackScreen vm={{
+            feedbackState,
+            nextQuestion,
+            screen
+          }} />
+        ) : null}
+
+        {screen === 'result' ? (
+          <ResultScreen vm={{
+            buildCosmeticSnapshot,
+            progress,
+            quizRankingLoading,
+            quizRankingRows,
+            resetQuizFlow,
+            resultState,
+            screen,
+            selectedLanguageMeta,
+            selectedTopicMeta,
+            setScreen,
+            xpForNextLevel,
+            xpPercent
+          }} />
+        ) : null}
+
+        {screen === 'achievements' ? (
+          <PassScreen vm={{
+            evolutionPass,
+            evolutionPassFocusedStage,
+            evolutionPassFocusedStageIndex,
+            evolutionPassStages,
+            focusAdjacentEvolutionPassStage,
+            focusEvolutionPassStage,
+            handleClaimEvolutionPassStage,
+            openEvolutionPassDetailModal,
+            passClaimingStageId,
+            passRecentClaimStageId,
+            screen,
+            triggerAppBackNavigation
+          }} />
+        ) : null}
+
+        {screen === 'rankings' ? (
+          <RankingsScreen vm={{
+            authUser,
+            buildCosmeticSnapshot,
+            rankingsLoading,
+            rankingsMode,
+            rankingsRows,
+            screen,
+            setRankingsMode,
+            triggerAppBackNavigation
+          }} />
+        ) : null}
+
+        {screen === 'admin-monitor' ? (
+          <AdminMonitorScreen vm={{
+            adminBotDaemonBusy,
+            adminBusy,
+            adminHistoryTodayBaseMatches,
+            adminLiveMatches,
+            adminMatchesUpdatedAtMs,
+            arenaMetrics,
+            botArenaBattlesEnabled,
+            botArenaDaemonModeLabel,
+            botArenaDaemonUpdatedAtLabel,
+            botArenaPvpEnabled,
+            botArenaQuizEnabled,
+            refreshAdminMetrics,
+            screen,
+            setAdminBotArenaAutomationEnabled,
+            setScreen,
+            triggerAppBackNavigation
+          }} />
+        ) : null}
+
+        {screen === 'admin-live' ? (
+          <AdminLiveScreen vm={{
+            adminLiveMatches,
+            adminMatchCodeById,
+            adminMatchesLoading,
+            screen,
+            triggerAppBackNavigation
+          }} />
+        ) : null}
+
+        {screen === 'admin-history' ? (
+          <AdminHistoryScreen vm={{
+            adminHistoryDateLabel,
+            adminHistoryFilter,
+            adminHistoryTodayBaseMatches,
+            adminHistoryTodayMatches,
+            adminMatchCodeById,
+            adminMatchesLoading,
+            screen,
+            setAdminHistoryFilter,
+            triggerAppBackNavigation
+          }} />
+        ) : null}
+
+        {screen === 'login' ? (
+          <LoginScreen vm={{
+            googleButtonContainerRef,
+            googleSignInBusy,
+            screen
+          }} />
+        ) : null}
+
+        {screen === 'nickname-setup' ? (
+          <NicknameSetupScreen vm={{
+            googleAccountAvatar,
+            googleAccountEmail,
+            googleAccountInitial,
+            googleAccountName,
+            googleSignInBusy,
+            handleSignOut,
+            handleSwitchGoogleAccount,
+            homeAuthUser,
+            nicknameCanSave,
+            nicknameHintClass,
+            nicknameHintText,
+            profileDraft,
+            profileSaving,
+            saveProfile,
+            screen,
+            setProfileDraft,
+            setScreen
+          }} />
+        ) : null}
+
+        {screen === 'settings' ? (
+          <SettingsScreen vm={{
+            audioSettings,
+            buildBadgeValue,
+            googleAccountAvatar,
+            googleAccountEmail,
+            googleAccountInitial,
+            googleAccountName,
+            googleSignInBusy,
+            handleSwitchGoogleAccount,
+            homeAuthUser,
+            nicknameCanSave,
+            nicknameHintClass,
+            nicknameHintText,
+            onboardingRequired,
+            openAdminScreen,
+            openSettingsSignOutConfirm,
+            playSfx,
+            profileDraft,
+            profileSaving,
+            saveProfile,
+            screen,
+            setProfileDraft,
+            setScreen,
+            settingsSections,
+            settingsUpdatedAtValue,
+            toggleSettingsSection,
+            triggerAppBackNavigation,
+            updateAudioSetting
+          }} />
+        ) : null}
+
+        {screen === 'shop' ? (
+          <ShopScreen vm={{
+            activeShopCategoryOpen,
+            equippedShopId,
+            getShopPreviewState,
+            groupedShopItems,
+            handleBuyShopItem,
+            handleToggleOwnedShopItem,
+            openShopItemPreview,
+            ownedShopSet,
+            profile,
+            progress,
+            safeShopOwnershipFilter,
+            screen,
+            setShopOwnershipFilter,
+            setShopTab,
+            shopData,
+            shopTab,
+            toggleShopCategory,
+            triggerAppBackNavigation
+          }} />
+        ) : null}
+
+        {screen === 'challenge' ? (
+          <PvpLobbyScreen vm={{
+            acceptPvpEliminationRoomInvite,
+            acceptPvpMatchInvite,
+            arenaKaCarouselIndex,
+            arenaPrimaryAction,
+            authUser,
+            buildCosmeticSnapshot,
+            chooseKnowledgeAreaForPvp,
+            choosePvpDifficulty,
+            handleKnowledgeAreaTouchEnd,
+            handleKnowledgeAreaTouchStart,
+            joinPvpTeamRoomSide,
+            knowledgeAreaById,
+            matchAcceptBusy,
+            matchAcceptCountdownLabel,
+            matchBothAccepted,
+            matchOpponentName,
+            matchPlayer1AcceptState,
+            matchPlayer2AcceptState,
+            openPvpEmojiPicker,
+            openPvpMode,
+            openPvpTeamRoomCreate,
+            openPvpTeamRoomLobby,
+            playSfx,
+            pvpAreaSelectionLocked,
+            pvpBattleEmojis,
+            pvpEliminationAcceptCountdownLabel,
+            pvpEliminationAcceptMembers,
+            pvpEliminationAcceptStateMap,
+            pvpEliminationActionBusy,
+            pvpEliminationAreaSelectionLocked,
+            pvpEliminationHasLiveMatch,
+            pvpEliminationInviteBusy,
+            pvpEliminationPendingAccept,
+            pvpEliminationPrimaryAction,
+            pvpEliminationQueueTimeLabel,
+            pvpEliminationQueueing,
+            pvpEliminationShouldShowAcceptActions,
+            pvpEliminationShowMatchFoundTransition,
+            pvpKnowledgeArea,
+            pvpMatch,
+            pvpMode,
+            pvpPlayer1Avatar,
+            pvpPlayer1BackgroundMeta,
+            pvpPlayer1FrameClass,
+            pvpPlayer1FrameStyle,
+            pvpPlayer1Shop,
+            pvpPlayer2Avatar,
+            pvpPlayer2BackgroundMeta,
+            pvpPlayer2FrameClass,
+            pvpPlayer2FrameStyle,
+            pvpPlayer2Shop,
+            pvpQueueTimeLabel,
+            pvpSelectedDifficulty,
+            pvpState,
+            pvpTeamActionBusy,
+            pvpTeamCurrentUserReady,
+            pvpTeamMySide,
+            pvpTeamRoom,
+            pvpTeamRoomAreaMeta,
+            pvpTeamRoomHostUserId,
+            pvpTeamRoomId,
+            pvpTeamRoomReadyMemberIds,
+            pvpTeamRooms,
+            queueActionBusy,
+            rejectPvpEliminationRoomInvite,
+            rejectPvpMatchInvite,
+            screen,
+            setArenaKaCarouselIndex,
+            shiftKnowledgeAreaCarousel,
+            shouldKeepQueueButtonPressed,
+            shouldShowAcceptActions,
+            showMatchFoundTransition,
+            startPvpTeamBattle,
+            togglePvpTeamReadyState,
+            triggerAppBackNavigation
+          }} />
+        ) : null}
+
+        {screen === 'pvp' ? (
+          <PvpDuelScreen vm={{
+            confirmPvpAnswer,
+            leavePvpFlow,
+            pickPvpAnswer,
+            pvpBattleEmojis,
+            pvpEmojiCooldownActive,
+            pvpEmojiCooldownFillPct,
+            pvpEmojiCooldownLabel,
+            pvpEmojiFx,
+            pvpIsRoundResult,
+            pvpMatch,
+            pvpPlayer1Avatar,
+            pvpPlayer1BackgroundMeta,
+            pvpPlayer1FrameClass,
+            pvpPlayer1FrameStyle,
+            pvpPlayer1Shop,
+            pvpPlayer2Avatar,
+            pvpPlayer2BackgroundMeta,
+            pvpPlayer2FrameClass,
+            pvpPlayer2FrameStyle,
+            pvpPlayer2Shop,
+            pvpQuestion,
+            pvpQuestionHasOverflow,
+            pvpQuestionScrollRef,
+            pvpRoundNo,
+            pvpRoundPhaseClass,
+            pvpRoundPhaseLabel,
+            pvpRoundPlayer1Feedback,
+            pvpRoundPlayer2Feedback,
+            pvpRoundResultCountdownClass,
+            pvpRoundResultKicker,
+            pvpRoundResultLabel,
+            pvpRoundResultPhaseClass,
+            pvpRoundResultRemainingSec,
+            pvpState,
+            pvpTimerClass,
+            pvpTimerPct,
+            pvpTimerVisualClass,
+            pvpTotalRounds,
+            pvpWaitingOpponent,
+            screen,
+            sendPvpEmoji
+          }} />
+        ) : null}
+
+        {screen === 'pvp-team' ? (
+          <PvpTeamScreen vm={{
+            buildCosmeticSnapshot,
+            confirmPvpTeamAnswer,
+            leavePvpTeamFlow,
+            pickPvpTeamAnswer,
+            pvpTeamBattleEntry,
+            pvpTeamBattleNo,
+            pvpTeamBattleStatus,
+            pvpTeamBlueFeedback,
+            pvpTeamBlueMembers,
+            pvpTeamCurrentBattleLabel,
+            pvpTeamCurrentPairLabel,
+            pvpTeamIsActivePlayer,
+            pvpTeamMatch,
+            pvpTeamMySide,
+            pvpTeamQuestion,
+            pvpTeamRedFeedback,
+            pvpTeamRedMembers,
+            pvpTeamResultEntry,
+            pvpTeamResultPair,
+            pvpTeamRoundResultCountdownClass,
+            pvpTeamRoundResultLabel,
+            pvpTeamRoundResultRemainingSec,
+            pvpTeamSelectedIndex,
+            pvpTeamSubmitted,
+            pvpTeamTimerClass,
+            pvpTeamTimerPct,
+            pvpTeamTimerVisualClass,
+            screen
+          }} />
+        ) : null}
+
+        {screen === 'pvp-elimination' ? (
+          <PvpEliminationScreen vm={{
+            confirmPvpEliminationAnswer,
+            leavePvpEliminationFlow,
+            pickPvpEliminationAnswer,
+            pvpEliminationBattleStatus,
+            pvpEliminationCountdownClass,
+            pvpEliminationCountdownSec,
+            pvpEliminationEliminatedUserId,
+            pvpEliminationEliminationLabel,
+            pvpEliminationIsActivePairMember,
+            pvpEliminationIsSpectator,
+            pvpEliminationLivePairRows,
+            pvpEliminationMatch,
+            pvpEliminationMatchScoreRows,
+            pvpEliminationMyUserId,
+            pvpEliminationPairUser1Avatar,
+            pvpEliminationPairUser1FrameClass,
+            pvpEliminationPairUser1FrameStyle,
+            pvpEliminationPairUser1Label,
+            pvpEliminationPairUser2Avatar,
+            pvpEliminationPairUser2FrameClass,
+            pvpEliminationPairUser2FrameStyle,
+            pvpEliminationPairUser2Label,
+            pvpEliminationQuestion,
+            pvpEliminationResultRows,
+            pvpEliminationRoundLabel,
+            pvpEliminationRoundResultLabel,
+            pvpEliminationSelectedIndex,
+            pvpEliminationShowBattleIntro,
+            pvpEliminationSubmitted,
+            pvpEliminationTimerClass,
+            pvpEliminationTimerPct,
+            pvpEliminationTimerVisualClass,
+            pvpEliminationWaitingPairAnswer,
+            pvpEliminationWinnerMember,
+            pvpEliminationWinnerUserId,
+            screen
+          }} />
+        ) : null}
+
+        {screen === 'pvp-elimination-result' ? (
+          <PvpEliminationResultScreen vm={{
+            buildCosmeticSnapshot,
+            collectPvpEliminationResultRewards,
+            pvpEliminationMyUserId,
+            pvpEliminationPlacementLabel,
+            pvpEliminationResultKey,
+            pvpEliminationResultProcessed,
+            pvpEliminationResultReward,
+            pvpEliminationResultRows,
+            pvpEliminationRewardCollecting,
+            pvpEliminationWinnerMember,
+            pvpEliminationWinnerUserId,
+            resetPvpEliminationState,
+            screen,
+            setPvpMode,
+            setScreen
+          }} />
+        ) : null}
+
+        {screen === 'pvp-team-result' ? (
+          <PvpTeamResultScreen vm={{
+            buildCosmeticSnapshot,
+            collectPvpTeamResultRewards,
+            pvpTeamBlueMembers,
+            pvpTeamMatch,
+            pvpTeamRedMembers,
+            pvpTeamResultKey,
+            pvpTeamResultProcessed,
+            pvpTeamResultReward,
+            pvpTeamRewardCollecting,
+            resetPvpTeamState,
+            screen,
+            setPvpMode,
+            setScreen
+          }} />
+        ) : null}
+
+        {screen === 'pvp-result' ? (
+          <PvpResultScreen vm={{
+            collectPvpResultRewards,
+            pvpFinalScoreParts,
+            pvpHideDefaultResultPanel,
+            pvpMatch,
+            pvpResult,
+            pvpResultReward,
+            pvpRewardCollecting,
+            screen
+          }} />
+        ) : null}
 
       </div>
 
       {pvpTeamCreateRoomOpen ? (
-        <div className="reset-modal" onClick={closePvpTeamRoomCreate}>
-          <div className="reset-modal-card pvp-team-modal-card" onClick={(event) => event.stopPropagation()}>
-            <h3>Criar sala 2x2</h3>
-            <div className="pvp-team-modal-fields">
-              <label className="settings-input-label" htmlFor="pvp-team-room-name">Nome da sala</label>
-              <input
-                id="pvp-team-room-name"
-                type="text"
-                className="profile-input settings-input"
-                placeholder="BR #01"
-                maxLength={32}
-                value={pvpTeamRoomDraft.name}
-                onChange={(event) => setPvpTeamRoomDraft((prev) => ({ ...prev, name: event.target.value }))}
-              />
-              <div className="pvp-team-visibility-row">
-                <button
-                  className={`btn ${pvpTeamRoomDraft.visibility === 'open' ? 'btn-primary' : 'btn-secondary'}`}
-                  onClick={() => setPvpTeamRoomDraft((prev) => ({ ...prev, visibility: 'open', password: '' }))}
-                >
-                  Sala aberta
-                </button>
-                <button
-                  className={`btn ${pvpTeamRoomDraft.visibility === 'password' ? 'btn-primary' : 'btn-secondary'}`}
-                  onClick={() => setPvpTeamRoomDraft((prev) => ({ ...prev, visibility: 'password' }))}
-                >
-                  Com senha
-                </button>
-              </div>
-              {pvpTeamRoomDraft.visibility === 'password' ? (
-                <>
-                  <label className="settings-input-label" htmlFor="pvp-team-room-password">Senha</label>
-                  <input
-                    id="pvp-team-room-password"
-                    type="password"
-                    className="profile-input settings-input"
-                    placeholder="Digite a senha"
-                    maxLength={24}
-                    value={pvpTeamRoomDraft.password}
-                    onChange={(event) => setPvpTeamRoomDraft((prev) => ({ ...prev, password: event.target.value }))}
-                  />
-                </>
-              ) : null}
-              <div className="pvp-team-modal-config">
-                <div className="pvp-team-modal-config-block">
-                  <label className="settings-input-label">Dificuldade</label>
-                  <div className="challenge-diff-list pvp-team-modal-difficulty-list">
-                    {['easy', 'medium', 'hard'].map((difficulty) => {
-                      const isSelected = pvpSelectedDifficulty === difficulty;
-                      return (
-                        <button
-                          key={`team_modal_diff_${difficulty}`}
-                          className={`challenge-diff-btn arena-diff-btn arena-diff-btn-${difficulty} ${isSelected ? 'active' : ''}`}
-                          disabled={pvpTeamActionBusy}
-                          onClick={() => choosePvpDifficulty(difficulty)}
-                        >
-                          {DIFFICULTY_LABELS[difficulty] || difficulty}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-                <div className="pvp-team-modal-config-block">
-                  <label className="settings-input-label">Area da sala</label>
-                  <div className="pvp-team-area-selector">
-                    <button
-                      className="ka-arrow-btn pvp-team-area-selector-nav"
-                      disabled={pvpTeamActionBusy || !pvpTeamDraftPrevAreaMeta}
-                      onClick={() => {
-                        if (!pvpTeamDraftPrevAreaMeta) return;
-                        chooseKnowledgeAreaForPvp(pvpTeamDraftPrevAreaMeta.id);
-                      }}
-                      aria-label="Area anterior"
-                    >
-                      &lt;
-                    </button>
-                    <div
-                      className="pvp-team-area-selector-card"
-                      style={pvpTeamDraftAreaMeta ? { '--team-area-color': pvpTeamDraftAreaMeta.color } : undefined}
-                    >
-                      {pvpTeamDraftAreaMeta ? (
-                        <>
-                          <span className="pvp-team-area-selector-kicker">Area selecionada</span>
-                          <span className="pvp-team-area-selector-icon">{pvpTeamDraftAreaMeta.icon}</span>
-                          <strong className="pvp-team-area-selector-name">{pvpTeamDraftAreaMeta.name}</strong>
-                          <span className="pvp-team-area-selector-desc">{pvpTeamDraftAreaMeta.desc}</span>
-                        </>
-                      ) : (
-                        <span className="pvp-team-area-selector-empty">Nenhuma area disponivel</span>
-                      )}
-                    </div>
-                    <button
-                      className="ka-arrow-btn pvp-team-area-selector-nav"
-                      disabled={pvpTeamActionBusy || !pvpTeamDraftNextAreaMeta}
-                      onClick={() => {
-                        if (!pvpTeamDraftNextAreaMeta) return;
-                        chooseKnowledgeAreaForPvp(pvpTeamDraftNextAreaMeta.id);
-                      }}
-                      aria-label="Proxima area"
-                    >
-                      &gt;
-                    </button>
-                  </div>
-                </div>
-              </div>
-              {pvpTeamRoomDraftError ? (
-                <div className="challenge-status pvp-team-modal-error">{pvpTeamRoomDraftError}</div>
-              ) : null}
-            </div>
-            <div className="match-accept-actions">
-              <button className="btn btn-secondary" disabled={pvpTeamActionBusy} onClick={closePvpTeamRoomCreate}>
-                Cancelar
-              </button>
-              <button className="btn btn-primary" disabled={pvpTeamActionBusy} onClick={() => createPvpTeamRoomFromDraft()}>
-                {pvpTeamActionBusy ? 'Criando...' : 'Criar sala'}
-              </button>
-            </div>
-          </div>
-        </div>
+        <TeamRoomCreateModal vm={{
+          chooseKnowledgeAreaForPvp,
+          choosePvpDifficulty,
+          closePvpTeamRoomCreate,
+          createPvpTeamRoomFromDraft,
+          pvpSelectedDifficulty,
+          pvpTeamActionBusy,
+          pvpTeamDraftAreaMeta,
+          pvpTeamDraftNextAreaMeta,
+          pvpTeamDraftPrevAreaMeta,
+          pvpTeamRoomDraft,
+          pvpTeamRoomDraftError,
+          setPvpTeamRoomDraft
+        }} />
       ) : null}
 
       {pvpTeamJoinPrompt.roomId ? (
-        <div className="reset-modal" onClick={closePvpTeamJoinPrompt}>
-          <div className="reset-modal-card pvp-team-modal-card" onClick={(event) => event.stopPropagation()}>
-            <h3>{pvpTeamJoinPrompt.requiresPassword ? 'Entrar em sala privada' : 'Entrar na sala'}</h3>
-            <p>{pvpTeamJoinPrompt.roomName || 'Sala privada'}</p>
-            <div className="pvp-team-modal-fields">
-              {pvpTeamJoinPrompt.requiresPassword ? (
-                <>
-                  <label className="settings-input-label" htmlFor="pvp-team-join-password">Senha da sala</label>
-                  <input
-                    id="pvp-team-join-password"
-                    type="password"
-                    className="profile-input settings-input"
-                    placeholder="Digite a senha"
-                    maxLength={24}
-                    value={pvpTeamJoinPrompt.password}
-                    onChange={(event) => setPvpTeamJoinPrompt((prev) => ({ ...prev, password: event.target.value, error: '' }))}
-                  />
-                </>
-              ) : (
-                <div className="challenge-status pvp-team-join-confirm">
-                  Voce entrara na sala e sera colocado automaticamente em um dos times.
-                </div>
-              )}
-              {pvpTeamJoinPrompt.error ? (
-                <div className="challenge-status pvp-team-modal-error">{pvpTeamJoinPrompt.error}</div>
-              ) : null}
-            </div>
-            <div className="match-accept-actions">
-              <button className="btn btn-secondary" disabled={pvpTeamActionBusy} onClick={closePvpTeamJoinPrompt}>
-                Cancelar
-              </button>
-              <button className="btn btn-primary" disabled={pvpTeamActionBusy} onClick={submitPvpTeamJoinPrompt}>
-                {pvpTeamJoinPrompt.requiresPassword ? 'Entrar' : 'Confirmar entrada'}
-              </button>
-            </div>
-          </div>
-        </div>
+        <TeamJoinPromptModal vm={{
+          closePvpTeamJoinPrompt,
+          pvpTeamActionBusy,
+          pvpTeamJoinPrompt,
+          setPvpTeamJoinPrompt,
+          submitPvpTeamJoinPrompt
+        }} />
       ) : null}
 
       {pvpTeamRoomNoticeModal?.id ? (
-        <div className="reset-modal" onClick={closePvpTeamRoomNoticeModal}>
-          <div className="reset-modal-card pvp-team-modal-card" onClick={(event) => event.stopPropagation()}>
-            <h3>{pvpTeamRoomNoticeModal?.title || 'Aviso da sala'}</h3>
-            <p>{pvpTeamRoomNoticeModal?.message || 'Ainda nao e possivel iniciar a sala.'}</p>
-            <div className="match-accept-actions">
-              <button className="btn btn-primary" onClick={closePvpTeamRoomNoticeModal}>
-                Entendi
-              </button>
-            </div>
-          </div>
-        </div>
+        <TeamRoomNoticeModal vm={{
+          closePvpTeamRoomNoticeModal,
+          pvpTeamRoomNoticeModal
+        }} />
       ) : null}
 
       {pvpEliminationRoomNoticeModal?.id ? (
-        <div className="reset-modal" onClick={closePvpEliminationRoomNoticeModal}>
-          <div className="reset-modal-card pvp-team-modal-card" onClick={(event) => event.stopPropagation()}>
-            <h3>{pvpEliminationRoomNoticeModal?.title || 'Aviso da sala'}</h3>
-            <p>{pvpEliminationRoomNoticeModal?.message || 'Ainda nao e possivel iniciar a sala.'}</p>
-            <div className="match-accept-actions">
-              <button className="btn btn-primary" onClick={closePvpEliminationRoomNoticeModal}>
-                Entendi
-              </button>
-            </div>
-          </div>
-        </div>
+        <EliminationRoomNoticeModal vm={{
+          closePvpEliminationRoomNoticeModal,
+          pvpEliminationRoomNoticeModal
+        }} />
       ) : null}
 
       {pvpEliminationExitPrompt?.matchId ? (
-        <div className="reset-modal" onClick={keepWatchingPvpElimination}>
-          <div className="reset-modal-card pvp-team-modal-card" onClick={(event) => event.stopPropagation()}>
-            <h3>Voce foi eliminado</h3>
-            <p>{pvpEliminationExitPrompt.nickname || 'Jogador'}, sua colocacao parcial e {pvpEliminationExitPrompt.placementLabel || '4o lugar'}.</p>
-            <div className="challenge-status pvp-team-join-confirm">
-              Deseja continuar assistindo ou sair agora para receber as recompensas da colocacao?
-            </div>
-            <div className="match-accept-actions">
-              <button className="btn btn-secondary" onClick={keepWatchingPvpElimination}>
-                Continuar assistindo
-              </button>
-              <button className="btn btn-primary" onClick={() => exitPvpEliminationWithPlacement()}>
-                Sair e receber
-              </button>
-            </div>
-          </div>
-        </div>
+        <EliminationExitPromptModal vm={{
+          exitPvpEliminationWithPlacement,
+          keepWatchingPvpElimination,
+          pvpEliminationExitPrompt
+        }} />
       ) : null}
 
       {playerHeroMenuOpen && playerHeroMenuAnchorRect ? (
-        <div
-          ref={playerHeroMenuPopoverRef}
-          className="hero-menu-popover hero-menu-popover-floating"
-          role="menu"
-          aria-label="Menu do perfil"
-          style={{
-            top: `${Math.max(12, Number(playerHeroMenuAnchorRect.top || 0))}px`,
-            right: `${Math.max(12, Number(playerHeroMenuAnchorRect.right || 0))}px`,
-            width: `${Math.max(220, Number(playerHeroMenuAnchorRect.width || 280))}px`
-          }}
-        >
-          <button type="button" className="hero-menu-item" onClick={openPlayerHistoryPanel}>
-            <span className="hero-menu-item-icon" aria-hidden="true">🕘</span>
-            <span className="hero-menu-item-copy">
-              <span className="hero-menu-item-label">Histórico de partidas</span>
-              <span className="hero-menu-item-desc">Acompanhe seus resultados de PVP e PVE.</span>
-            </span>
-          </button>
-        </div>
+        <HeroMenuPopover vm={{
+          openPlayerHistoryPanel,
+          playerHeroMenuAnchorRect,
+          playerHeroMenuPopoverRef
+        }} />
       ) : null}
 
       {activeShopItemPreview ? (
-        <div className="reset-modal shop-item-preview-modal" onClick={closeShopItemPreview}>
-          <div className="reset-modal-card shop-item-preview-card" onClick={(event) => event.stopPropagation()}>
-            <h3>Pre-visualizacao</h3>
-            <p>{activeShopItemPreview.name}</p>
-            <div
-              className={[
-                'shop-modal-profile',
-                shopModalPreviewBgMeta.className
-              ].filter(Boolean).join(' ')}
-              data-bg-id={shopModalPreviewBgMeta.id}
-              data-bg-rarity={shopModalPreviewBgMeta.rarity}
-              style={{ background: shopModalPreviewBgStyle }}
-            >
-              <div className="shop-modal-profile-content">
-                <span className={`hero-avatar shop-modal-avatar ${shopModalPreviewFrameClass}`} style={shopModalPreviewFrameStyle}>
-                  {isImageAvatarValue(shopModalPreviewAvatar) ? (
-                    <AvatarImage className="hero-avatar-image" src={shopModalPreviewAvatar} alt="Avatar da pre-visualizacao" fallback="🙂" />
-                  ) : shopModalPreviewAvatar}
-                </span>
-                <div className="shop-modal-profile-info">
-                  <div className="shop-modal-profile-name">{heroNickname}</div>
-                  <div className="shop-modal-profile-meta">Nv. {safeLevel} · 🔥 {safeBestStreak} · 🪙 {safeCoins}</div>
-                  <div className="shop-modal-profile-badges">
-                    <span className={`tier-badge tier-badge-compact tier-${pveCategory.key}`}>PVE {pveCategory.label}</span>
-                    <span className={`tier-badge tier-badge-compact tier-${pvpCategory.key}`}>PVP {pvpCategory.label}</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-            <div className="match-accept-actions">
-              <button className="btn btn-secondary btn-lg" onClick={closeShopItemPreview}>Fechar</button>
-            </div>
-          </div>
-        </div>
+        <ShopItemPreviewModal vm={{
+          activeShopItemPreview,
+          closeShopItemPreview,
+          heroNickname,
+          pveCategory,
+          pvpCategory,
+          safeBestStreak,
+          safeCoins,
+          safeLevel,
+          shopModalPreviewAvatar,
+          shopModalPreviewBgMeta,
+          shopModalPreviewBgStyle,
+          shopModalPreviewFrameClass,
+          shopModalPreviewFrameStyle
+        }} />
       ) : null}
 
       {playerHistoryOpen ? (
-        <div className="reset-modal player-history-modal" onClick={closePlayerHistoryPanel}>
-          <div className="reset-modal-card player-history-card" onClick={(event) => event.stopPropagation()}>
-            <div className="player-history-head">
-              <div>
-                <div className="player-history-kicker">Perfil do jogador</div>
-                <h3>Historico de partidas</h3>
-              </div>
-              <button type="button" className="player-history-close" onClick={closePlayerHistoryPanel} aria-label="Fechar historico">
-                x
-              </button>
-            </div>
-            <div className="player-history-subtitle">
-              Revise suas ultimas partidas de PVP e seus quizzes PVE mais recentes em um unico painel.
-            </div>
-            <div className="player-history-filters">
-              {playerHistoryFilterOptions.map((filter) => (
-                <button
-                  key={`player_history_filter_${filter.id}`}
-                  type="button"
-                  className={`player-history-filter-btn ${playerHistoryFilter === filter.id ? 'active' : ''}`}
-                  onClick={() => setPlayerHistoryFilter(filter.id)}
-                >
-                  {filter.label}
-                  <span>{playerHistoryCountByType[filter.id] || 0}</span>
-                </button>
-              ))}
-            </div>
-            {playerHistoryError ? (
-              <div className="player-history-alert">{playerHistoryError}</div>
-            ) : null}
-            {playerHistoryLoading ? (
-              <div className="player-history-syncing">Atualizando partidas PVP...</div>
-            ) : null}
-            <div className="player-history-list">
-              {playerHistoryItems.length ? playerHistoryItems.map((item) => (
-                <div
-                  key={item.id}
-                  className={`player-history-entry type-${item.type}`}
-                >
-                  {item.type !== 'pvp' ? (
-                    <div className="player-history-entry-head">
-                      <span className={`player-history-type type-${item.type}`}>{item.type === 'pvp' ? 'PVP' : 'PVE'}</span>
-                      <span className="player-history-time">{item.timestampLabel}</span>
-                    </div>
-                  ) : null}
-                  <div className={`player-history-title-row type-${item.type}`}>
-                    {item.type === 'pvp' ? (
-                      <>
-                        <span className={`player-history-type type-${item.type}`}>PVP</span>
-                        <strong className="player-history-versus">
-                          <span className={`player-history-versus-name ${item.titleParts?.winnerSide === 'player1' ? 'is-winner' : 'is-loser'}`}>
-                            {item.titleParts?.player1 || item.title}
-                          </span>
-                          <span className="player-history-versus-divider">x</span>
-                          <span className={`player-history-versus-name ${item.titleParts?.winnerSide === 'player2' ? 'is-winner' : 'is-loser'}`}>
-                            {item.titleParts?.player2 || ''}
-                          </span>
-                        </strong>
-                        <span className="player-history-time">{item.timestampLabel}</span>
-                      </>
-                    ) : (
-                      <strong>{item.title}</strong>
-                    )}
-                    {item.resultLabel ? (
-                      <span className={`player-history-result tone-${item.resultTone || 'default'}`}>{item.resultLabel}</span>
-                    ) : null}
-                  </div>
-                  {item.type !== 'pvp' && item.subtitle ? (
-                    <div className="player-history-subline">{item.subtitle}</div>
-                  ) : null}
-                  <div className={`player-history-score type-${item.type}`}>
-                    {item.type === 'pvp' && item.scoreParts ? (
-                      <>
-                        <span className={`player-history-score-value ${item.scoreParts.winnerSide === 'player1' ? 'is-winner' : 'is-loser'}`}>
-                          {item.scoreParts.player1}
-                        </span>
-                        <span className="player-history-score-divider">x</span>
-                        <span className={`player-history-score-value ${item.scoreParts.winnerSide === 'player2' ? 'is-winner' : 'is-loser'}`}>
-                          {item.scoreParts.player2}
-                        </span>
-                      </>
-                    ) : item.scoreLabel}
-                  </div>
-                  <div className="player-history-chip-row">
-                    {(Array.isArray(item.metaChips) ? item.metaChips : []).map((chip) => (
-                      <span
-                        key={`${item.id}_${typeof chip === 'string' ? chip : chip?.label}`}
-                        className={`player-history-chip tone-${typeof chip === 'string' ? 'default' : (chip?.tone || 'default')}`}
-                      >
-                        {typeof chip === 'string' ? chip : chip?.label}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              )) : (
-                <div className="player-history-empty">
-                  {playerHistoryLoading ? 'Atualizando historico...' : playerHistoryEmptyText}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
+        <PlayerHistoryModal vm={{
+          closePlayerHistoryPanel,
+          playerHistoryCountByType,
+          playerHistoryEmptyText,
+          playerHistoryError,
+          playerHistoryFilter,
+          playerHistoryFilterOptions,
+          playerHistoryItems,
+          playerHistoryLoading,
+          setPlayerHistoryFilter
+        }} />
       ) : null}
 
       {passDetailModal && evolutionPassDetailStage ? (
-        <div
-          className="reset-modal evo-pass-detail-modal"
-          role="dialog"
-          aria-modal="true"
-          aria-live="polite"
-          aria-label={passDetailModal.mode === 'path' ? 'Detalhes das metas da etapa' : 'Detalhes das recompensas da etapa'}
-          onClick={closeEvolutionPassDetailModal}
-        >
-          <div className="reset-modal-card evo-pass-detail-card" onClick={(event) => event.stopPropagation()}>
-            <div className="evo-pass-detail-head">
-              <span className="evo-pass-detail-kicker">Nível {evolutionPassDetailStage.level}</span>
-              <button
-                type="button"
-                className="btn evo-pass-detail-close"
-                onClick={closeEvolutionPassDetailModal}
-                aria-label="Fechar detalhes da etapa"
-              >
-                x
-              </button>
-            </div>
-            <h3>
-              {passDetailModal.mode === 'path'
-                ? `${evolutionPassDetailPath?.icon || ''} ${evolutionPassDetailPath?.label || 'Metas da etapa'}`
-                : `${evolutionPassDetailStage.icon || ''} Recompensas da etapa`}
-            </h3>
-            <p>{evolutionPassDetailStage.name}</p>
-
-            {passDetailModal.mode === 'path' && evolutionPassDetailPath ? (
-              <>
-                <div className="evo-pass-detail-progress">
-                  <span>{Math.round(Math.max(0, Number(evolutionPassDetailPath.progressPct || 0)))}% concluídos</span>
-                  <div className="evo-stage-progress">
-                    <div
-                      className="evo-stage-progress-fill"
-                      style={{ width: `${Math.max(0, Math.min(100, Number(evolutionPassDetailPath.progressPct || 0)))}%` }}
-                    />
-                  </div>
-                </div>
-                <div className="evo-pass-detail-list">
-                  {(Array.isArray(evolutionPassDetailPath.goals) ? evolutionPassDetailPath.goals : []).map((goal) => (
-                    <div
-                      key={`${evolutionPassDetailStage.id}_${evolutionPassDetailPath.id}_${goal.metric}_${goal.target}`}
-                      className={`evo-stage-goal ${goal.complete ? 'done' : ''}`}
-                    >
-                      <span className="evo-stage-goal-label">{goal.label}</span>
-                      <span className="evo-stage-goal-value">
-                        {Math.min(goal.target, Math.max(0, Math.trunc(Number(goal.value || 0))))}/{goal.target}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </>
-            ) : (
-              <div className="evo-pass-detail-list rewards">
-                <div className="evo-stage-reward evo-stage-reward-stat">
-                  <span className="evo-stage-reward-icon" aria-hidden="true">⭐</span>
-                  <span className="evo-stage-reward-text">+{Math.max(0, Number(evolutionPassDetailStage?.reward?.xp || 0))} XP</span>
-                </div>
-                <div className="evo-stage-reward evo-stage-reward-stat">
-                  <span className="evo-stage-reward-icon" aria-hidden="true">🪙</span>
-                  <span className="evo-stage-reward-text">+{Math.max(0, Number(evolutionPassDetailStage?.reward?.coins || 0))} moedas</span>
-                </div>
-                {(Array.isArray(evolutionPassDetailStage?.reward?.shopItems) ? evolutionPassDetailStage.reward.shopItems : []).map((itemId) => {
-                  const rewardItem = getShopItem(itemId);
-                  if (!rewardItem) return null;
-                  const rewardType = String(rewardItem?.type || '').trim().toLowerCase();
-                  const rewardRarityRaw = String(rewardItem?.rarity || '').trim().toLowerCase();
-                  const rewardRarity = SHOP_RARITY_ORDER.includes(rewardRarityRaw)
-                    ? rewardRarityRaw
-                    : 'common';
-                  const rewardRarityLabel = SHOP_RARITY_LABELS[rewardRarity] || 'Recompensa';
-                  const rewardCompactLabel = rewardType === 'frame'
-                    ? 'Moldura'
-                    : (rewardType === 'background' ? 'Fundo' : (rewardType === 'emoji' ? 'Emoji' : 'Recompensa'));
-                  return (
-                    <div
-                      key={`${evolutionPassDetailStage.id}_${itemId}`}
-                      className={`evo-stage-reward evo-stage-reward-cosmetic rarity-${rewardRarity}`}
-                    >
-                      <span className="evo-stage-reward-icon" aria-hidden="true">{rewardItem.icon || '🎁'}</span>
-                      <span className="evo-stage-reward-content">
-                        <span className="evo-stage-reward-title">{rewardCompactLabel}</span>
-                        <span className="evo-stage-reward-meta">{`${rewardItem.name} · ${rewardRarityLabel}`}</span>
-                      </span>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-
-            <button type="button" className="btn btn-primary evo-pass-detail-action" onClick={closeEvolutionPassDetailModal}>
-              Fechar
-            </button>
-          </div>
-        </div>
+        <PassDetailModal vm={{
+          closeEvolutionPassDetailModal,
+          evolutionPassDetailPath,
+          evolutionPassDetailStage,
+          passDetailModal
+        }} />
       ) : null}
 
       {adminAuthOpen ? (
-        <div className="reset-modal admin-auth-modal" onClick={closeAdminAuthModal}>
-          <div className="reset-modal-card admin-auth-card" onClick={(event) => event.stopPropagation()}>
-            <h3>Acesso administrativo</h3>
-            <p>Digite a senha para abrir o monitoramento.</p>
-            <input
-              type="password"
-              className="profile-input settings-input admin-auth-input"
-              placeholder="Senha"
-              value={adminPassword}
-              onChange={(event) => {
-                setAdminPassword(event.target.value);
-                if (adminAuthError) setAdminAuthError('');
-              }}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter') submitAdminAuth();
-              }}
-              autoFocus
-            />
-            {adminAuthError ? <div className="admin-auth-error">{adminAuthError}</div> : null}
-            <div className="match-accept-actions">
-              <button className="btn btn-primary btn-lg" onClick={submitAdminAuth}>Entrar</button>
-              <button className="btn btn-secondary btn-lg" onClick={closeAdminAuthModal}>Cancelar</button>
-            </div>
-          </div>
-        </div>
+        <AdminAuthModal vm={{
+          adminAuthError,
+          adminPassword,
+          closeAdminAuthModal,
+          setAdminAuthError,
+          setAdminPassword,
+          submitAdminAuth
+        }} />
       ) : null}
 
       {updateState.available ? (
-        <div className={`update-notice-bar ${updateState.applying ? 'is-applying' : ''}`} role="status" aria-live="polite">
-          <div className="update-notice-inner">
-            <div className="update-notice-main">
-              <span className="update-notice-dot" aria-hidden="true" />
-              <div className="update-notice-copy">
-                <span className="update-notice-title">Nova versão disponível</span>
-                <span className="update-notice-text">
-                  Atualize para aplicar melhorias e correções da versão mais recente.
-                </span>
-              </div>
-            </div>
-            <button
-              className="update-notice-btn"
-              disabled={updateState.applying}
-              onClick={applyPendingUpdate}
-              title="Existe uma versão nova publicada"
-            >
-              {updateState.applying ? 'Atualizando...' : 'Atualizar'}
-            </button>
-          </div>
-        </div>
+        <UpdateNoticeBar vm={{
+          applyPendingUpdate,
+          updateState
+        }} />
       ) : null}
 
       {cookieConsent === 'pending' ? (
-        <div className="cookie-consent-banner" role="dialog" aria-live="polite" aria-label="Preferências de cookies">
-          <div className="cookie-consent-card">
-            <div className="cookie-consent-copy">
-              <div className="cookie-consent-title">Uso de cookies</div>
-              <div className="cookie-consent-text">
-                Aceite cookies para melhorar dados de sessão, desempenho e experiência geral do app.
-              </div>
-            </div>
-            <div className="cookie-consent-actions">
-              <button
-                className="cookie-consent-btn cookie-consent-btn-muted"
-                onClick={() => saveCookieConsent('essential')}
-              >
-                Somente essenciais
-              </button>
-              <button
-                className="cookie-consent-btn cookie-consent-btn-primary"
-                onClick={() => saveCookieConsent('accepted')}
-              >
-                Aceitar cookies
-              </button>
-            </div>
-          </div>
-        </div>
+        <CookieConsentBanner vm={{
+          saveCookieConsent
+        }} />
       ) : null}
 
       {screen === 'home' && homeTourOpen && currentHomeTourStep ? (
-        <div className="home-tour-overlay" role="dialog" aria-modal="true" aria-label="Tour guiado da tela inicial">
-          {homeTourHighlight ? (
-            <div
-              className="home-tour-highlight"
-              style={{
-                top: `${homeTourHighlight.top}px`,
-                left: `${homeTourHighlight.left}px`,
-                width: `${homeTourHighlight.width}px`,
-                height: `${homeTourHighlight.height}px`
-              }}
-            />
-          ) : null}
-          <div className="home-tour-card">
-            <div className="home-tour-card-head">
-              <span className="home-tour-kicker">{currentHomeTourStep.kicker}</span>
-              <span className="home-tour-progress">{homeTourProgressLabel}</span>
-            </div>
-            <h3 className="home-tour-title">{currentHomeTourStep.title}</h3>
-            <p className="home-tour-description">{currentHomeTourStep.description}</p>
-            <div className="home-tour-actions">
-              <button className="btn btn-secondary" onClick={skipHomeTour}>Pular tour</button>
-              <button className="btn btn-primary" onClick={advanceHomeTour}>
-                {isHomeTourLastStep ? 'Concluir' : 'Próximo'}
-              </button>
-            </div>
-          </div>
-        </div>
+        <HomeTourOverlay vm={{
+          advanceHomeTour,
+          currentHomeTourStep,
+          homeTourHighlight,
+          homeTourProgressLabel,
+          isHomeTourLastStep,
+          skipHomeTour
+        }} />
       ) : null}
 
       {googleAuthModal.open ? (
-        <div className="reset-modal google-auth-modal" role="dialog" aria-modal="true" aria-label={googleAuthModalTitle} onClick={closeGoogleAuthModal}>
-          <div className="reset-modal-card google-auth-modal-card" onClick={(event) => event.stopPropagation()}>
-            <div className="google-auth-modal-glow" aria-hidden="true" />
-            <div className="google-auth-modal-brand">
-              <span className="google-mark google-auth-modal-mark" aria-hidden="true">
-                <svg viewBox="0 0 24 24" focusable="false" aria-hidden="true">
-                  <path fill="#EA4335" d="M12.24 10.285v3.84h5.445c-.24 1.285-.975 2.375-2.055 3.105l3.33 2.58c1.935-1.785 3.06-4.41 3.06-7.53 0-.735-.066-1.44-.19-2.115z" />
-                  <path fill="#34A853" d="M12 22c2.7 0 4.965-.894 6.62-2.42l-3.33-2.58c-.924.62-2.106.99-3.29.99-2.53 0-4.674-1.71-5.44-4.01l-3.44 2.65C4.76 19.87 8.13 22 12 22z" />
-                  <path fill="#4A90E2" d="M6.56 13.98c-.19-.57-.3-1.18-.3-1.8s.11-1.23.3-1.8l-3.44-2.65A10 10 0 0 0 2 12.18c0 1.62.39 3.15 1.12 4.45z" />
-                  <path fill="#FBBC05" d="M12 6.37c1.47 0 2.79.51 3.82 1.51l2.87-2.87C16.96 3.37 14.7 2.37 12 2.37c-3.87 0-7.24 2.13-8.88 5.26l3.44 2.65c.77-2.3 2.91-4.01 5.44-4.01z" />
-                </svg>
-              </span>
-              <div className="google-auth-modal-kicker">Janela segura do Google</div>
-            </div>
-            <h3 className="google-auth-modal-title">{googleAuthModalTitle}</h3>
-            <p className="google-auth-modal-subtitle">{googleAuthModalSubtitle}</p>
-            <div className="google-auth-modal-points" aria-hidden="true">
-              <div className="google-auth-modal-point">O app permanece na mesma tela</div>
-              <div className="google-auth-modal-point">Seu progresso continua protegido</div>
-              <div className="google-auth-modal-point">Escolha a conta em uma janela segura</div>
-            </div>
-            <div className="google-auth-modal-actions">
-              <button className="btn btn-secondary" onClick={closeGoogleAuthModal} disabled={googleSignInBusy}>
-                Cancelar
-              </button>
-              <button className="btn btn-google btn-lg login-google-btn google-auth-modal-btn" onClick={handleSignIn} disabled={googleSignInBusy}>
-                <span className="google-mark" aria-hidden="true">
-                  <svg viewBox="0 0 24 24" focusable="false" aria-hidden="true">
-                    <path fill="#EA4335" d="M12.24 10.285v3.84h5.445c-.24 1.285-.975 2.375-2.055 3.105l3.33 2.58c1.935-1.785 3.06-4.41 3.06-7.53 0-.735-.066-1.44-.19-2.115z" />
-                    <path fill="#34A853" d="M12 22c2.7 0 4.965-.894 6.62-2.42l-3.33-2.58c-.924.62-2.106.99-3.29.99-2.53 0-4.674-1.71-5.44-4.01l-3.44 2.65C4.76 19.87 8.13 22 12 22z" />
-                    <path fill="#4A90E2" d="M6.56 13.98c-.19-.57-.3-1.18-.3-1.8s.11-1.23.3-1.8l-3.44-2.65A10 10 0 0 0 2 12.18c0 1.62.39 3.15 1.12 4.45z" />
-                    <path fill="#FBBC05" d="M12 6.37c1.47 0 2.79.51 3.82 1.51l2.87-2.87C16.96 3.37 14.7 2.37 12 2.37c-3.87 0-7.24 2.13-8.88 5.26l3.44 2.65c.77-2.3 2.91-4.01 5.44-4.01z" />
-                  </svg>
-                </span>
-                <span>{googleAuthModalPrimaryLabel}</span>
-              </button>
-            </div>
-          </div>
-        </div>
+        <GoogleAuthModal vm={{
+          closeGoogleAuthModal,
+          googleAuthModalPrimaryLabel,
+          googleAuthModalSubtitle,
+          googleAuthModalTitle,
+          googleSignInBusy,
+          handleSignIn
+        }} />
       ) : null}
 
       {settingsSignOutConfirmOpen ? (
-        <div
-          className="reset-modal settings-signout-modal"
-          role="dialog"
-          aria-modal="true"
-          aria-label="Confirmar saída da conta"
-          onClick={closeSettingsSignOutConfirm}
-        >
-          <div className="reset-modal-card settings-signout-card" onClick={(event) => event.stopPropagation()}>
-            <div className="settings-signout-glow" aria-hidden="true" />
-            <div className="settings-signout-kicker">Conta Google</div>
-            <h3>Deseja sair da conta?</h3>
-            <p>
-              Você vai encerrar a sessão de <strong>{settingsSignOutAccountLabel}</strong> e retornar para a tela de login.
-            </p>
-            <div className="settings-signout-account">
-              <div className="settings-account-avatar" aria-hidden="true">
-                {isImageAvatarValue(googleAccountAvatar) ? (
-                  <AvatarImage src={googleAccountAvatar} fallback={<span>{googleAccountInitial}</span>} />
-                ) : (
-                  <span>{googleAccountInitial}</span>
-                )}
-              </div>
-              <div className="settings-signout-account-copy">
-                <strong>{settingsSignOutAccountLabel}</strong>
-                <span>{googleAccountEmail || 'E-mail Google indisponivel.'}</span>
-              </div>
-            </div>
-            <div className="settings-signout-actions">
-              <button className="btn btn-secondary" onClick={closeSettingsSignOutConfirm} disabled={googleSignInBusy}>
-                Cancelar
-              </button>
-              <button className="btn btn-primary settings-signout-confirm-btn" onClick={confirmSettingsSignOut} disabled={googleSignInBusy}>
-                Confirmar saída
-              </button>
-            </div>
-          </div>
-        </div>
+        <SignOutConfirmModal vm={{
+          closeSettingsSignOutConfirm,
+          confirmSettingsSignOut,
+          googleAccountAvatar,
+          googleAccountEmail,
+          googleAccountInitial,
+          googleSignInBusy,
+          settingsSignOutAccountLabel
+        }} />
       ) : null}
 
       {leagueTransition.visible ? (
-        <div
-          className="league-transition-overlay"
-          role="dialog"
-          aria-modal="true"
-          aria-label="Mudança de liga"
-          onClick={closeLeagueTransition}
-        >
-          <div className="league-transition-backdrop" />
-          <div className="league-transition-card" onClick={(event) => event.stopPropagation()}>
-            <div className="league-transition-glow" aria-hidden="true" />
-            <div className="league-transition-kicker">Mudança de liga</div>
-            <div className="league-transition-title">{leagueTransition.title || 'Classificação atualizada'}</div>
-            <div className="league-transition-subtitle">{leagueTransition.subtitle || 'Seu perfil acabou de mudar de liga.'}</div>
-            <div className="league-transition-list">
-              {(Array.isArray(leagueTransition.changes) ? leagueTransition.changes : []).map((change) => (
-                <div
-                  key={`league_transition_${change.mode}_${change.from?.key || 'from'}_${change.to?.key || 'to'}`}
-                  className={`league-transition-row is-${change.direction || 'up'}`}
-                >
-                  <div className="league-transition-mode">{change.modeLabel}</div>
-                  <div className="league-transition-track">
-                    <span className={`tier-badge league-transition-badge tier-${change.from?.key || 'bronze'}`}>
-                      <span className="tier-emblem" aria-hidden="true">{change.from?.emblem || '🥉'}</span>
-                      <span>{change.from?.label || 'Bronze'}</span>
-                    </span>
-                    <span className="league-transition-arrow" aria-hidden="true">→</span>
-                    <span className={`tier-badge league-transition-badge tier-${change.to?.key || 'bronze'}`}>
-                      <span className="tier-emblem" aria-hidden="true">{change.to?.emblem || '🥉'}</span>
-                      <span>{change.to?.label || 'Bronze'}</span>
-                    </span>
-                  </div>
-                </div>
-              ))}
-            </div>
-            <button type="button" className="btn btn-primary league-transition-btn" onClick={closeLeagueTransition}>
-              Continuar
-            </button>
-          </div>
-        </div>
+        <LeagueTransitionOverlay vm={{
+          closeLeagueTransition,
+          leagueTransition
+        }} />
       ) : null}
 
       {authTransition.visible ? (
-        <div className="auth-transition-overlay">
-          <div className={`auth-transition-card ${authTransition.mode === 'logout' ? 'is-logout' : ''}`}>
-            <div className={`auth-transition-spinner ${authTransition.mode === 'logout' ? 'is-logout' : ''}`} />
-            {authTransition.mode === 'logout' ? (
-              <div className="auth-transition-kicker">Saída confirmada</div>
-            ) : null}
-            <div className="auth-transition-title">{authTransition.title || 'Preparando sua conta'}</div>
-            <div className="auth-transition-subtitle">{authTransition.subtitle || 'Aguarde alguns segundos...'}</div>
-          </div>
-        </div>
+        <AuthTransitionOverlay vm={{
+          authTransition
+        }} />
       ) : null}
 
       {themeIntro.visible ? (
-        <div
-          className={`theme-intro-overlay mode-${themeIntro.mode}`}
-          role="status"
-          aria-live="polite"
-          aria-label="Tema da rodada"
-          style={{
-            '--theme-intro-duration-ms': `${Math.max(280, Number(themeIntro.durationMs || THEME_INTRO_PVE_DURATION_MS))}ms`,
-            '--theme-intro-roll-duration-ms': `${Math.max(120, Number(themeIntro.rollDurationMs || 900))}ms`,
-            '--theme-intro-roulette-start-offset-px': `${Math.max(80, Number(themeIntro.rouletteStartOffsetPx || 240))}px`
-          }}
-        >
-          <div className="theme-intro-backdrop" />
-          <div className="theme-intro-card">
-            <div className="theme-intro-kicker">{themeIntro.kicker || 'Tema da rodada'}</div>
-            <div className="theme-intro-roulette" aria-hidden="true">
-              <div className="theme-intro-roulette-vignette" />
-              <div
-                className={`theme-intro-roulette-track phase-${themeIntro.phase || 'rolling'}`}
-                style={{
-                  left: `calc(50% - ${Math.max(0, Number(themeIntro.rouletteRailLeftPx || THEME_INTRO_ROULETTE_CHIP_CENTER_OFFSET_PX))}px)`
-                }}
-              >
-                {(Array.isArray(themeIntro.rouletteItems) ? themeIntro.rouletteItems : []).map((icon, index) => {
-                  const isTarget = index === Math.max(0, Number(themeIntro.rouletteTargetIndex || 0));
-                  const isLocked = isTarget && themeIntro.phase === 'locked';
-                  return (
-                    <span
-                      key={`theme_intro_icon_${index}_${icon}`}
-                      className={`theme-intro-roulette-chip${isTarget ? ' is-target' : ''}${isLocked ? ' is-locked' : ''}`}
-                    >
-                      {String(icon || '🎯')}
-                    </span>
-                  );
-                })}
-              </div>
-              <div className="theme-intro-roulette-marker" />
-            </div>
-            <div className="theme-intro-title-row">
-              <span className="theme-intro-title-icon" aria-hidden="true">{themeIntro.icon || '🎯'}</span>
-              <div className="theme-intro-title">{themeIntro.title || 'Tema geral'}</div>
-            </div>
-            <div className="theme-intro-subtitle">{themeIntro.subtitle || 'Preparando perguntas...'}</div>
-            <div className="theme-intro-progress" aria-hidden="true">
-              <span className="theme-intro-progress-fill" />
-            </div>
-          </div>
-        </div>
+        <ThemeIntroOverlay vm={{
+          themeIntro
+        }} />
       ) : null}
 
       {screen === 'quiz' && quizMenuOpen ? (
-        <div className="quiz-action-overlay" onClick={closeQuizMenu}>
-          <div className="quiz-action-modal" onClick={(event) => event.stopPropagation()}>
-            <div className="quiz-action-title">Menu do Quiz</div>
-            <div className="quiz-action-subtitle">Escolha a próxima ação para a partida atual.</div>
-            <div className="quiz-action-buttons">
-              <button className="btn btn-primary" onClick={restartCurrentQuiz}>Reiniciar Quiz</button>
-              <button className="btn quiz-action-exit" onClick={returnQuizToHome}>Voltar ao Inicio</button>
-              <button className="btn btn-secondary quiz-action-close" onClick={closeQuizMenu}>Continuar Quiz</button>
-            </div>
-          </div>
-        </div>
+        <QuizMenuModal vm={{
+          closeQuizMenu,
+          restartCurrentQuiz,
+          returnQuizToHome
+        }} />
       ) : null}
 
       {pvpEmojiPickerOpen ? (
-        <div className="reset-modal" onClick={closePvpEmojiPicker}>
-          <div className="reset-modal-card pvp-emoji-editor-card" onClick={(event) => event.stopPropagation()}>
-            <h3>Emojis da Partida</h3>
-            <p className="pvp-emoji-editor-hint">Selecione os 6 emojis pelos slots abaixo para salvar.</p>
-            {pvpEmojiDraftWarning ? (
-              <p className="pvp-emoji-editor-warning">{pvpEmojiDraftWarning}</p>
-            ) : null}
-
-            <div className="pvp-emoji-slots-wrap">
-              <div className="pvp-emoji-section-title">Selecionados</div>
-              <div className="pvp-emoji-slots">
-                {Array.from({ length: 6 }).map((_, index) => {
-                  const selected = normalizeEmojiDraftSlots(pvpEmojiDraft)[index] || '';
-                  const activeSlot = index === pvpEmojiSlotFocus;
-                  return (
-                    <button
-                      key={`emoji_slot_${index}`}
-                      type="button"
-                      className={`pvp-emoji-slot ${activeSlot ? 'active' : ''}`}
-                      onClick={() => selectPvpEmojiSlot(index)}
-                    >
-                      <span className="pvp-emoji-slot-index">{index + 1}</span>
-                      <span className="pvp-emoji-slot-value">{selected || '+'}</span>
-                      {selected ? (
-                        <span
-                          className="pvp-emoji-slot-remove"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            removePvpEmojiAt(index);
-                          }}
-                        >
-                          ×
-                        </span>
-                      ) : null}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            <div className="pvp-emoji-divider" aria-hidden="true" />
-            <div className="pvp-emoji-section-title pvp-emoji-section-title-options">Galeria de emojis</div>
-            <div className="pvp-emoji-editor-list">
-              {activePvpEmojiOptions.map((emoji, index) => {
-                const active = normalizeEmojiDraftSlots(pvpEmojiDraft).includes(emoji);
-                return (
-                  <button
-                    type="button"
-                    key={`emoji_pick_all_${emoji}_${index}`}
-                    className={`pvp-emoji-option ${active ? 'active' : ''}`}
-                    onClick={() => togglePvpEmojiDraft(emoji)}
-                  >
-                    {emoji}
-                  </button>
-                );
-              })}
-            </div>
-            <div className="match-accept-actions pvp-emoji-picker-actions">
-              <button className="btn btn-primary btn-lg" onClick={savePvpEmojiDraft}>Salvar</button>
-              <button className="btn btn-secondary btn-lg" onClick={closePvpEmojiPicker}>Cancelar</button>
-            </div>
-          </div>
-        </div>
+        <PvpEmojiPickerModal vm={{
+          activePvpEmojiOptions,
+          closePvpEmojiPicker,
+          pvpEmojiDraft,
+          pvpEmojiDraftWarning,
+          pvpEmojiSlotFocus,
+          removePvpEmojiAt,
+          savePvpEmojiDraft,
+          selectPvpEmojiSlot,
+          togglePvpEmojiDraft
+        }} />
       ) : null}
 
       {screen === 'result' && resultState && !resultState.rewardsCollected ? (
-        <div className="reset-modal reward-collect-modal" role="dialog" aria-live="polite" aria-label="Coletar recompensas">
-          <div className="reset-modal-card reward-collect-card">
-            <div className="reward-collect-shine" aria-hidden="true" />
-            <h3>Recompensas da partida</h3>
-            <p>Toque em coletar para receber seus ganhos.</p>
-            <div className="reward-collect-list">
-              <div className="reward-collect-item">
-                <span className="reward-collect-item-label">XP</span>
-                <span className="reward-collect-item-value xp">+{Math.max(0, Number(resultState.awardedXp || 0))}</span>
-              </div>
-              <div className="reward-collect-item">
-                <span className="reward-collect-item-label">Moedas</span>
-                <span className="reward-collect-item-value coins">+{Math.max(0, Number(resultState.awardedCoins || 0))}</span>
-              </div>
-              <div className="reward-collect-item">
-                <span className="reward-collect-item-label">Pontos de ranking</span>
-                <span className="reward-collect-item-value points">+{Math.max(0, Number(resultState.rankingGain || 0))}</span>
-              </div>
-            </div>
-            <button className="reward-collect-btn" disabled={rewardCollecting} onClick={(event) => handleCollectResultRewards(event)}>
-              {rewardCollecting ? 'Coletando...' : 'Coletar Recompensas'}
-            </button>
-          </div>
-        </div>
+        <RewardCollectModal vm={{
+          handleCollectResultRewards,
+          resultState,
+          rewardCollecting
+        }} />
       ) : null}
 
       {screen === 'pvp-result' && pvpOpponentLeftTransitionActive ? (
-        <div className="pvp-result-transition-overlay" role="status" aria-live="polite" aria-label="Transicao de resultado">
-          <div className="pvp-result-transition-backdrop" />
-          <div className="pvp-result-transition-card">
-            <div className="pvp-result-transition-spinner" />
-            <div className="pvp-result-transition-title">Oponente saiu da partida</div>
-            <div className="pvp-result-transition-subtitle">Preparando sua compensação...</div>
-          </div>
-        </div>
+        <PvpOpponentLeftOverlay />
       ) : null}
 
       {pvpCompensation ? (
-        <div className="reset-modal reward-collect-modal" role="dialog" aria-live="polite" aria-label="Compensacao PVP">
-          <div className="reset-modal-card reward-collect-card">
-            <h3>{pvpCompensation.title || 'Compensação da partida'}</h3>
-            <p>{pvpCompensation.subtitle || 'Você recebeu uma compensação.'}</p>
-            <div className="reward-collect-list">
-              <div className="reward-collect-item">
-                <span className="reward-collect-item-label">Pontos PVP</span>
-                <span className={`reward-collect-item-value ${Number(pvpCompensation.points || 0) >= 0 ? 'points' : 'points-loss'}`}>
-                  {formatSignedPoints(pvpCompensation.points || 0)}
-                </span>
-              </div>
-              <div className="reward-collect-item">
-                <span className="reward-collect-item-label">XP</span>
-                <span className="reward-collect-item-value xp">+{Math.max(0, Number(pvpCompensation.xp || 0))}</span>
-              </div>
-              <div className="reward-collect-item">
-                <span className="reward-collect-item-label">Moedas</span>
-                <span className="reward-collect-item-value coins">+{Math.max(0, Number(pvpCompensation.coins || 0))}</span>
-              </div>
-            </div>
-            <button className="reward-collect-btn" disabled={pvpRewardCollecting} onClick={(event) => collectPvpCompensation(event)}>
-              {pvpRewardCollecting ? 'Coletando...' : 'Coletar Recompensas'}
-            </button>
-          </div>
-        </div>
+        <PvpCompensationModal vm={{
+          collectPvpCompensation,
+          pvpCompensation,
+          pvpRewardCollecting
+        }} />
       ) : null}
 
       {passClaimFx.visible ? (
-        <div className="pass-claim-fx" role="status" aria-live="polite" aria-label="Recompensa do passe coletada">
-          <div className="pass-claim-fx-card">
-            <div className="pass-claim-fx-kicker">Passe de Evolução</div>
-            <div className="pass-claim-fx-title">
-              <span className="pass-claim-fx-icon" aria-hidden="true">{passClaimFx.icon || '🏆'}</span>
-              <span>{passClaimFx.title || 'Recompensa coletada'}</span>
-            </div>
-            <div className="pass-claim-fx-rewards">
-              <span className="pass-claim-fx-chip">+{Math.max(0, Number(passClaimFx.xp || 0))} XP</span>
-              <span className="pass-claim-fx-chip">+{Math.max(0, Number(passClaimFx.coins || 0))} moedas</span>
-              {(Array.isArray(passClaimFx.cosmetics) ? passClaimFx.cosmetics : []).slice(0, 2).map((name) => (
-                <span key={`pass_fx_cosmetic_${name}`} className="pass-claim-fx-chip cosmetic">{name}</span>
-              ))}
-            </div>
-          </div>
-        </div>
+        <PassClaimFx vm={{
+          passClaimFx
+        }} />
       ) : null}
 
       {rewardFxParticles.length ? (
-        <div className="reward-collect-particles" aria-hidden="true">
-          {rewardFxParticles.map((particle) => (
-            <span
-              key={particle.id}
-              className={`reward-fx-particle ${particle.kind}`}
-              style={{
-                left: `${particle.x}px`,
-                top: `${particle.y}px`,
-                '--dx': `${particle.dx}px`,
-                '--dy': `${particle.dy}px`,
-                '--drift': `${particle.drift}px`,
-                '--delay': `${particle.delay}ms`,
-                '--duration': `${particle.duration}ms`,
-                '--size': `${particle.size}px`,
-                '--rotation': `${particle.rotate}deg`
-              }}
-            >
-              {particle.icon}
-            </span>
-          ))}
-        </div>
+        <RewardParticles vm={{
+          rewardFxParticles
+        }} />
       ) : null}
 
       {showMusicPlayer ? (
-        <div className="music-player visible">
-          <span className="music-player-icon">{musicMode === 'battle' ? '🔥' : '🎵'}</span>
-          <span className="music-player-name">
-            {musicMode === 'battle' ? 'Partida: ' : 'Menu: '}
-            {activeMusicTrack?.name || 'Sem trilha'}
-          </span>
-          <button className="music-player-skip" onClick={handleMusicSkip} aria-label="Trocar trilha">
-            ⏭
-          </button>
-        </div>
+        <MusicPlayer vm={{
+          activeMusicTrack,
+          handleMusicSkip,
+          musicMode
+        }} />
       ) : null}
 
     </>
