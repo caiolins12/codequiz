@@ -5331,7 +5331,9 @@ function toShopUpdatedAtMs(value) {
   );
 }
 
-function pickMergedShopEquippedId(type, incomingId, currentId, ownedSet, preferIncoming = true) {
+// decisive: os dois lados têm data conhecida e diferente — o mais recente vence,
+// inclusive para voltar ao item padrão (desequipar).
+function pickMergedShopEquippedId(type, incomingId, currentId, ownedSet, preferIncoming = true, decisive = false) {
   const safeType = String(type || '').trim();
   const fallbackId = String(SHOP_DEFAULT_EQUIPPED_BY_TYPE[safeType] || SHOP_DEFAULT_EQUIPPED_BY_TYPE.emoji);
   const nextId = String(incomingId || fallbackId).trim() || fallbackId;
@@ -5340,10 +5342,13 @@ function pickMergedShopEquippedId(type, incomingId, currentId, ownedSet, preferI
   const prevOwned = ownedSet.has(prevId);
 
   if (nextOwned && prevOwned) {
-    const nextIsDefault = nextId === fallbackId;
-    const prevIsDefault = prevId === fallbackId;
-    if (nextIsDefault && !prevIsDefault) return prevId;
-    if (!nextIsDefault && prevIsDefault) return nextId;
+    if (nextId === prevId) return nextId;
+    if (!decisive) {
+      const nextIsDefault = nextId === fallbackId;
+      const prevIsDefault = prevId === fallbackId;
+      if (nextIsDefault && !prevIsDefault) return prevId;
+      if (!nextIsDefault && prevIsDefault) return nextId;
+    }
     return preferIncoming ? nextId : prevId;
   }
   if (nextOwned) return nextId;
@@ -5359,7 +5364,8 @@ export async function saveUserShop(userId, shopData) {
     background: String(shopData?.equipped?.background || SHOP_DEFAULT_EQUIPPED_BY_TYPE.background),
     emoji: String(shopData?.equipped?.emoji || SHOP_DEFAULT_EQUIPPED_BY_TYPE.emoji)
   };
-  const incomingUpdatedAtMs = Math.max(toShopUpdatedAtMs(shopData), Date.now());
+  const incomingShopUpdatedAtMs = toShopUpdatedAtMs(shopData);
+  const incomingUpdatedAtMs = Math.max(incomingShopUpdatedAtMs, Date.now());
   const tx = await runTransaction(ref(firebaseDb, `user_shop/${userId}`), (current) => {
     const base = current && typeof current === 'object' ? current : {};
     const currentOwned = normalizeShopOwnedIds(base.owned);
@@ -5372,6 +5378,7 @@ export async function saveUserShop(userId, shopData) {
     };
     const currentUpdatedAtMs = toShopUpdatedAtMs(base);
     const preferIncoming = incomingUpdatedAtMs >= currentUpdatedAtMs;
+    const decisive = incomingShopUpdatedAtMs > 0 && currentUpdatedAtMs > 0 && incomingShopUpdatedAtMs !== currentUpdatedAtMs;
     const mergedUpdatedAtMs = Math.max(currentUpdatedAtMs, incomingUpdatedAtMs, Date.now());
     return {
       owned: mergedOwned,
@@ -5381,21 +5388,24 @@ export async function saveUserShop(userId, shopData) {
           incomingEquipped.frame,
           currentEquipped.frame,
           ownedSet,
-          preferIncoming
+          preferIncoming,
+          decisive
         ),
         background: pickMergedShopEquippedId(
           'background',
           incomingEquipped.background,
           currentEquipped.background,
           ownedSet,
-          preferIncoming
+          preferIncoming,
+          decisive
         ),
         emoji: pickMergedShopEquippedId(
           'emoji',
           incomingEquipped.emoji,
           currentEquipped.emoji,
           ownedSet,
-          preferIncoming
+          preferIncoming,
+          decisive
         )
       },
       updated_at: new Date(mergedUpdatedAtMs).toISOString(),

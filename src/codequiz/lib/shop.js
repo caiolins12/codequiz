@@ -466,10 +466,11 @@ export function loadShopData(userId) {
   const key = getShopStorageKey(userId);
   try {
     const raw = localStorage.getItem(key);
-    if (!raw) return defaultShopData();
+    // Sem cache local: data 0 para não sobrescrever o que vier do servidor.
+    if (!raw) return normalizeShopData({ owned: [], equipped: DEFAULT_EQUIPPED });
     return normalizeShopData(JSON.parse(raw));
   } catch {
-    return defaultShopData();
+    return normalizeShopData({ owned: [], equipped: DEFAULT_EQUIPPED });
   }
 }
 
@@ -502,10 +503,16 @@ export function mergeShopData(localRaw, remoteRaw) {
     const defaultId = DEFAULT_EQUIPPED[type];
 
     if (localOwned && remoteOwned) {
-      const localIsDefault = String(fromLocal) === String(defaultId);
-      const remoteIsDefault = String(fromRemote) === String(defaultId);
-      if (localIsDefault && !remoteIsDefault) return fromRemote;
-      if (!localIsDefault && remoteIsDefault) return fromLocal;
+      if (String(fromLocal) === String(fromRemote)) return fromLocal;
+      // Datas conhecidas e diferentes: o mais recente vence (inclusive para desequipar).
+      const decisive = localUpdatedAtMs > 0 && remoteUpdatedAtMs > 0 && localUpdatedAtMs !== remoteUpdatedAtMs;
+      if (!decisive) {
+        // Sem data confiável de um dos lados: não troca um item escolhido pelo padrão.
+        const localIsDefault = String(fromLocal) === String(defaultId);
+        const remoteIsDefault = String(fromRemote) === String(defaultId);
+        if (localIsDefault && !remoteIsDefault) return fromRemote;
+        if (!localIsDefault && remoteIsDefault) return fromLocal;
+      }
       return preferLocal ? fromLocal : fromRemote;
     }
     if (localOwned) return fromLocal;

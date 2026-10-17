@@ -873,7 +873,8 @@ export function buildShopFallbackFromProfile(profileRow = null) {
       equipped.emoji
     ],
     equipped,
-    updatedAt: Date.now()
+    // Data desconhecida: só decide quando faltar informação dos outros lados.
+    updatedAt: 0
   });
 }
 
