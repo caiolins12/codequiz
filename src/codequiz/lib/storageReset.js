@@ -1,10 +1,10 @@
-// Reset do estado local do navegador quando o jogo recomeca do zero
-// (migracao para o Supabase em 10/2026). Roda uma vez por navegador, antes
-// dos outros modulos lerem o localStorage, para que progresso/cache antigos
-// nao sejam sincronizados de volta para o banco novo.
+// Reset do estado local do navegador quando o jogo recomeça do zero
+// (migração para o Supabase e novo visual em 10/2026). Roda uma vez por
+// navegador, antes dos outros módulos lerem o localStorage, para que
+// progresso/cache antigos não sejam sincronizados de volta para o banco.
 
 const STORAGE_EPOCH_KEY = 'codequiz_storage_epoch';
-const STORAGE_EPOCH = '2026-10-supabase-reset';
+const STORAGE_EPOCH = '2026-10-ui-redesign-reset';
 const PRESERVED_KEYS = new Set([
   STORAGE_EPOCH_KEY,
   'codequiz_cookie_consent_v1',
@@ -12,6 +12,8 @@ const PRESERVED_KEYS = new Set([
   'codequiz_audio_settings_v1'
 ]);
 const LEGACY_PREFIXES = ['codequiz_', 'firebase:'];
+// Sessão do Supabase: o jogador continua logado depois do reset.
+const PRESERVED_PREFIXES = ['codequiz_supabase_auth_v1'];
 
 function resetLocalStateIfNeeded() {
   if (typeof window === 'undefined') return;
@@ -22,6 +24,7 @@ function resetLocalStateIfNeeded() {
     for (let index = 0; index < storage.length; index += 1) {
       const key = storage.key(index);
       if (!key || PRESERVED_KEYS.has(key)) continue;
+      if (PRESERVED_PREFIXES.some((prefix) => key.startsWith(prefix))) continue;
       if (LEGACY_PREFIXES.some((prefix) => key.startsWith(prefix))) {
         keysToRemove.push(key);
       }
@@ -29,7 +32,7 @@ function resetLocalStateIfNeeded() {
     keysToRemove.forEach((key) => storage.removeItem(key));
     storage.setItem(STORAGE_EPOCH_KEY, STORAGE_EPOCH);
   } catch {
-    // storage indisponivel (modo privado, bloqueado): nada a limpar
+    // storage indisponível (modo privado, bloqueado): nada a limpar
   }
 }
 

@@ -111,7 +111,7 @@ export default function PassScreen({ vm }) {
     .filter(Boolean);
   const missionPaths = Array.isArray(stage?.missionPaths) ? stage.missionPaths : [];
 
-  let claimLabel = 'Complete uma rota para coletar';
+  let claimLabel = 'Complete uma rota';
   if (stage?.claimed) claimLabel = 'Recompensa coletada';
   else if (stage?.locked) claimLabel = 'Etapa bloqueada';
   else if (stage?.completed) claimLabel = 'Coletar recompensa';

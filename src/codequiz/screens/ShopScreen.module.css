@@ -8,6 +8,17 @@
   margin-bottom: 0;
 }
 
+/* No mobile/tablet as moedas já aparecem na barra superior */
+.headerCoins {
+  display: none !important;
+}
+
+@media (min-width: 1024px) {
+  .headerCoins {
+    display: inline-flex !important;
+  }
+}
+
 .toolbar {
   display: grid;
   gap: var(--cq-space-3);

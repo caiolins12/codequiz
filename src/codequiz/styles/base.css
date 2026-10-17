@@ -60,17 +60,16 @@ blockquote {
   margin: 0;
 }
 
-/* Listas com classe são componentes: sem marcadores nem recuo. */
-ul[class],
-ol[class] {
+/* Listas com classe são componentes: sem marcadores nem recuo.
+   :where() zera a especificidade para as classes dos módulos prevalecerem. */
+:where(ul[class], ol[class]) {
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
 /* Itens de listas em grid/flex podem encolher (evita estouro com textos longos). */
-ul[class] > li,
-ol[class] > li {
+:where(ul[class], ol[class]) > li {
   min-width: 0;
 }
 

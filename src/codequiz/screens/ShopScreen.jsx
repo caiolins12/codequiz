@@ -114,7 +114,7 @@ export default function ShopScreen({ vm }) {
       <PageHeader
         title="Loja"
         subtitle="Personalize seu perfil com molduras, fundos e emojis."
-        actions={<StatPill icon={CoinIcon} value={coins} label="moedas" tone="gold" ariaLabel={`${coins} moedas`} />}
+        actions={<StatPill className={styles.headerCoins} icon={CoinIcon} value={coins} label="moedas" tone="gold" ariaLabel={`${coins} moedas`} />}
       />
 
       <div className={styles.toolbar}>
