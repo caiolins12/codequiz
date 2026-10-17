@@ -2282,7 +2282,7 @@ export function getPvpEliminationPlacementForUser(matchRow = null, userId = '') 
 
 export function getPvpEliminationPlacementLabel(placement = 0) {
   const safePlacement = Math.max(1, Number(placement || 1));
-  return `${safePlacement}o lugar`;
+  return `${safePlacement}º lugar`;
 }
 
 export function getPvpEliminationResultKeyByPlacement(placement = 0) {
@@ -2296,7 +2296,7 @@ export function getPvpEliminationRoundLabel(matchRow = null) {
   const cycleNo = Math.max(1, Number(matchRow?.cycle_no || 1));
   const roundInCycle = Math.max(1, Number(matchRow?.round_in_cycle || 1));
   const pairNo = Math.max(1, Number(matchRow?.pair_no || 1));
-  return `Ciclo ${cycleNo} - Rodada ${roundInCycle}/${PVP_ELIMINATION_ROUNDS_PER_CYCLE} - Duelo ${pairNo}`;
+  return `Ciclo ${cycleNo} · Rodada ${roundInCycle}/${PVP_ELIMINATION_ROUNDS_PER_CYCLE} · Duelo ${pairNo}`;
 }
 
 export function buildPvpEliminationCycleScoreMap(activeIds = []) {

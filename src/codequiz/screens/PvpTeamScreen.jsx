@@ -1,14 +1,48 @@
-import { getAvatarFrameClass, getAvatarFrameStyle, getDisplayAvatar } from '../lib/shop';
+import { DoorOpen, Eye, Music2, Swords, Users, VolumeX } from 'lucide-react';
 import { getPvpTeamBattleDisplayLabel } from '../app/helpers';
+import { Avatar, Button, IconButton, Modal, TimerDisplay, cx } from '../ui';
+import AnswerOptions from './shared/AnswerOptions';
+import { battleStyles as styles } from './shared/BattleParts';
+import { buildPlayerView } from './shared/players';
+import QuestionCard from './shared/QuestionCard';
+import team from './shared/TeamBattle.module.css';
+
+function TeamPanel({ side, label, members, score, activeUserId, mine, buildCosmeticSnapshot, memberScores }) {
+  return (
+    <section className={cx(team.team, side === 'blue' ? team.blue : '', side === 'blue' ? team.teamBlue : team.teamRed, mine ? team.mine : '')}>
+      <div className={team.teamHead}>
+        <span className={team.teamName}>Time {label}{mine ? ' (você)' : ''}</span>
+        <span className={team.teamScore}>{score}</span>
+      </div>
+      <ul className={team.members}>
+        {members.map((member) => {
+          const player = buildPlayerView(member, buildCosmeticSnapshot);
+          const memberScore = Math.max(0, Number(memberScores?.[player.userId] || 0));
+          return (
+            <li key={`${side}_${player.userId}`} className={cx(team.member, activeUserId === player.userId ? team.memberActive : '')}>
+              <Avatar avatar={player.avatar} frameClass={player.frameClass} frameStyle={player.frameStyle} size="xs" />
+              <span className={team.memberText}>
+                <span className={team.memberName}>{player.nickname}</span>
+                <span className={team.memberMeta}>{memberScore} acerto{memberScore === 1 ? '' : 's'}{activeUserId === player.userId ? ' · duelando' : ''}</span>
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
+  );
+}
 
 export default function PvpTeamScreen({ vm }) {
   const {
     buildCosmeticSnapshot,
     confirmPvpTeamAnswer,
     leavePvpTeamFlow,
+    music,
     pickPvpTeamAnswer,
     pvpTeamBattleEntry,
     pvpTeamBattleNo,
+    pvpTeamBattleRemainingSec,
     pvpTeamBattleStatus,
     pvpTeamBlueFeedback,
     pvpTeamBlueMembers,
@@ -28,153 +62,129 @@ export default function PvpTeamScreen({ vm }) {
     pvpTeamSelectedIndex,
     pvpTeamSubmitted,
     pvpTeamTimerClass,
-    pvpTeamTimerPct,
-    pvpTeamTimerVisualClass,
-    screen
+    pvpTeamTimerPct
   } = vm;
 
+  const isRoundResult = pvpTeamBattleStatus === 'round_result';
+  const locked = pvpTeamSubmitted || isRoundResult || !pvpTeamIsActivePlayer;
+  const selected = Number(pvpTeamSelectedIndex);
+  const hasSelection = Number.isFinite(selected) && selected >= 0 && pvpTeamSelectedIndex !== null;
+  const redScore = Math.max(0, Number(pvpTeamMatch?.red_score || 0));
+  const blueScore = Math.max(0, Number(pvpTeamMatch?.blue_score || 0));
+  const timerLevel = pvpTeamTimerClass === 'danger' ? 'danger' : (pvpTeamTimerClass === 'warning' ? 'warning' : '');
+
   return (
-    <div className={`screen screen-pvp ${screen === 'pvp-team' ? 'active' : ''}`}>
-      <div className="quiz-header pvp-header">
-        <div className="quiz-info">
-          <button className="btn pvp-exit-btn" onClick={() => leavePvpTeamFlow()}>Sair da Batalha</button>
+    <div className={styles.battle}>
+      <header className={styles.top}>
+        <IconButton icon={DoorOpen} label="Sair da batalha" variant="surface" onClick={() => leavePvpTeamFlow()} />
+        <div className={styles.round}>
+          <Users size={20} strokeWidth={2.6} aria-hidden="true" />
+          <span className={styles.roundLabel}>{pvpTeamCurrentBattleLabel}</span>
         </div>
-      </div>
-      <div className={`quiz-timer pvp-quiz-timer ${pvpTeamTimerVisualClass}`}>
-        <div className={`timer-bar ${pvpTeamTimerClass}`} style={{ width: `${pvpTeamTimerPct}%` }} />
-      </div>
-      <div className={`pvp-round-indicator ${pvpTeamTimerVisualClass}`}>
-        <span className="pvp-round-main">{pvpTeamCurrentBattleLabel}</span>
-        <span className="pvp-round-phase">{pvpTeamCurrentPairLabel}</span>
-      </div>
-      <div className="pvp-team-scoreboard">
-        {[
-          {
-            side: 'red',
-            label: 'Vermelho',
-            members: pvpTeamRedMembers,
-            score: Math.max(0, Number(pvpTeamMatch?.red_score || 0)),
-            activeUserId: String(pvpTeamBattleEntry?.red_user_id || '').trim()
-          },
-          {
-            side: 'blue',
-            label: 'Azul',
-            members: pvpTeamBlueMembers,
-            score: Math.max(0, Number(pvpTeamMatch?.blue_score || 0)),
-            activeUserId: String(pvpTeamBattleEntry?.blue_user_id || '').trim()
-          }
-        ].map((team) => (
-          <div key={`battle_team_${team.side}`} className={`pvp-team-score-card ${team.side} ${pvpTeamMySide === team.side ? 'is-mine' : ''}`}>
-            <div className="pvp-team-score-card-head">
-              <span>Time {team.label}</span>
-              <strong>{team.score}</strong>
-            </div>
-            <div className="pvp-team-score-members">
-              {team.members.map((member) => {
-                const memberId = String(member?.user_id || '').trim();
-                const memberShop = buildCosmeticSnapshot(
-                  member?.equipped_frame,
-                  member?.equipped_background,
-                  member?.equipped_emoji
-                );
-                const memberAvatar = getDisplayAvatar(member?.avatar || '\uD83D\uDE42', memberShop);
-                const memberFrameStyle = getAvatarFrameStyle(memberShop);
-                const memberFrameClass = getAvatarFrameClass(memberShop);
-                const memberScore = Math.max(0, Number(pvpTeamMatch?.member_scores?.[memberId] || 0));
-                return (
-                  <div key={`battle_team_member_${team.side}_${memberId}`} className={`pvp-team-score-member ${team.activeUserId === memberId ? 'is-active' : ''}`}>
-                    <span className={`pvp-player-avatar pvp-team-score-avatar ${memberFrameClass}`} style={memberFrameStyle}>{memberAvatar}</span>
-                    <div className="pvp-team-score-copy">
-                      <strong>{member?.nickname || 'Jogador'}</strong>
-                      <span>{memberScore} acerto(s)</span>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        ))}
-      </div>
-      <div className="quiz-body pvp-quiz-body">
-        <div className="question-card pvp-question-card">
-          <p className="question-text">{pvpTeamQuestion?.q || 'Aguardando pergunta...'}</p>
-          {pvpTeamQuestion?.code ? <pre className="question-code">{pvpTeamQuestion.code}</pre> : null}
+        {music ? (
+          <IconButton
+            icon={music.enabled ? Music2 : VolumeX}
+            label={music.enabled ? 'Desligar música' : 'Ligar música'}
+            onClick={() => music.onToggle(!music.enabled)}
+          />
+        ) : null}
+      </header>
+
+      <TimerDisplay seconds={pvpTeamBattleRemainingSec} percent={pvpTeamTimerPct} level={timerLevel} />
+
+      <div className={team.layout}>
+        <div className={team.teams}>
+          <TeamPanel
+            side="red"
+            label="Vermelho"
+            members={pvpTeamRedMembers}
+            score={redScore}
+            activeUserId={String(pvpTeamBattleEntry?.red_user_id || '').trim()}
+            mine={pvpTeamMySide === 'red'}
+            buildCosmeticSnapshot={buildCosmeticSnapshot}
+            memberScores={pvpTeamMatch?.member_scores}
+          />
+          <TeamPanel
+            side="blue"
+            label="Azul"
+            members={pvpTeamBlueMembers}
+            score={blueScore}
+            activeUserId={String(pvpTeamBattleEntry?.blue_user_id || '').trim()}
+            mine={pvpTeamMySide === 'blue'}
+            buildCosmeticSnapshot={buildCosmeticSnapshot}
+            memberScores={pvpTeamMatch?.member_scores}
+          />
         </div>
-        <div className="challenge-status pvp-team-active-duel">
-          Duelo atual: {pvpTeamCurrentPairLabel}
-        </div>
-        <div className="options-list">
-          {(pvpTeamQuestion?.opts || []).map((option, index) => (
-            <button
-              key={`pvp_team_opt_${pvpTeamBattleNo}_${index}`}
-              className={`option-btn ${pvpTeamSelectedIndex === index ? 'selected' : ''} ${pvpTeamSubmitted || !pvpTeamIsActivePlayer ? 'disabled' : ''}`}
-              disabled={pvpTeamSubmitted || pvpTeamBattleStatus === 'round_result' || !pvpTeamIsActivePlayer}
-              onClick={() => pickPvpTeamAnswer(index)}
-            >
-              <span className="opt-letter">{String.fromCharCode(65 + index)}</span>
-              <span>{option}</span>
-            </button>
-          ))}
-        </div>
-        <div className="pvp-answer-footer">
-          <button
-            className="btn btn-primary quiz-confirm-btn pvp-confirm-answer-btn"
-            disabled={
-              !pvpTeamIsActivePlayer
-              || pvpTeamSubmitted
-              || pvpTeamBattleStatus === 'round_result'
-              || !Number.isFinite(Number(pvpTeamSelectedIndex))
-              || Number(pvpTeamSelectedIndex) < 0
-            }
-            onClick={confirmPvpTeamAnswer}
-          >
-            Confirmar resposta
-          </button>
-          {pvpTeamBattleStatus === 'active' ? (
-            pvpTeamIsActivePlayer ? (
-              pvpTeamSubmitted ? (
-                <div className="challenge-status pvp-waiting-status">
-                  Resposta enviada. Aguardando o adversario...
-                </div>
-              ) : null
-            ) : (
-              <div className="challenge-status pvp-waiting-status">
-                Aguardando o duelo da sua dupla...
-              </div>
-            )
+
+        <main className={cx(styles.stage, team.stageCol)}>
+          <span className={team.duelNow}><Swords strokeWidth={2.6} aria-hidden="true" /> Duelo atual: {pvpTeamCurrentPairLabel}</span>
+          <QuestionCard question={pvpTeamQuestion} />
+          {!pvpTeamIsActivePlayer && pvpTeamBattleStatus === 'active' ? (
+            <span className={team.spectator}><Eye size={18} strokeWidth={2.6} aria-hidden="true" /> Você está assistindo ao duelo da sua dupla.</span>
           ) : null}
-        </div>
+          <AnswerOptions
+            options={pvpTeamQuestion?.opts || []}
+            selectedIndex={hasSelection ? selected : null}
+            onSelect={pickPvpTeamAnswer}
+            disabled={locked}
+            keyPrefix={`team${pvpTeamBattleNo}`}
+          />
+          <footer className={styles.footer}>
+            <Button
+              size="xl"
+              variant="success"
+              block
+              disabled={locked || !hasSelection}
+              onClick={confirmPvpTeamAnswer}
+            >
+              Confirmar resposta
+            </Button>
+            {pvpTeamBattleStatus === 'active' && pvpTeamIsActivePlayer && pvpTeamSubmitted ? (
+              <span className={styles.waiting} role="status">
+                <span className={styles.waitingDot} aria-hidden="true" />
+                Resposta enviada. Aguardando o adversário...
+              </span>
+            ) : null}
+          </footer>
+        </main>
       </div>
-      {pvpTeamBattleStatus === 'round_result' ? (
-        <div className="pvp-wait-modal">
-          <div className="pvp-wait-backdrop" />
-          <div className="reset-modal-card pvp-round-card">
-            <div className="pvp-round-kicker">{getPvpTeamBattleDisplayLabel(pvpTeamResultEntry)}</div>
-            <div className="pvp-round-title">{pvpTeamRoundResultLabel}</div>
-            <div className="pvp-round-scoreline">
-              <div className="pvp-round-score-item">
-                <span>Time Vermelho</span>
-                <strong>{Math.max(0, Number(pvpTeamMatch?.red_score || 0))}</strong>
+
+      {isRoundResult ? (
+        <Modal
+          title={pvpTeamRoundResultLabel}
+          subtitle={getPvpTeamBattleDisplayLabel(pvpTeamResultEntry)}
+          icon={Users}
+          tone="cyan"
+          size="sm"
+          centered
+        >
+          <div className={styles.roundResult}>
+            <div className={styles.scoreline}>
+              <span className={styles.scorelineItem}>
+                <span className={styles.scorelineName}>Time Vermelho</span>
+                <span className={styles.scorelineValue}>{redScore}</span>
+              </span>
+              <span className={styles.scorelineDivider} aria-hidden="true">×</span>
+              <span className={styles.scorelineItem}>
+                <span className={styles.scorelineName}>Time Azul</span>
+                <span className={styles.scorelineValue}>{blueScore}</span>
+              </span>
+            </div>
+            <div className={styles.answerChips}>
+              <div className={cx(styles.answerChip, styles[pvpTeamRedFeedback?.cssClass] || '')}>
+                <span className={styles.answerChipName}>{pvpTeamResultPair?.red?.nickname || 'Time Vermelho'}</span>
+                <span className={styles.answerChipState}>{pvpTeamRedFeedback?.emoji} {pvpTeamRedFeedback?.label}</span>
               </div>
-              <div className="pvp-round-score-divider">x</div>
-              <div className="pvp-round-score-item">
-                <span>Time Azul</span>
-                <strong>{Math.max(0, Number(pvpTeamMatch?.blue_score || 0))}</strong>
+              <div className={cx(styles.answerChip, styles[pvpTeamBlueFeedback?.cssClass] || '')}>
+                <span className={styles.answerChipName}>{pvpTeamResultPair?.blue?.nickname || 'Time Azul'}</span>
+                <span className={styles.answerChipState}>{pvpTeamBlueFeedback?.emoji} {pvpTeamBlueFeedback?.label}</span>
               </div>
             </div>
-            <div className="pvp-round-answer-feedback">
-              <div className={`pvp-round-answer-chip ${pvpTeamRedFeedback.cssClass}`}>
-                <span className="pvp-round-answer-name">{pvpTeamResultPair?.red?.nickname || 'Time Vermelho'}</span>
-                <span className="pvp-round-answer-state">{pvpTeamRedFeedback.emoji} {pvpTeamRedFeedback.label}</span>
-              </div>
-              <div className={`pvp-round-answer-chip ${pvpTeamBlueFeedback.cssClass}`}>
-                <span className="pvp-round-answer-name">{pvpTeamResultPair?.blue?.nickname || 'Time Azul'}</span>
-                <span className="pvp-round-answer-state">{pvpTeamBlueFeedback.emoji} {pvpTeamBlueFeedback.label}</span>
-              </div>
-            </div>
-            <div className={`pvp-round-countdown ${pvpTeamRoundResultCountdownClass}`}>Proximo confronto em {pvpTeamRoundResultRemainingSec}s</div>
+            <span className={cx(styles.nextIn, pvpTeamRoundResultCountdownClass ? styles.nextInUrgent : '')} role="timer">
+              Próximo confronto em {pvpTeamRoundResultRemainingSec}s
+            </span>
           </div>
-        </div>
+        </Modal>
       ) : null}
     </div>
   );

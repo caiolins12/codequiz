@@ -395,6 +395,10 @@
   font-variant-numeric: tabular-nums;
 }
 
+.centerText {
+  text-align: center;
+}
+
 .muted {
   color: var(--cq-text-3);
   font-weight: 700;
@@ -415,5 +419,65 @@
   .resultLayout {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     align-items: start;
+  }
+}
+
+/* Resultado em duas áreas (PvP em grupo): no desktop a lista fica ao lado */
+.split {
+  display: grid;
+  gap: var(--cq-space-4);
+  grid-template-areas: 'main' 'side' 'actions';
+}
+
+.splitMain,
+.splitSide,
+.splitActions {
+  display: grid;
+  gap: var(--cq-space-4);
+  align-content: start;
+  min-width: 0;
+}
+
+.splitMain { grid-area: main; }
+.splitSide { grid-area: side; }
+.splitActions { grid-area: actions; }
+
+.heroScore {
+  width: min(100%, 340px);
+  margin-top: var(--cq-space-2);
+}
+
+.rankSelf {
+  background: rgba(123, 92, 255, 0.18);
+  box-shadow: inset 0 0 0 1px rgba(166, 144, 255, 0.45);
+}
+
+.rankPos1 { background: var(--cq-grad-gold); color: #3a2400; }
+.rankPos2 { background: linear-gradient(135deg, #e6ecf5, #9fb0c8); color: #1e2836; }
+.rankPos3 { background: linear-gradient(135deg, #f0b27a, #b86b32); color: #2e1606; }
+
+.rankMeta {
+  flex-shrink: 0;
+  color: var(--cq-text-3);
+  font-size: var(--cq-text-sm);
+}
+
+@media (min-width: 1024px) {
+  .split {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-areas: 'main side' 'actions side';
+    grid-template-rows: auto 1fr;
+    align-items: start;
+  }
+}
+
+/* Telas estreitas: recompensas empilham ícone e valor para não quebrar o rótulo */
+@media (max-width: 479px) {
+  .rewards > div {
+    flex-direction: column;
+    justify-content: center;
+    gap: var(--cq-space-2);
+    padding: var(--cq-space-3) var(--cq-space-2);
+    text-align: center;
   }
 }

@@ -1,8 +1,56 @@
+import { Crown, DoorOpen, Eye, Music2, Skull, Swords, VolumeX } from 'lucide-react';
+import { Avatar, Button, IconButton, Modal, TimerDisplay, cx } from '../ui';
+import AnswerOptions from './shared/AnswerOptions';
+import { LoadingDots, arenaStyles as arena } from './shared/ArenaParts';
+import { ScorePlayer, SidePlayer, battleStyles as styles } from './shared/BattleParts';
+import overlay from '../overlays/Overlays.module.css';
+import QuestionCard from './shared/QuestionCard';
+import team from './shared/TeamBattle.module.css';
+
+function liveRowToPlayer(entry) {
+  if (!entry) return null;
+  return {
+    userId: String(entry.user_id || ''),
+    nickname: String(entry.nickname || 'Jogador'),
+    avatar: entry.avatar,
+    frameClass: entry.frameClass,
+    frameStyle: entry.frameStyle,
+    background: entry.bgStyle,
+    backgroundMeta: { className: entry.bgClassName, id: entry.bgId, rarity: entry.bgRarity },
+    score: Math.max(0, Number(entry.score || 0)),
+    isSelf: !!entry.isSelf
+  };
+}
+
+function ScoreRows({ rows, highlightId = '', eliminatedId = '' }) {
+  return (
+    <ol className={overlay.list}>
+      {rows.map((entry, index) => {
+        const id = String(entry?.user_id || '');
+        return (
+          <li
+            key={`row_${id}_${index}`}
+            className={cx(overlay.row, id === eliminatedId ? overlay.rowDanger : (id === highlightId ? overlay.rowSelf : ''))}
+          >
+            <span className={overlay.rowMain}>
+              <span className={overlay.rowTitle}>{index + 1}º · {entry?.nickname || 'Jogador'}{id === highlightId ? ' (você)' : ''}</span>
+              {id === eliminatedId ? <span className={overlay.rowSub}>Eliminado neste ciclo</span> : null}
+            </span>
+            <strong>{Math.max(0, Number(entry?.score || 0))}</strong>
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
 export default function PvpEliminationScreen({ vm }) {
   const {
     confirmPvpEliminationAnswer,
     leavePvpEliminationFlow,
+    music,
     pickPvpEliminationAnswer,
+    pvpEliminationBattleRemainingSec,
     pvpEliminationBattleStatus,
     pvpEliminationCountdownClass,
     pvpEliminationCountdownSec,
@@ -31,181 +79,128 @@ export default function PvpEliminationScreen({ vm }) {
     pvpEliminationSubmitted,
     pvpEliminationTimerClass,
     pvpEliminationTimerPct,
-    pvpEliminationTimerVisualClass,
     pvpEliminationWaitingPairAnswer,
     pvpEliminationWinnerMember,
-    pvpEliminationWinnerUserId,
-    screen
+    pvpEliminationWinnerUserId
   } = vm;
 
+  const pair = (Array.isArray(pvpEliminationLivePairRows) ? pvpEliminationLivePairRows : []).map(liveRowToPlayer);
+  const left = pair[0] || null;
+  const right = pair[1] || null;
+  const active = pvpEliminationBattleStatus === 'active';
+  const locked = pvpEliminationSubmitted || !active || !pvpEliminationIsActivePairMember || pvpEliminationIsSpectator || pvpEliminationShowBattleIntro;
+  const selected = Number(pvpEliminationSelectedIndex);
+  const hasSelection = Number.isFinite(selected) && selected >= 0 && pvpEliminationSelectedIndex !== null;
+  const timerLevel = pvpEliminationTimerClass === 'danger' ? 'danger' : (pvpEliminationTimerClass === 'warning' ? 'warning' : '');
+  const countdown = Math.max(0, Number(pvpEliminationCountdownSec || 0));
+
+  let status = null;
+  if (active) {
+    if (pvpEliminationShowBattleIntro) status = { icon: Swords, text: 'Preparando o confronto da rodada...' };
+    else if (pvpEliminationIsSpectator) status = { icon: Eye, text: 'Você foi eliminado e está assistindo aos confrontos.' };
+    else if (!pvpEliminationIsActivePairMember) status = { icon: Eye, text: 'Aguardando o duelo de outros jogadores...' };
+  }
+
   return (
-    <div className={`screen screen-pvp screen-pvp-elimination ${screen === 'pvp-elimination' ? 'active' : ''}`}>
-      <div className="quiz-header pvp-header">
-        <div className="quiz-info">
-          <button className="btn pvp-exit-btn" onClick={() => leavePvpEliminationFlow()}>Sair da Partida</button>
+    <div className={styles.battle}>
+      <header className={styles.top}>
+        <IconButton icon={DoorOpen} label="Sair da partida" variant="surface" onClick={() => leavePvpEliminationFlow()} />
+        <div className={styles.round}>
+          <Crown size={20} strokeWidth={2.6} aria-hidden="true" />
+          <span className={styles.roundLabel}>{pvpEliminationRoundLabel}</span>
         </div>
+        {music ? (
+          <IconButton
+            icon={music.enabled ? Music2 : VolumeX}
+            label={music.enabled ? 'Desligar música' : 'Ligar música'}
+            onClick={() => music.onToggle(!music.enabled)}
+          />
+        ) : null}
+      </header>
+
+      <div className={styles.scoreboard}>
+        <ScorePlayer player={left} score={left?.score || 0} me={!!left?.isSelf} />
+        <span className={styles.vs} aria-hidden="true">VS</span>
+        <ScorePlayer player={right} score={right?.score || 0} me={!!right?.isSelf} right />
       </div>
-      <div className={`quiz-timer pvp-quiz-timer ${pvpEliminationTimerVisualClass}`}>
-        <div className={`timer-bar ${pvpEliminationTimerClass}`} style={{ width: `${pvpEliminationTimerPct}%` }} />
-      </div>
-      <div className={`pvp-round-indicator ${pvpEliminationTimerVisualClass}`}>
-        <span className="pvp-round-main">{pvpEliminationRoundLabel}</span>
-        <span className="pvp-round-phase">
-          {pvpEliminationPairUser1Label} x {pvpEliminationPairUser2Label}
-        </span>
-      </div>
-      <div className="pvp-elimination-scoreboard-grid">
-        {pvpEliminationLivePairRows.map((entry) => (
-          <div
-            key={`elimination_live_pair_${entry.user_id}`}
-            className={[
-              'pvp-elimination-live-card',
-              'is-duel',
-              entry.isSelf ? 'is-self' : '',
-              entry.bgClassName
-            ].filter(Boolean).join(' ')}
-            data-bg-id={entry.bgId}
-            data-bg-rarity={entry.bgRarity}
-            style={{ background: entry.bgStyle }}
-          >
-            <span className={`pvp-player-avatar pvp-elimination-live-avatar ${entry.frameClass}`} style={entry.frameStyle}>{entry.avatar}</span>
-            <div className="pvp-elimination-live-copy">
-              <strong>{entry.nickname}</strong>
-              <span>{entry.score} acerto(s)</span>
-            </div>
-          </div>
-        ))}
-      </div>
-      <div className="quiz-body pvp-quiz-body">
-        <div className="question-card pvp-question-card">
-          <div className="question-scroll-wrap">
-            <p className="question-text">{pvpEliminationQuestion?.q || 'Aguardando pergunta...'}</p>
-            {pvpEliminationQuestion?.code ? <pre className="question-code">{pvpEliminationQuestion.code}</pre> : null}
-          </div>
-        </div>
-        <div className="challenge-status pvp-team-active-duel">
-          Em duelo agora: {pvpEliminationPairUser1Label} x {pvpEliminationPairUser2Label}
-        </div>
-        <div className="options-list">
-          {(pvpEliminationQuestion?.opts || []).map((option, index) => (
-            <button
-              key={`pvp_elimination_opt_${pvpEliminationMatch?.battle_no || 1}_${index}`}
-              className={`option-btn ${pvpEliminationSelectedIndex === index ? 'selected' : ''} ${pvpEliminationSubmitted || !pvpEliminationIsActivePairMember ? 'disabled' : ''}`}
-              disabled={pvpEliminationSubmitted || pvpEliminationBattleStatus !== 'active' || !pvpEliminationIsActivePairMember || pvpEliminationIsSpectator || pvpEliminationShowBattleIntro}
-              onClick={() => pickPvpEliminationAnswer(index)}
-            >
-              <span className="opt-letter">{String.fromCharCode(65 + index)}</span>
-              <span>{option}</span>
-            </button>
-          ))}
-        </div>
-        <div className="pvp-answer-footer">
-          <button
-            className="btn btn-primary quiz-confirm-btn pvp-confirm-answer-btn"
-            disabled={
-              pvpEliminationBattleStatus !== 'active'
-              || pvpEliminationIsSpectator
-              || !pvpEliminationIsActivePairMember
-              || pvpEliminationSubmitted
-              || pvpEliminationShowBattleIntro
-              || !Number.isFinite(Number(pvpEliminationSelectedIndex))
-              || Number(pvpEliminationSelectedIndex) < 0
-            }
-            onClick={confirmPvpEliminationAnswer}
-          >
-            Confirmar resposta
-          </button>
-          {pvpEliminationBattleStatus === 'active' ? (
-            pvpEliminationShowBattleIntro ? (
-              <div className="challenge-status pvp-waiting-status">
-                Preparando confronto da rodada...
-              </div>
-            ) : pvpEliminationIsSpectator ? (
-              <div className="challenge-status pvp-waiting-status">
-                Voce foi eliminado e esta assistindo aos confrontos.
-              </div>
-            ) : pvpEliminationIsActivePairMember ? (
-              pvpEliminationWaitingPairAnswer ? (
-                <div className="challenge-status pvp-waiting-status">
-                  Resposta enviada. Aguardando o adversario...
-                </div>
-              ) : null
-            ) : (
-              <div className="challenge-status pvp-waiting-status">
-                Aguardando o duelo de outros jogadores...
-              </div>
-            )
+
+      <TimerDisplay seconds={pvpEliminationBattleRemainingSec} percent={pvpEliminationTimerPct} level={timerLevel} />
+
+      <div className={styles.arena}>
+        <SidePlayer player={left} score={left?.score || 0} me={!!left?.isSelf} />
+        <main className={styles.stage}>
+          <span className={team.duelNow}>
+            <Swords strokeWidth={2.6} aria-hidden="true" />
+            Em duelo agora: {pvpEliminationPairUser1Label} × {pvpEliminationPairUser2Label}
+          </span>
+          <QuestionCard question={pvpEliminationQuestion} />
+          {status ? (
+            <span className={team.spectator}>
+              <status.icon size={18} strokeWidth={2.6} aria-hidden="true" /> {status.text}
+            </span>
           ) : null}
-        </div>
+          <AnswerOptions
+            options={pvpEliminationQuestion?.opts || []}
+            selectedIndex={hasSelection ? selected : null}
+            onSelect={pickPvpEliminationAnswer}
+            disabled={locked}
+            keyPrefix={`elim${pvpEliminationMatch?.battle_no || 1}`}
+          />
+          <footer className={styles.footer}>
+            <Button size="xl" variant="success" block disabled={locked || !hasSelection} onClick={confirmPvpEliminationAnswer}>
+              Confirmar resposta
+            </Button>
+            {active && pvpEliminationIsActivePairMember && pvpEliminationWaitingPairAnswer && !pvpEliminationShowBattleIntro ? (
+              <span className={styles.waiting} role="status">
+                <span className={styles.waitingDot} aria-hidden="true" />
+                Resposta enviada. Aguardando o adversário...
+              </span>
+            ) : null}
+          </footer>
+        </main>
+        <SidePlayer player={right} score={right?.score || 0} me={!!right?.isSelf} />
       </div>
 
       {pvpEliminationShowBattleIntro ? (
-        <div className="pvp-wait-modal pvp-elimination-intro-modal">
-          <div className="pvp-wait-backdrop" />
-          <div className="reset-modal-card pvp-round-card phase-elimination pvp-elimination-intro-card">
-            <div className="pvp-round-kicker">Proximo confronto</div>
-            <div className="pvp-round-title">{pvpEliminationPairUser1Label} x {pvpEliminationPairUser2Label}</div>
-            <div className="pvp-elimination-intro-versus">
-              <span className={`pvp-player-avatar pvp-elimination-intro-avatar ${pvpEliminationPairUser1FrameClass}`} style={pvpEliminationPairUser1FrameStyle}>{pvpEliminationPairUser1Avatar}</span>
-              <span className="pvp-elimination-intro-vs">VS</span>
-              <span className={`pvp-player-avatar pvp-elimination-intro-avatar ${pvpEliminationPairUser2FrameClass}`} style={pvpEliminationPairUser2FrameStyle}>{pvpEliminationPairUser2Avatar}</span>
+        <Modal title={`${pvpEliminationPairUser1Label} × ${pvpEliminationPairUser2Label}`} subtitle="Próximo confronto" icon={Swords} tone="orange" size="sm" centered>
+          <div className={styles.roundResult}>
+            <div className={arena.versus}>
+              <span className={overlay.centerItem}>
+                <Avatar avatar={pvpEliminationPairUser1Avatar} frameClass={pvpEliminationPairUser1FrameClass} frameStyle={pvpEliminationPairUser1FrameStyle} size="lg" />
+              </span>
+              <span className={arena.vs}>VS</span>
+              <span className={overlay.centerItem}>
+                <Avatar avatar={pvpEliminationPairUser2Avatar} frameClass={pvpEliminationPairUser2FrameClass} frameStyle={pvpEliminationPairUser2FrameStyle} size="lg" />
+              </span>
             </div>
-            <div className="pvp-elimination-intro-loader" aria-hidden="true">
-              <span />
-              <span />
-              <span />
-            </div>
+            <LoadingDots />
           </div>
-        </div>
+        </Modal>
       ) : null}
 
       {pvpEliminationBattleStatus === 'round_result' && !pvpEliminationShowBattleIntro ? (
-        <div className="pvp-wait-modal">
-          <div className="pvp-wait-backdrop" />
-          <div className="reset-modal-card pvp-round-card">
-            <div className="pvp-round-kicker">{pvpEliminationRoundLabel}</div>
-            <div className="pvp-round-title">{pvpEliminationRoundResultLabel}</div>
-            <div className="pvp-round-hint">Placar geral da partida</div>
-            <div className="pvp-elimination-transition-grid pvp-elimination-round-scoreboard">
-              {pvpEliminationMatchScoreRows.map((entry, index) => (
-                <div key={`elimination_round_result_${entry.user_id}`} className={`pvp-elimination-transition-row ${String(entry?.user_id || '') === pvpEliminationMyUserId ? 'is-self' : ''}`}>
-                  <span>{index + 1}º - {entry?.nickname || 'Jogador'}</span>
-                  <strong>{Math.max(0, Number(entry?.score || 0))}</strong>
-                </div>
-              ))}
-            </div>
-            <div className={`pvp-round-countdown ${pvpEliminationCountdownClass}`}>
-              Proximo duelo em {Math.max(0, pvpEliminationCountdownSec)}s
-            </div>
+        <Modal title={pvpEliminationRoundResultLabel} subtitle={`${pvpEliminationRoundLabel} · placar geral`} icon={Crown} tone="gold" size="sm" centered>
+          <div className={styles.roundResult}>
+            <ScoreRows rows={Array.isArray(pvpEliminationMatchScoreRows) ? pvpEliminationMatchScoreRows : []} highlightId={pvpEliminationMyUserId} />
+            <span className={cx(styles.nextIn, pvpEliminationCountdownClass ? styles.nextInUrgent : '')} role="timer">
+              Próximo duelo em {countdown}s
+            </span>
           </div>
-        </div>
+        </Modal>
       ) : null}
 
       {pvpEliminationBattleStatus === 'elimination_result' ? (
-        <div className="pvp-wait-modal">
-          <div className="pvp-wait-backdrop" />
-          <div className="reset-modal-card pvp-round-card phase-elimination pvp-elimination-round-card">
-            <div className="pvp-round-kicker">Fim do ciclo</div>
-            <div className="pvp-round-title">{pvpEliminationEliminationLabel}</div>
-            <div className="pvp-elimination-transition-grid">
-              {pvpEliminationResultRows.map((entry) => (
-                <div key={`elimination_transition_${entry.user_id}`} className={`pvp-elimination-transition-row ${String(entry?.user_id || '') === pvpEliminationEliminatedUserId ? 'is-eliminated' : ''}`}>
-                  <span>{entry?.nickname || 'Jogador'}</span>
-                  <strong>{Math.max(0, Number(entry?.score || 0))}</strong>
-                </div>
-              ))}
-            </div>
+        <Modal title={pvpEliminationEliminationLabel} subtitle="Fim do ciclo" icon={Skull} tone="red" size="sm" centered>
+          <div className={styles.roundResult}>
+            <ScoreRows rows={Array.isArray(pvpEliminationResultRows) ? pvpEliminationResultRows : []} highlightId={pvpEliminationMyUserId} eliminatedId={pvpEliminationEliminatedUserId} />
             {pvpEliminationWinnerUserId ? (
-              <div className="pvp-round-hint">
-                Campeao definido: {pvpEliminationWinnerMember?.nickname || 'Jogador'}.
-              </div>
+              <span className={team.spectator}><Crown size={18} strokeWidth={2.6} aria-hidden="true" /> Campeão: {pvpEliminationWinnerMember?.nickname || 'Jogador'}</span>
             ) : null}
-            <div className={`pvp-round-countdown ${pvpEliminationCountdownClass}`}>
-              {pvpEliminationWinnerUserId ? 'Resultado final em ' : 'Novo ciclo em '}
-              {Math.max(0, pvpEliminationCountdownSec)}s
-            </div>
+            <span className={cx(styles.nextIn, pvpEliminationCountdownClass ? styles.nextInUrgent : '')} role="timer">
+              {pvpEliminationWinnerUserId ? 'Resultado final em ' : 'Novo ciclo em '}{countdown}s
+            </span>
           </div>
-        </div>
+        </Modal>
       ) : null}
     </div>
   );

@@ -1,5 +1,18 @@
-import { getAvatarFrameClass, getAvatarFrameStyle, getDisplayAvatar } from '../lib/shop';
+import { Crown, Flag, Home, ListOrdered, Medal, Swords } from 'lucide-react';
 import { formatSignedPoints } from '../app/helpers';
+import { Avatar, Badge, Button, Card, CoinIcon, Confetti, SectionHeader, StatTile, XpIcon, cx } from '../ui';
+import { buildPlayerView } from './shared/players';
+import game from './shared/Game.module.css';
+import outcome from './shared/Outcome.module.css';
+
+// Chave de resultado vem da colocação: 1º = win, 2º = draw, demais = loss.
+const OUTCOMES = {
+  win: { title: 'Campeão da eliminatória!', icon: Crown, tone: outcome.great },
+  draw: { title: 'Vice-campeão!', icon: Medal, tone: outcome.ok },
+  loss: { title: 'Eliminatória encerrada', icon: Flag, tone: outcome.low }
+};
+
+const PODIUM = [outcome.rankPos1, outcome.rankPos2, outcome.rankPos3];
 
 export default function PvpEliminationResultScreen({ vm }) {
   const {
@@ -15,96 +28,88 @@ export default function PvpEliminationResultScreen({ vm }) {
     pvpEliminationWinnerMember,
     pvpEliminationWinnerUserId,
     resetPvpEliminationState,
-    screen,
     setPvpMode,
     setScreen
   } = vm;
 
+  const key = OUTCOMES[pvpEliminationResultKey] ? pvpEliminationResultKey : 'loss';
+  const view = OUTCOMES[key];
+  const Icon = view.icon;
+  const placementLabel = pvpEliminationResultReward?.placementLabel || pvpEliminationPlacementLabel;
+  const rows = Array.isArray(pvpEliminationResultRows) ? pvpEliminationResultRows : [];
+  const points = Number(pvpEliminationResultReward?.points || 0);
+  const winnerIsMe = !!pvpEliminationWinnerUserId && pvpEliminationWinnerUserId === pvpEliminationMyUserId;
+
+  const goHome = () => {
+    resetPvpEliminationState();
+    setPvpMode('');
+    setScreen('home');
+  };
+
   return (
-    <div className={`screen ${screen === 'pvp-elimination-result' ? 'active' : ''}`}>
-      <div className="result-content">
-        <div className={`pvp-result-panel pvp-result-panel-dynamic outcome-${pvpEliminationResultKey === 'win' ? 'win' : pvpEliminationResultKey === 'draw' ? 'draw' : 'lose'}`}>
-          <div className="result-emoji pvp-result-seq result-seq-1">{pvpEliminationResultKey === 'win' ? '\uD83C\uDFC6' : pvpEliminationResultKey === 'draw' ? '\uD83E\uDD1D' : '\uD83D\uDE35'}</div>
-          <div className="result-title pvp-result-seq result-seq-2">
-            {pvpEliminationResultKey === 'win' ? 'Campeao da Eliminatoria!' : `Eliminatoria encerrada - ${pvpEliminationPlacementLabel}`}
-          </div>
-          <div className="result-subtitle pvp-result-seq result-seq-3">
-            {pvpEliminationWinnerUserId
-              ? `Vencedor: ${pvpEliminationWinnerMember?.nickname || 'Jogador'}`
-              : 'Pontuacao final da eliminatoria'}
-          </div>
-          <div className="pvp-elimination-result-list pvp-result-seq result-seq-4">
-            {pvpEliminationResultRows.map((entry) => {
-              const memberShop = buildCosmeticSnapshot(
-                entry?.equipped_frame,
-                entry?.equipped_background,
-                entry?.equipped_emoji
-              );
-              const memberAvatar = getDisplayAvatar(entry?.avatar || '\uD83D\uDE42', memberShop);
-              const memberFrameStyle = getAvatarFrameStyle(memberShop);
-              const memberFrameClass = getAvatarFrameClass(memberShop);
-              const isSelf = String(entry?.user_id || '').trim() === pvpEliminationMyUserId;
-              const rowPlacement = Math.max(1, Number(entry?.placement || 0));
-              return (
-                <div key={`elimination_result_row_${entry.user_id}`} className={`pvp-elimination-result-row ${isSelf ? 'is-self' : ''}`}>
-                  <span className="pvp-elimination-result-rank">{rowPlacement}o</span>
-                  <span className={`pvp-player-avatar pvp-team-result-avatar ${memberFrameClass}`} style={memberFrameStyle}>{memberAvatar}</span>
-                  <div className="pvp-elimination-result-copy">
-                    <strong>{entry?.nickname || 'Jogador'}</strong>
-                    <span>{Math.max(0, Number(entry?.score || 0))} acerto(s)</span>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+    <div className={game.game}>
+      {key === 'win' ? <Confetti count={90} seed={13} /> : null}
+      <main className={outcome.split}>
+        <div className={outcome.splitMain}>
+          <section className={cx(outcome.hero, view.tone)}>
+            <span className={outcome.heroIcon} aria-hidden="true"><Icon strokeWidth={2.4} /></span>
+            <h1 className={outcome.heroTitle}>{view.title}</h1>
+            <p className={outcome.heroText}>
+              {key === 'win' ? 'Você venceu todos os ciclos da arena.' : `Você terminou em ${placementLabel}.`}
+            </p>
+            <div className={outcome.heroMeta}>
+              <Badge tone={key === 'win' ? 'gold' : 'violet'} icon={Medal}>{placementLabel}</Badge>
+              {pvpEliminationWinnerUserId && !winnerIsMe ? (
+                <Badge tone="gold" icon={Crown}>Campeão: {pvpEliminationWinnerMember?.nickname || 'Jogador'}</Badge>
+              ) : null}
+            </div>
+          </section>
+        </div>
+
+        <div className={outcome.splitSide}>
+          <Card padding="lg">
+            <SectionHeader title="Classificação final" icon={ListOrdered} />
+            <ol className={outcome.list}>
+              {rows.map((entry, index) => {
+                const player = buildPlayerView(entry, buildCosmeticSnapshot);
+                const isSelf = player.userId === pvpEliminationMyUserId;
+                const placement = Math.max(1, Number(entry?.placement || index + 1));
+                const score = Math.max(0, Number(entry?.score || 0));
+                return (
+                  <li key={`elim_result_${player.userId}_${index}`} className={cx(outcome.rankRow, isSelf ? outcome.rankSelf : '')}>
+                    <span className={cx(outcome.rankPos, PODIUM[placement - 1] || '')}>{placement}</span>
+                    <Avatar avatar={player.avatar} frameClass={player.frameClass} frameStyle={player.frameStyle} size="xs" />
+                    <span className={outcome.rankName}>{player.nickname}{isSelf ? ' (você)' : ''}</span>
+                    <span className={outcome.rankMeta}>{score} acerto{score === 1 ? '' : 's'}</span>
+                  </li>
+                );
+              })}
+            </ol>
+          </Card>
+        </div>
+
+        <div className={outcome.splitActions}>
           {pvpEliminationResultReward ? (
             <>
-              <div className="reward-collect-list pvp-result-reward-list pvp-result-seq result-seq-5">
-                <div className="reward-collect-item">
-                  <span className="reward-collect-item-label">Colocacao</span>
-                  <span className="reward-collect-item-value level">{pvpEliminationResultReward.placementLabel || pvpEliminationPlacementLabel}</span>
-                </div>
-                <div className="reward-collect-item">
-                  <span className="reward-collect-item-label">Pontos PVP</span>
-                  <span className={`reward-collect-item-value ${Number(pvpEliminationResultReward.points || 0) >= 0 ? 'points' : 'points-loss'}`}>
-                    {formatSignedPoints(pvpEliminationResultReward.points || 0)}
-                  </span>
-                </div>
-                <div className="reward-collect-item">
-                  <span className="reward-collect-item-label">XP</span>
-                  <span className="reward-collect-item-value xp">+{Math.max(0, Number(pvpEliminationResultReward.xp || 0))}</span>
-                </div>
-                <div className="reward-collect-item">
-                  <span className="reward-collect-item-label">Moedas</span>
-                  <span className="reward-collect-item-value coins">+{Math.max(0, Number(pvpEliminationResultReward.coins || 0))}</span>
-                </div>
+              <div className={outcome.rewards}>
+                <StatTile icon={Swords} label="Pontos PvP" value={formatSignedPoints(points)} tone={points >= 0 ? 'violet' : 'red'} />
+                <StatTile icon={XpIcon} label="XP" value={`+${Math.max(0, Number(pvpEliminationResultReward.xp || 0))}`} tone="blue" />
+                <StatTile icon={CoinIcon} label="Moedas" value={`+${Math.max(0, Number(pvpEliminationResultReward.coins || 0))}`} tone="gold" />
               </div>
-              <button
-                className="reward-collect-btn pvp-result-reward-btn pvp-result-seq result-seq-6"
-                disabled={pvpEliminationRewardCollecting}
-                onClick={(event) => collectPvpEliminationResultRewards(event)}
-              >
-                {pvpEliminationRewardCollecting ? 'Coletando...' : 'Coletar Recompensas'}
-              </button>
+              <Button size="xl" variant="warning" block loading={pvpEliminationRewardCollecting} onClick={(event) => collectPvpEliminationResultRewards(event)}>
+                Coletar recompensas
+              </Button>
+              <p className={cx(outcome.muted, outcome.centerText)}>Depois da coleta você volta para o início.</p>
             </>
           ) : !pvpEliminationResultProcessed ? (
-            <div className="result-subtitle pvp-result-seq result-seq-5 pvp-result-collect-note">
-              Preparando recompensas...
-            </div>
+            <p className={cx(outcome.muted, outcome.centerText)} role="status">Preparando recompensas...</p>
           ) : (
-            <button
-              className="reward-collect-btn pvp-result-reward-btn pvp-result-seq result-seq-5"
-              onClick={() => {
-                resetPvpEliminationState();
-                setPvpMode('');
-                setScreen('home');
-              }}
-            >
-              Voltar ao inicio
-            </button>
+            <Button size="xl" variant="primary" block icon={Home} onClick={goHome}>
+              Voltar ao início
+            </Button>
           )}
         </div>
-      </div>
+      </main>
     </div>
   );
 }

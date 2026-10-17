@@ -42,6 +42,19 @@
   font-weight: 700;
 }
 
+.rowSelf {
+  box-shadow: inset 0 0 0 2px rgba(166, 144, 255, 0.6);
+}
+
+.rowDanger {
+  box-shadow: inset 0 0 0 2px rgba(255, 92, 108, 0.6);
+}
+
+.centerItem {
+  display: grid;
+  justify-items: center;
+}
+
 .rowMain {
   flex: 1 1 auto;
   display: grid;

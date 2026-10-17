@@ -1,5 +1,46 @@
-import { getAvatarFrameClass, getAvatarFrameStyle, getDisplayAvatar } from '../lib/shop';
+import { Crown, Frown, Handshake, Home, Swords, Trophy } from 'lucide-react';
 import { formatSignedPoints } from '../app/helpers';
+import { Avatar, Badge, Button, CoinIcon, Confetti, StatTile, XpIcon, cx } from '../ui';
+import { battleStyles as battle } from './shared/BattleParts';
+import { buildPlayerView } from './shared/players';
+import game from './shared/Game.module.css';
+import outcome from './shared/Outcome.module.css';
+import team from './shared/TeamBattle.module.css';
+
+const OUTCOMES = {
+  win: { title: 'Vitória da equipe!', text: 'Trabalho em equipe de respeito.', icon: Trophy, tone: outcome.great },
+  draw: { title: 'Empate em equipe', text: 'As duas equipes foram até o limite.', icon: Handshake, tone: outcome.ok },
+  lose: { title: 'Derrota da equipe', text: 'Reúna o time e volte para a revanche!', icon: Frown, tone: outcome.bad }
+};
+
+function TeamResult({ side, label, members, winner, mine, buildCosmeticSnapshot, memberScores }) {
+  return (
+    <section
+      className={cx(team.team, side === 'blue' ? team.blue : '', mine ? team.mine : '', winner ? team.winner : '')}
+      aria-label={`Time ${label}`}
+    >
+      <div className={team.teamHead}>
+        <span className={team.teamName}>{label}{mine ? ' (você)' : ''}</span>
+        {winner ? <Badge tone="gold" variant="solid" size="sm" icon={Crown}>Venceu</Badge> : null}
+      </div>
+      <ul className={team.members}>
+        {members.map((member) => {
+          const player = buildPlayerView(member, buildCosmeticSnapshot);
+          const score = Math.max(0, Number(memberScores?.[player.userId] || 0));
+          return (
+            <li key={`${side}_${player.userId}`} className={team.member}>
+              <Avatar avatar={player.avatar} frameClass={player.frameClass} frameStyle={player.frameStyle} size="xs" />
+              <span className={team.memberText}>
+                <span className={team.memberName}>{player.nickname}</span>
+                <span className={team.memberMeta}>{score} acerto{score === 1 ? '' : 's'}</span>
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
+  );
+}
 
 export default function PvpTeamResultScreen({ vm }) {
   const {
@@ -7,118 +48,100 @@ export default function PvpTeamResultScreen({ vm }) {
     collectPvpTeamResultRewards,
     pvpTeamBlueMembers,
     pvpTeamMatch,
+    pvpTeamMySide,
     pvpTeamRedMembers,
     pvpTeamResultKey,
     pvpTeamResultProcessed,
     pvpTeamResultReward,
     pvpTeamRewardCollecting,
     resetPvpTeamState,
-    screen,
     setPvpMode,
     setScreen
   } = vm;
 
+  const key = pvpTeamResultKey === 'win' ? 'win' : (pvpTeamResultKey === 'draw' ? 'draw' : 'lose');
+  const view = OUTCOMES[key];
+  const Icon = view.icon;
+  const winnerSide = String(pvpTeamMatch?.winner_side || '').trim();
+  const redScore = Math.max(0, Number(pvpTeamMatch?.red_score || 0));
+  const blueScore = Math.max(0, Number(pvpTeamMatch?.blue_score || 0));
+  const points = Number(pvpTeamResultReward?.points || 0);
+  const memberScores = pvpTeamMatch?.member_scores;
+
+  const goHome = () => {
+    resetPvpTeamState();
+    setPvpMode('');
+    setScreen('home');
+  };
+
   return (
-    <div className={`screen ${screen === 'pvp-team-result' ? 'active' : ''}`}>
-      <div className="result-content">
-        <div className={`pvp-result-panel pvp-result-panel-dynamic outcome-${pvpTeamResultKey === 'win' ? 'win' : pvpTeamResultKey === 'draw' ? 'draw' : 'lose'}`}>
-          <div className="result-emoji pvp-result-seq result-seq-1">{pvpTeamResultKey === 'win' ? '\uD83C\uDFC6' : pvpTeamResultKey === 'draw' ? '\uD83E\uDD1D' : '\uD83D\uDE35'}</div>
-          <div className="result-title pvp-result-seq result-seq-2">
-            {pvpTeamResultKey === 'win' ? 'Vitoria da equipe!' : pvpTeamResultKey === 'draw' ? 'Empate em equipe' : 'Derrota da equipe'}
-          </div>
-          <div className="pvp-result-scoreline pvp-result-seq result-seq-3">
-            <span className={`player-history-versus-name ${String(pvpTeamMatch?.winner_side || '').trim() === 'red' ? 'is-winner' : 'is-loser'}`}>
-              Vermelho
-            </span>
-            <div className="player-history-score type-pvp pvp-result-score pvp-result-inline-score">
-              <span className={`player-history-score-value ${String(pvpTeamMatch?.winner_side || '').trim() === 'red' ? 'is-winner' : 'is-loser'}`}>
-                {Math.max(0, Number(pvpTeamMatch?.red_score || 0))}
+    <div className={game.game}>
+      {key === 'win' ? <Confetti count={80} seed={11} /> : null}
+      <main className={outcome.split}>
+        <div className={outcome.splitMain}>
+          <section className={cx(outcome.hero, view.tone)}>
+            <span className={outcome.heroIcon} aria-hidden="true"><Icon strokeWidth={2.4} /></span>
+            <h1 className={outcome.heroTitle}>{view.title}</h1>
+            <p className={outcome.heroText}>{view.text}</p>
+            <div className={cx(battle.scoreline, outcome.heroScore)} aria-label={`Placar: Vermelho ${redScore}, Azul ${blueScore}`}>
+              <span className={battle.scorelineItem}>
+                <span className={battle.scorelineName}>Vermelho</span>
+                <span className={cx(battle.scorelineValue, team.scoreRed)}>{redScore}</span>
               </span>
-              <span className="player-history-score-divider">x</span>
-              <span className={`player-history-score-value ${String(pvpTeamMatch?.winner_side || '').trim() === 'blue' ? 'is-winner' : 'is-loser'}`}>
-                {Math.max(0, Number(pvpTeamMatch?.blue_score || 0))}
+              <span className={battle.scorelineDivider} aria-hidden="true">×</span>
+              <span className={battle.scorelineItem}>
+                <span className={battle.scorelineName}>Azul</span>
+                <span className={cx(battle.scorelineValue, team.scoreBlue)}>{blueScore}</span>
               </span>
             </div>
-            <span className={`player-history-versus-name ${String(pvpTeamMatch?.winner_side || '').trim() === 'blue' ? 'is-winner' : 'is-loser'}`}>
-              Azul
-            </span>
+          </section>
+        </div>
+
+        <div className={outcome.splitSide}>
+          <div className={team.resultTeams}>
+            <TeamResult
+              side="red"
+              label="Vermelho"
+              members={Array.isArray(pvpTeamRedMembers) ? pvpTeamRedMembers : []}
+              winner={winnerSide === 'red'}
+              mine={pvpTeamMySide === 'red'}
+              buildCosmeticSnapshot={buildCosmeticSnapshot}
+              memberScores={memberScores}
+            />
+            <TeamResult
+              side="blue"
+              label="Azul"
+              members={Array.isArray(pvpTeamBlueMembers) ? pvpTeamBlueMembers : []}
+              winner={winnerSide === 'blue'}
+              mine={pvpTeamMySide === 'blue'}
+              buildCosmeticSnapshot={buildCosmeticSnapshot}
+              memberScores={memberScores}
+            />
           </div>
-          <div className="pvp-team-result-members pvp-result-seq result-seq-4">
-            {[
-              { side: 'red', label: 'Time Vermelho', members: pvpTeamRedMembers },
-              { side: 'blue', label: 'Time Azul', members: pvpTeamBlueMembers }
-            ].map((team) => (
-              <div key={`team_result_${team.side}`} className={`pvp-team-result-column ${team.side}`}>
-                <div className="pvp-team-result-column-title">{team.label}</div>
-                <div className="pvp-team-result-member-list">
-                  {team.members.map((member) => {
-                    const memberId = String(member?.user_id || '').trim();
-                    const memberShop = buildCosmeticSnapshot(
-                      member?.equipped_frame,
-                      member?.equipped_background,
-                      member?.equipped_emoji
-                    );
-                    const memberAvatar = getDisplayAvatar(member?.avatar || '\uD83D\uDE42', memberShop);
-                    const memberFrameStyle = getAvatarFrameStyle(memberShop);
-                    const memberFrameClass = getAvatarFrameClass(memberShop);
-                    return (
-                      <div key={`team_result_member_${team.side}_${memberId}`} className="pvp-team-result-member">
-                        <span className={`pvp-player-avatar pvp-team-result-avatar ${memberFrameClass}`} style={memberFrameStyle}>{memberAvatar}</span>
-                        <div className="pvp-team-result-copy">
-                          <strong>{member?.nickname || 'Jogador'}</strong>
-                          <span>{Math.max(0, Number(pvpTeamMatch?.member_scores?.[memberId] || 0))} acerto(s)</span>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            ))}
-          </div>
+        </div>
+
+        <div className={outcome.splitActions}>
           {pvpTeamResultReward ? (
             <>
-              <div className="reward-collect-list pvp-result-reward-list pvp-result-seq result-seq-5">
-                <div className="reward-collect-item">
-                  <span className="reward-collect-item-label">Pontos PVP</span>
-                  <span className={`reward-collect-item-value ${Number(pvpTeamResultReward.points || 0) >= 0 ? 'points' : 'points-loss'}`}>
-                    {formatSignedPoints(pvpTeamResultReward.points || 0)}
-                  </span>
-                </div>
-                <div className="reward-collect-item">
-                  <span className="reward-collect-item-label">XP</span>
-                  <span className="reward-collect-item-value xp">+{Math.max(0, Number(pvpTeamResultReward.xp || 0))}</span>
-                </div>
-                <div className="reward-collect-item">
-                  <span className="reward-collect-item-label">Moedas</span>
-                  <span className="reward-collect-item-value coins">+{Math.max(0, Number(pvpTeamResultReward.coins || 0))}</span>
-                </div>
+              <div className={outcome.rewards}>
+                <StatTile icon={Swords} label="Pontos PvP" value={formatSignedPoints(points)} tone={points >= 0 ? 'violet' : 'red'} />
+                <StatTile icon={XpIcon} label="XP" value={`+${Math.max(0, Number(pvpTeamResultReward.xp || 0))}`} tone="blue" />
+                <StatTile icon={CoinIcon} label="Moedas" value={`+${Math.max(0, Number(pvpTeamResultReward.coins || 0))}`} tone="gold" />
               </div>
-              <button
-                className="reward-collect-btn pvp-result-reward-btn pvp-result-seq result-seq-6"
-                disabled={pvpTeamRewardCollecting}
-                onClick={(event) => collectPvpTeamResultRewards(event)}
-              >
-                {pvpTeamRewardCollecting ? 'Coletando...' : 'Coletar Recompensas'}
-              </button>
+              <Button size="xl" variant="warning" block loading={pvpTeamRewardCollecting} onClick={(event) => collectPvpTeamResultRewards(event)}>
+                Coletar recompensas
+              </Button>
+              <p className={cx(outcome.muted, outcome.centerText)}>Depois da coleta você volta para o início.</p>
             </>
           ) : !pvpTeamResultProcessed ? (
-            <div className="result-subtitle pvp-result-seq result-seq-5 pvp-result-collect-note">
-              Preparando recompensas...
-            </div>
+            <p className={cx(outcome.muted, outcome.centerText)} role="status">Preparando recompensas...</p>
           ) : (
-            <button
-              className="reward-collect-btn pvp-result-reward-btn pvp-result-seq result-seq-5"
-              onClick={() => {
-                resetPvpTeamState();
-                setPvpMode('');
-                setScreen('home');
-              }}
-            >
-              Voltar ao inicio
-            </button>
+            <Button size="xl" variant="primary" block icon={Home} onClick={goHome}>
+              Voltar ao início
+            </Button>
           )}
         </div>
-      </div>
+      </main>
     </div>
   );
 }

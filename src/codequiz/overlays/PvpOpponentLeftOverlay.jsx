@@ -1,11 +1,14 @@
+import { UserX } from 'lucide-react';
+import styles from './Overlays.module.css';
+
 export default function PvpOpponentLeftOverlay() {
   return (
-    <div className="pvp-result-transition-overlay" role="status" aria-live="polite" aria-label="Transicao de resultado">
-      <div className="pvp-result-transition-backdrop" />
-      <div className="pvp-result-transition-card">
-        <div className="pvp-result-transition-spinner" />
-        <div className="pvp-result-transition-title">Oponente saiu da partida</div>
-        <div className="pvp-result-transition-subtitle">Preparando sua compensação...</div>
+    <div className={styles.fullscreen} role="status" aria-live="polite">
+      <div className={styles.fullscreenCard}>
+        <span className={styles.bigIcon} aria-hidden="true"><UserX strokeWidth={2.4} /></span>
+        <h2 className={styles.bigTitle}>O oponente saiu da partida</h2>
+        <p className={styles.text}>Preparando sua compensação...</p>
+        <span className={styles.spinner} aria-hidden="true" />
       </div>
     </div>
   );

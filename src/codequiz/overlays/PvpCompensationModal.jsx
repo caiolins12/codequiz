@@ -1,37 +1,31 @@
+import { HeartHandshake, Swords } from 'lucide-react';
 import { formatSignedPoints } from '../app/helpers';
+import { Button, CoinIcon, Modal, StatTile, XpIcon } from '../ui';
+import styles from './Overlays.module.css';
 
 export default function PvpCompensationModal({ vm }) {
-  const {
-    collectPvpCompensation,
-    pvpCompensation,
-    pvpRewardCollecting
-  } = vm;
+  const { collectPvpCompensation, pvpCompensation, pvpRewardCollecting } = vm;
+  const points = Number(pvpCompensation?.points || 0);
 
   return (
-    <div className="reset-modal reward-collect-modal" role="dialog" aria-live="polite" aria-label="Compensacao PVP">
-      <div className="reset-modal-card reward-collect-card">
-        <h3>{pvpCompensation.title || 'Compensação da partida'}</h3>
-        <p>{pvpCompensation.subtitle || 'Você recebeu uma compensação.'}</p>
-        <div className="reward-collect-list">
-          <div className="reward-collect-item">
-            <span className="reward-collect-item-label">Pontos PVP</span>
-            <span className={`reward-collect-item-value ${Number(pvpCompensation.points || 0) >= 0 ? 'points' : 'points-loss'}`}>
-              {formatSignedPoints(pvpCompensation.points || 0)}
-            </span>
-          </div>
-          <div className="reward-collect-item">
-            <span className="reward-collect-item-label">XP</span>
-            <span className="reward-collect-item-value xp">+{Math.max(0, Number(pvpCompensation.xp || 0))}</span>
-          </div>
-          <div className="reward-collect-item">
-            <span className="reward-collect-item-label">Moedas</span>
-            <span className="reward-collect-item-value coins">+{Math.max(0, Number(pvpCompensation.coins || 0))}</span>
-          </div>
-        </div>
-        <button className="reward-collect-btn" disabled={pvpRewardCollecting} onClick={(event) => collectPvpCompensation(event)}>
-          {pvpRewardCollecting ? 'Coletando...' : 'Coletar Recompensas'}
-        </button>
+    <Modal
+      title={pvpCompensation?.title || 'Compensação da partida'}
+      subtitle={pvpCompensation?.subtitle || 'Você recebeu uma compensação.'}
+      icon={HeartHandshake}
+      tone="cyan"
+      size="sm"
+      centered
+      footer={(
+        <Button size="lg" variant="warning" block loading={pvpRewardCollecting} onClick={(event) => collectPvpCompensation(event)}>
+          Coletar recompensas
+        </Button>
+      )}
+    >
+      <div className={styles.rewardGrid}>
+        <StatTile icon={Swords} label="Pontos PvP" value={formatSignedPoints(points)} tone={points >= 0 ? 'violet' : 'red'} />
+        <StatTile icon={XpIcon} label="XP" value={`+${Math.max(0, Number(pvpCompensation?.xp || 0))}`} tone="blue" />
+        <StatTile icon={CoinIcon} label="Moedas" value={`+${Math.max(0, Number(pvpCompensation?.coins || 0))}`} tone="gold" />
       </div>
-    </div>
+    </Modal>
   );
 }

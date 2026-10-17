@@ -15590,20 +15590,25 @@ export default function CodeQuizApp() {
 
         {screen === 'pvp' ? (
           <PvpDuelScreen vm={{
+            authUser,
             confirmPvpAnswer,
             leavePvpFlow,
+            music: shellMusic,
             pickPvpAnswer,
             pvpBattleEmojis,
             pvpEmojiCooldownActive,
             pvpEmojiCooldownFillPct,
             pvpEmojiCooldownLabel,
             pvpEmojiFx,
+            pvpHasPlayer1Answer,
+            pvpHasPlayer2Answer,
             pvpIsRoundResult,
             pvpMatch,
             pvpPlayer1Avatar,
             pvpPlayer1BackgroundMeta,
             pvpPlayer1FrameClass,
             pvpPlayer1FrameStyle,
+            pvpPlayer1Id,
             pvpPlayer1Shop,
             pvpPlayer2Avatar,
             pvpPlayer2BackgroundMeta,
@@ -15614,22 +15619,19 @@ export default function CodeQuizApp() {
             pvpQuestionHasOverflow,
             pvpQuestionScrollRef,
             pvpRoundNo,
-            pvpRoundPhaseClass,
             pvpRoundPhaseLabel,
             pvpRoundPlayer1Feedback,
             pvpRoundPlayer2Feedback,
+            pvpRoundRemainingSec: Math.ceil(Math.max(0, pvpRoundRemainingMs) / 1000),
             pvpRoundResultCountdownClass,
             pvpRoundResultKicker,
             pvpRoundResultLabel,
-            pvpRoundResultPhaseClass,
             pvpRoundResultRemainingSec,
             pvpState,
             pvpTimerClass,
             pvpTimerPct,
-            pvpTimerVisualClass,
             pvpTotalRounds,
             pvpWaitingOpponent,
-            screen,
             sendPvpEmoji
           }} />
         ) : null}
@@ -15639,9 +15641,11 @@ export default function CodeQuizApp() {
             buildCosmeticSnapshot,
             confirmPvpTeamAnswer,
             leavePvpTeamFlow,
+            music: shellMusic,
             pickPvpTeamAnswer,
             pvpTeamBattleEntry,
             pvpTeamBattleNo,
+            pvpTeamBattleRemainingSec,
             pvpTeamBattleStatus,
             pvpTeamBlueFeedback,
             pvpTeamBlueMembers,
@@ -15661,9 +15665,7 @@ export default function CodeQuizApp() {
             pvpTeamSelectedIndex,
             pvpTeamSubmitted,
             pvpTeamTimerClass,
-            pvpTeamTimerPct,
-            pvpTeamTimerVisualClass,
-            screen
+            pvpTeamTimerPct
           }} />
         ) : null}
 
@@ -15671,7 +15673,9 @@ export default function CodeQuizApp() {
           <PvpEliminationScreen vm={{
             confirmPvpEliminationAnswer,
             leavePvpEliminationFlow,
+            music: shellMusic,
             pickPvpEliminationAnswer,
+            pvpEliminationBattleRemainingSec: Math.ceil(Math.max(0, pvpEliminationBattleRemainingMs) / 1000),
             pvpEliminationBattleStatus,
             pvpEliminationCountdownClass,
             pvpEliminationCountdownSec,
@@ -15700,11 +15704,9 @@ export default function CodeQuizApp() {
             pvpEliminationSubmitted,
             pvpEliminationTimerClass,
             pvpEliminationTimerPct,
-            pvpEliminationTimerVisualClass,
             pvpEliminationWaitingPairAnswer,
             pvpEliminationWinnerMember,
-            pvpEliminationWinnerUserId,
-            screen
+            pvpEliminationWinnerUserId
           }} />
         ) : null}
 
@@ -15722,7 +15724,6 @@ export default function CodeQuizApp() {
             pvpEliminationWinnerMember,
             pvpEliminationWinnerUserId,
             resetPvpEliminationState,
-            screen,
             setPvpMode,
             setScreen
           }} />
@@ -15734,13 +15735,13 @@ export default function CodeQuizApp() {
             collectPvpTeamResultRewards,
             pvpTeamBlueMembers,
             pvpTeamMatch,
+            pvpTeamMySide,
             pvpTeamRedMembers,
             pvpTeamResultKey,
             pvpTeamResultProcessed,
             pvpTeamResultReward,
             pvpTeamRewardCollecting,
             resetPvpTeamState,
-            screen,
             setPvpMode,
             setScreen
           }} />
@@ -15752,10 +15753,19 @@ export default function CodeQuizApp() {
             pvpFinalScoreParts,
             pvpHideDefaultResultPanel,
             pvpMatch,
+            pvpPlayer1Avatar,
+            pvpPlayer1BackgroundMeta,
+            pvpPlayer1FrameClass,
+            pvpPlayer1FrameStyle,
+            pvpPlayer1Shop,
+            pvpPlayer2Avatar,
+            pvpPlayer2BackgroundMeta,
+            pvpPlayer2FrameClass,
+            pvpPlayer2FrameStyle,
+            pvpPlayer2Shop,
             pvpResult,
             pvpResultReward,
-            pvpRewardCollecting,
-            screen
+            pvpRewardCollecting
           }} />
         ) : null}
 

@@ -102,18 +102,20 @@ export default function QuizScreen({ vm }) {
         </div>
       </div>
 
-      <div className={styles.pills}>
-        <StatPill icon={Check} value={quizState?.score || 0} label="pts" tone="lime" size="sm" ariaLabel={`${quizState?.score || 0} pontos`} />
-        {quizState?.streak >= 2 ? (
-          <StatPill icon={Flame} value={`${quizState.streak} seguidas`} tone="orange" size="sm" />
-        ) : null}
+      <div className={styles.timerRow}>
+        <TimerBar
+          className={styles.timerGrow}
+          startedAtMs={quizQuestionStartMs}
+          durationMs={Math.max(1, Number(quizRoundSeconds || 0)) * 1000}
+          running={!!quizState && !answered}
+        />
+        <div className={styles.pills}>
+          <StatPill icon={Check} value={quizState?.score || 0} label="pts" tone="lime" size="sm" ariaLabel={`${quizState?.score || 0} pontos`} />
+          {quizState?.streak >= 2 ? (
+            <StatPill icon={Flame} value={`${quizState.streak} seguidas`} tone="orange" size="sm" />
+          ) : null}
+        </div>
       </div>
-
-      <TimerBar
-        startedAtMs={quizQuestionStartMs}
-        durationMs={Math.max(1, Number(quizRoundSeconds || 0)) * 1000}
-        running={!!quizState && !answered}
-      />
 
       <main className={styles.stage}>
         <QuestionCard question={currentQuestion} scrollRef={quizQuestionScrollRef} hasOverflow={quizQuestionHasOverflow} />

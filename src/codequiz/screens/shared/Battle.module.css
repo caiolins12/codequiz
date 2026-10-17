@@ -1,0 +1,386 @@
+/* Telas de batalha PvP (duelo, equipe, eliminatória) */
+
+.battle {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cq-space-4);
+  width: 100%;
+  max-width: 1200px;
+  min-height: 100dvh;
+  margin: 0 auto;
+  padding:
+    calc(var(--cq-space-3) + var(--cq-safe-top))
+    calc(var(--cq-space-4) + var(--cq-safe-right))
+    calc(var(--cq-space-4) + var(--cq-safe-bottom))
+    calc(var(--cq-space-4) + var(--cq-safe-left));
+  animation: cq-fade-in var(--cq-dur-base) var(--cq-ease-out);
+}
+
+.top {
+  display: flex;
+  align-items: center;
+  gap: var(--cq-space-3);
+}
+
+.round {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  gap: var(--cq-space-2);
+  min-width: 0;
+}
+
+.roundLabel {
+  font-family: var(--cq-font-display);
+  font-size: var(--cq-text-lg);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+/* Placar compacto (mobile) */
+.scoreboard {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: var(--cq-space-2);
+}
+
+.scorePlayer {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--cq-space-2);
+  min-width: 0;
+  padding: var(--cq-space-2);
+  border-radius: var(--cq-radius-lg);
+  overflow: hidden;
+  box-shadow: inset 0 0 0 2px var(--score-accent, rgba(255, 255, 255, 0.14));
+  isolation: isolate;
+}
+
+.scorePlayerRight {
+  flex-direction: row-reverse;
+  text-align: right;
+}
+
+.scoreShade {
+  position: absolute !important;
+  inset: 0;
+  z-index: 1 !important;
+  background: rgba(10, 6, 34, 0.55);
+  pointer-events: none;
+}
+
+.scoreText {
+  display: grid;
+  min-width: 0;
+  line-height: 1.15;
+}
+
+.scoreName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 800;
+  font-size: var(--cq-text-sm);
+}
+
+.scoreStatus {
+  color: rgba(255, 255, 255, 0.75);
+  font-size: 0.6875rem;
+  font-weight: 800;
+}
+
+.scoreStatusDone {
+  color: var(--cq-lime);
+}
+
+.scoreValue {
+  margin-left: auto;
+  font-family: var(--cq-font-display);
+  font-size: var(--cq-text-2xl);
+  font-weight: 700;
+  line-height: 1;
+}
+
+.scorePlayerRight .scoreValue {
+  margin-left: 0;
+  margin-right: auto;
+}
+
+.vs {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: var(--cq-grad-gold);
+  box-shadow: 0 3px 0 var(--cq-gold-dark);
+  color: #3a2600;
+  font-family: var(--cq-font-display);
+  font-weight: 700;
+}
+
+.me {
+  --score-accent: rgba(255, 255, 255, 0.75);
+}
+
+/* Palco + painéis laterais (desktop) */
+.arena {
+  flex: 1 1 auto;
+  display: grid;
+  gap: var(--cq-space-4);
+  align-content: start;
+}
+
+.stage {
+  display: grid;
+  gap: var(--cq-space-4);
+  align-content: start;
+  min-width: 0;
+}
+
+.sidePanel {
+  display: none;
+}
+
+.footer {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  display: grid;
+  gap: var(--cq-space-3);
+  margin: 0 calc(-1 * var(--cq-space-4)) calc(-1 * var(--cq-space-4));
+  padding: var(--cq-space-4) var(--cq-space-4) calc(var(--cq-space-4) + var(--cq-safe-bottom));
+  background: linear-gradient(180deg, rgba(18, 14, 51, 0) 0%, rgba(18, 14, 51, 0.92) 30%, var(--cq-bg-1) 100%);
+}
+
+.waiting {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: var(--cq-text-2);
+  font-weight: 800;
+}
+
+.waitingDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--cq-gold);
+  animation: cq-pulse 1s ease-in-out infinite;
+}
+
+/* Emojis */
+.emojiBar {
+  display: flex;
+  justify-content: center;
+  gap: var(--cq-space-2);
+}
+
+.emojiButton {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  border: 0;
+  border-radius: 16px;
+  background: var(--cq-surface-2);
+  box-shadow: 0 3px 0 #120d3a, inset 0 0 0 1px var(--cq-border-strong);
+  font-size: 24px;
+  overflow: hidden;
+  transition: transform var(--cq-dur-fast) var(--cq-ease-out);
+}
+
+.emojiButton:active:not(:disabled) {
+  transform: translateY(2px) scale(0.95);
+}
+
+.emojiButton:disabled {
+  cursor: not-allowed;
+}
+
+.emojiCooldown {
+  position: absolute;
+  inset: auto 0 0;
+  background: rgba(8, 5, 30, 0.7);
+}
+
+.emojiCooldownLabel {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: #fff;
+  font-size: 0.7rem;
+  font-weight: 800;
+}
+
+.fxLayer {
+  position: fixed;
+  inset: 0;
+  z-index: var(--cq-z-overlay);
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.fx {
+  position: absolute;
+  font-size: 54px;
+  filter: drop-shadow(0 6px 10px rgba(0, 0, 0, 0.4));
+  animation: cq-emoji-float 1.8s var(--cq-ease-out) forwards;
+}
+
+@keyframes cq-emoji-float {
+  0% { transform: translateY(20px) scale(0.4); opacity: 0; }
+  20% { transform: translateY(0) scale(1.15); opacity: 1; }
+  100% { transform: translateY(-120px) scale(1); opacity: 0; }
+}
+
+/* Resultado da rodada (dentro do Modal) */
+.roundResult {
+  display: grid;
+  gap: var(--cq-space-4);
+  padding-bottom: var(--cq-space-4);
+  text-align: center;
+}
+
+.scoreline {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: var(--cq-space-3);
+}
+
+.scorelineItem {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.scorelineName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--cq-text-2);
+  font-weight: 800;
+  font-size: var(--cq-text-sm);
+}
+
+.scorelineValue {
+  font-family: var(--cq-font-display);
+  font-size: 2.25rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.scorelineDivider {
+  color: var(--cq-text-3);
+  font-family: var(--cq-font-display);
+  font-size: var(--cq-text-2xl);
+}
+
+.answerChips {
+  display: grid;
+  gap: var(--cq-space-2);
+}
+
+.answerChip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--cq-space-3);
+  padding: var(--cq-space-3) var(--cq-space-4);
+  border-radius: var(--cq-radius-md);
+  background: rgba(8, 5, 30, 0.4);
+  box-shadow: inset 0 0 0 2px var(--chip-accent, var(--cq-border));
+  font-weight: 800;
+}
+
+.answerChipName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.answerChipState {
+  flex-shrink: 0;
+}
+
+.success { --chip-accent: rgba(62, 224, 127, 0.6); }
+.error { --chip-accent: rgba(255, 92, 108, 0.6); }
+.neutral { --chip-accent: rgba(255, 210, 74, 0.5); }
+
+.nextIn {
+  justify-self: center;
+  padding: 8px 16px;
+  border-radius: var(--cq-radius-pill);
+  background: rgba(8, 5, 30, 0.5);
+  font-weight: 800;
+}
+
+.nextInUrgent {
+  color: var(--cq-gold);
+  animation: cq-pulse 0.8s ease-in-out infinite;
+}
+
+/* Desktop: jogadores nas laterais */
+@media (min-width: 1024px) {
+  .battle {
+    padding-top: var(--cq-space-6);
+  }
+
+  .scoreboard {
+    display: none;
+  }
+
+  .arena {
+    grid-template-columns: 220px minmax(0, 1fr) 220px;
+    gap: var(--cq-space-5);
+  }
+
+  .sidePanel {
+    position: sticky;
+    top: var(--cq-space-6);
+    display: grid;
+    justify-items: center;
+    gap: var(--cq-space-3);
+    padding: var(--cq-space-6) var(--cq-space-4);
+    border-radius: var(--cq-radius-xl);
+    overflow: hidden;
+    text-align: center;
+    box-shadow: var(--cq-shadow-card), inset 0 0 0 2px var(--score-accent, rgba(255, 255, 255, 0.14));
+    isolation: isolate;
+  }
+
+  .sideName {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-family: var(--cq-font-display);
+    font-size: var(--cq-text-lg);
+    font-weight: 700;
+  }
+
+  .sideScore {
+    font-family: var(--cq-font-display);
+    font-size: 3rem;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .footer {
+    position: static;
+    margin: 0;
+    padding: 0;
+    background: none;
+    justify-items: center;
+  }
+
+  .footer > button {
+    width: min(100%, 420px);
+  }
+}

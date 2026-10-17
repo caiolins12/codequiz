@@ -1,21 +1,32 @@
-import { getHeroBackgroundStyle } from '../lib/shop';
+import { useEffect } from 'react';
+import { DoorOpen, Music2, Swords, VolumeX } from 'lucide-react';
+import { Badge, Button, IconButton, Modal, TimerDisplay, cx } from '../ui';
+import AnswerOptions from './shared/AnswerOptions';
+import { EmojiBar, EmojiFxLayer, ScorePlayer, SidePlayer, battleStyles as styles } from './shared/BattleParts';
+import { playerViewFromShop } from './shared/players';
+import QuestionCard from './shared/QuestionCard';
 
 export default function PvpDuelScreen({ vm }) {
   const {
+    authUser,
     confirmPvpAnswer,
     leavePvpFlow,
+    music,
     pickPvpAnswer,
     pvpBattleEmojis,
     pvpEmojiCooldownActive,
     pvpEmojiCooldownFillPct,
     pvpEmojiCooldownLabel,
     pvpEmojiFx,
+    pvpHasPlayer1Answer,
+    pvpHasPlayer2Answer,
     pvpIsRoundResult,
     pvpMatch,
     pvpPlayer1Avatar,
     pvpPlayer1BackgroundMeta,
     pvpPlayer1FrameClass,
     pvpPlayer1FrameStyle,
+    pvpPlayer1Id,
     pvpPlayer1Shop,
     pvpPlayer2Avatar,
     pvpPlayer2BackgroundMeta,
@@ -26,210 +37,171 @@ export default function PvpDuelScreen({ vm }) {
     pvpQuestionHasOverflow,
     pvpQuestionScrollRef,
     pvpRoundNo,
-    pvpRoundPhaseClass,
     pvpRoundPhaseLabel,
     pvpRoundPlayer1Feedback,
     pvpRoundPlayer2Feedback,
+    pvpRoundRemainingSec,
     pvpRoundResultCountdownClass,
     pvpRoundResultKicker,
     pvpRoundResultLabel,
-    pvpRoundResultPhaseClass,
     pvpRoundResultRemainingSec,
     pvpState,
     pvpTimerClass,
     pvpTimerPct,
-    pvpTimerVisualClass,
     pvpTotalRounds,
     pvpWaitingOpponent,
-    screen,
     sendPvpEmoji
   } = vm;
 
+  const selfId = String(authUser?.uid || '');
+  const meIsPlayer1 = !!selfId && selfId === String(pvpPlayer1Id || '');
+  const player1 = playerViewFromShop({
+    nickname: pvpMatch?.player1_nickname || 'Jogador 1',
+    avatar: pvpPlayer1Avatar,
+    frameClass: pvpPlayer1FrameClass,
+    frameStyle: pvpPlayer1FrameStyle,
+    shop: pvpPlayer1Shop,
+    backgroundMeta: pvpPlayer1BackgroundMeta
+  });
+  const player2 = playerViewFromShop({
+    nickname: pvpMatch?.player2_nickname || 'Jogador 2',
+    avatar: pvpPlayer2Avatar,
+    frameClass: pvpPlayer2FrameClass,
+    frameStyle: pvpPlayer2FrameStyle,
+    shop: pvpPlayer2Shop,
+    backgroundMeta: pvpPlayer2BackgroundMeta
+  });
+  const score1 = Math.max(0, Number(pvpMatch?.player1_score || 0));
+  const score2 = Math.max(0, Number(pvpMatch?.player2_score || 0));
+  const selected = Number(pvpState.selectedIndex);
+  const hasSelection = Number.isFinite(selected) && selected >= 0 && pvpState.selectedIndex !== null;
+  const locked = !!pvpState.submitted || pvpIsRoundResult;
+  const canConfirm = !locked && hasSelection;
+  const optionCount = pvpQuestion?.opts?.length || 0;
+  const answeredStatus = pvpIsRoundResult ? null : true;
+
+  useEffect(() => {
+    const handleKey = (event) => {
+      if (locked || event.repeat || event.altKey || event.ctrlKey || event.metaKey) return;
+      const key = String(event.key || '').toLowerCase();
+      const numeric = Number(key);
+      let pick = -1;
+      if (Number.isInteger(numeric) && numeric >= 1 && numeric <= optionCount) pick = numeric - 1;
+      else if (key.length === 1 && key >= 'a' && key <= 'd') pick = key.charCodeAt(0) - 97;
+      if (pick >= 0 && pick < optionCount) {
+        event.preventDefault();
+        pickPvpAnswer(pick);
+      } else if (key === 'enter' && canConfirm) {
+        event.preventDefault();
+        confirmPvpAnswer();
+      }
+    };
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, [canConfirm, confirmPvpAnswer, locked, optionCount, pickPvpAnswer]);
+
+  const timerLevel = pvpTimerClass === 'danger' ? 'danger' : (pvpTimerClass === 'warning' ? 'warning' : '');
+
   return (
-    <div className={`screen screen-pvp ${screen === 'pvp' ? 'active' : ''}`}>
-      <div className="quiz-header pvp-header">
-        <div className="quiz-info">
-          <button className="btn pvp-exit-btn" onClick={() => leavePvpFlow()}>Sair da Partida</button>
+    <div className={styles.battle}>
+      <header className={styles.top}>
+        <IconButton icon={DoorOpen} label="Sair da partida" variant="surface" onClick={() => leavePvpFlow()} />
+        <div className={styles.round}>
+          <Swords size={20} strokeWidth={2.6} aria-hidden="true" />
+          <span className={styles.roundLabel}>Rodada {pvpRoundNo}/{pvpTotalRounds}</span>
+          {pvpRoundPhaseLabel ? <Badge tone="gold" size="sm">{pvpRoundPhaseLabel}</Badge> : null}
         </div>
-      </div>
-      <div className={`quiz-timer pvp-quiz-timer ${pvpTimerVisualClass}`}>
-        <div className={`timer-bar ${pvpTimerClass}`} style={{ width: `${pvpTimerPct}%` }} />
-      </div>
-      <div className={`pvp-round-indicator ${pvpRoundPhaseClass} ${pvpTimerVisualClass}`}>
-        <span className="pvp-round-main">Rodada {pvpRoundNo}/{pvpTotalRounds}</span>
-        {pvpRoundPhaseLabel ? (
-          <span className="pvp-round-phase">{pvpRoundPhaseLabel}</span>
+        {music ? (
+          <IconButton
+            icon={music.enabled ? Music2 : VolumeX}
+            label={music.enabled ? 'Desligar música' : 'Ligar música'}
+            onClick={() => music.onToggle(!music.enabled)}
+          />
         ) : null}
+      </header>
+
+      <div className={styles.scoreboard}>
+        <ScorePlayer player={player1} score={score1} me={meIsPlayer1} answered={answeredStatus && pvpHasPlayer1Answer} />
+        <span className={styles.vs} aria-hidden="true">VS</span>
+        <ScorePlayer player={player2} score={score2} me={!meIsPlayer1 && !!selfId} answered={answeredStatus && pvpHasPlayer2Answer} right />
       </div>
-      <div className="pvp-score-cards">
-        <div
-          className={[
-            'pvp-score-card',
-            'pvp-score-card-left',
-            pvpPlayer1BackgroundMeta.className
-          ].filter(Boolean).join(' ')}
-          data-bg-id={pvpPlayer1BackgroundMeta.id}
-          data-bg-rarity={pvpPlayer1BackgroundMeta.rarity}
-          style={{ background: getHeroBackgroundStyle(pvpPlayer1Shop) }}
-        >
-          <div className="pvp-player-identity">
-            <span className={`pvp-player-avatar ${pvpPlayer1FrameClass}`} style={pvpPlayer1FrameStyle}>{pvpPlayer1Avatar}</span>
-            <span className="pvp-player-name">{pvpMatch?.player1_nickname || 'Jogador 1'}</span>
-          </div>
-          <strong>{Math.max(0, Number(pvpMatch?.player1_score || 0))}</strong>
-        </div>
-        <div
-          className={[
-            'pvp-score-card',
-            'pvp-score-card-right',
-            pvpPlayer2BackgroundMeta.className
-          ].filter(Boolean).join(' ')}
-          data-bg-id={pvpPlayer2BackgroundMeta.id}
-          data-bg-rarity={pvpPlayer2BackgroundMeta.rarity}
-          style={{ background: getHeroBackgroundStyle(pvpPlayer2Shop) }}
-        >
-          <div className="pvp-player-identity">
-            <span className={`pvp-player-avatar ${pvpPlayer2FrameClass}`} style={pvpPlayer2FrameStyle}>{pvpPlayer2Avatar}</span>
-            <span className="pvp-player-name">{pvpMatch?.player2_nickname || 'Jogador 2'}</span>
-          </div>
-          <strong>{Math.max(0, Number(pvpMatch?.player2_score || 0))}</strong>
-        </div>
+
+      <TimerDisplay seconds={pvpRoundRemainingSec} percent={pvpTimerPct} level={timerLevel} />
+
+      <div className={styles.arena}>
+        <SidePlayer player={player1} score={score1} me={meIsPlayer1} answered={answeredStatus && pvpHasPlayer1Answer} />
+        <main className={styles.stage}>
+          <QuestionCard question={pvpQuestion} scrollRef={pvpQuestionScrollRef} hasOverflow={pvpQuestionHasOverflow} />
+          <AnswerOptions
+            options={pvpQuestion?.opts || []}
+            selectedIndex={hasSelection ? selected : null}
+            onSelect={pickPvpAnswer}
+            disabled={locked}
+            keyPrefix={`pvp${pvpRoundNo}`}
+          />
+        </main>
+        <SidePlayer player={player2} score={score2} me={!meIsPlayer1 && !!selfId} answered={answeredStatus && pvpHasPlayer2Answer} />
       </div>
-      <div className="quiz-body pvp-quiz-body">
-        <div className="question-card pvp-question-card">
-          <div
-            ref={pvpQuestionScrollRef}
-            className={`question-scroll-wrap ${pvpQuestionHasOverflow ? 'has-overflow' : ''}`}
-          >
-            <p className="question-text">{pvpQuestion?.q || 'Aguardando pergunta...'}</p>
-            {pvpQuestion?.code ? <pre className="question-code">{pvpQuestion.code}</pre> : null}
-          </div>
-          {pvpQuestionHasOverflow ? (
-            <span className="question-scroll-indicator" aria-hidden="true" />
-          ) : null}
-        </div>
-        <div className="options-list">
-          {(pvpQuestion?.opts || []).map((option, index) => (
-            <button
-              key={`pvp_opt_${pvpRoundNo}_${index}`}
-              className={`option-btn ${pvpState.selectedIndex === index ? 'selected' : ''} ${pvpState.submitted ? 'disabled' : ''}`}
-              disabled={pvpState.submitted || pvpIsRoundResult}
-              onClick={() => pickPvpAnswer(index)}
-            >
-              <span className="opt-letter">{String.fromCharCode(65 + index)}</span>
-              <span>{option}</span>
-            </button>
-          ))}
-        </div>
-        <div className="pvp-answer-footer">
-          <button
-            className="btn btn-primary quiz-confirm-btn pvp-confirm-answer-btn"
-            disabled={pvpState.submitted || pvpIsRoundResult || !Number.isFinite(Number(pvpState.selectedIndex)) || Number(pvpState.selectedIndex) < 0}
-            onClick={confirmPvpAnswer}
-          >
-            Confirmar resposta
-          </button>
-          {pvpWaitingOpponent ? (
-            <div className="challenge-status pvp-waiting-status">
-              Aguardando oponente responder...
-            </div>
-          ) : null}
-          {!pvpIsRoundResult ? (
-            <div className="pvp-round-emoji-actions">
-              {pvpBattleEmojis.map((emoji) => (
-                <button
-                  key={emoji}
-                  className={`pvp-emoji-btn ${pvpEmojiCooldownActive ? 'is-cooldown' : ''}`}
-                  onClick={() => sendPvpEmoji(emoji)}
-                  disabled={pvpEmojiCooldownActive}
-                  aria-label={`Enviar emoji ${emoji}`}
-                >
-                  <span className="pvp-emoji-glyph" aria-hidden="true">{emoji}</span>
-                  {pvpEmojiCooldownActive ? (
-                    <>
-                      <span
-                        className="pvp-emoji-cooldown-fill"
-                        style={{ height: `${pvpEmojiCooldownFillPct}%` }}
-                        aria-hidden="true"
-                      />
-                      <span className="pvp-emoji-cooldown-label" aria-hidden="true">{pvpEmojiCooldownLabel}</span>
-                    </>
-                  ) : null}
-                </button>
-              ))}
-            </div>
-          ) : null}
-        </div>
-      </div>
-      {pvpEmojiFx.length ? (
-        <div className="pvp-emoji-overlay" aria-hidden="true">
-          {pvpEmojiFx.map((fx) => (
-            <span
-              key={fx.id}
-              className={`pvp-emoji-fx ${fx.side}`}
-              style={{
-                top: `${Number.isFinite(Number(fx?.topPct)) ? Number(fx.topPct) : 58}%`,
-                [String(fx?.side || '') === 'left' ? 'left' : 'right']: `calc(8% + ${Math.max(0, Number(fx?.offsetPx || 0))}px)`
-              }}
-            >
-              {fx.emoji}
-            </span>
-          ))}
-        </div>
-      ) : null}
+
+      <footer className={styles.footer}>
+        <Button size="xl" variant="success" block disabled={!canConfirm} onClick={confirmPvpAnswer}>
+          Confirmar resposta
+        </Button>
+        {pvpWaitingOpponent ? (
+          <span className={styles.waiting} role="status">
+            <span className={styles.waitingDot} aria-hidden="true" />
+            Aguardando o oponente responder...
+          </span>
+        ) : null}
+        {!pvpIsRoundResult ? (
+          <EmojiBar
+            emojis={pvpBattleEmojis}
+            onSend={sendPvpEmoji}
+            cooldownActive={pvpEmojiCooldownActive}
+            cooldownPct={pvpEmojiCooldownFillPct}
+            cooldownLabel={pvpEmojiCooldownLabel}
+          />
+        ) : null}
+      </footer>
+
+      <EmojiFxLayer items={pvpEmojiFx} />
+
       {pvpIsRoundResult ? (
-        <div className="pvp-wait-modal">
-          <div className="pvp-wait-backdrop" />
-          <div className={`reset-modal-card pvp-round-card ${pvpRoundResultPhaseClass}`}>
-            <div className="pvp-round-kicker">{pvpRoundResultKicker}</div>
-            <div className="pvp-round-title">{pvpRoundResultLabel}</div>
-            <div className="pvp-round-scoreline">
-              <div className="pvp-round-score-item">
-                <span>{pvpMatch?.player1_nickname || 'Jogador 1'}</span>
-                <strong>{Math.max(0, Number(pvpMatch?.player1_score || 0))}</strong>
+        <Modal title={pvpRoundResultLabel} subtitle={pvpRoundResultKicker} icon={Swords} tone="gold" size="sm" centered>
+          <div className={styles.roundResult}>
+            <div className={styles.scoreline}>
+              <span className={styles.scorelineItem}>
+                <span className={styles.scorelineName}>{player1.nickname}</span>
+                <span className={styles.scorelineValue}>{score1}</span>
+              </span>
+              <span className={styles.scorelineDivider} aria-hidden="true">×</span>
+              <span className={styles.scorelineItem}>
+                <span className={styles.scorelineName}>{player2.nickname}</span>
+                <span className={styles.scorelineValue}>{score2}</span>
+              </span>
+            </div>
+            <div className={styles.answerChips}>
+              <div className={cx(styles.answerChip, styles[pvpRoundPlayer1Feedback?.cssClass] || '')}>
+                <span className={styles.answerChipName}>{player1.nickname}</span>
+                <span className={styles.answerChipState}>{pvpRoundPlayer1Feedback?.emoji} {pvpRoundPlayer1Feedback?.label}</span>
               </div>
-              <div className="pvp-round-score-divider">×</div>
-              <div className="pvp-round-score-item">
-                <span>{pvpMatch?.player2_nickname || 'Jogador 2'}</span>
-                <strong>{Math.max(0, Number(pvpMatch?.player2_score || 0))}</strong>
+              <div className={cx(styles.answerChip, styles[pvpRoundPlayer2Feedback?.cssClass] || '')}>
+                <span className={styles.answerChipName}>{player2.nickname}</span>
+                <span className={styles.answerChipState}>{pvpRoundPlayer2Feedback?.emoji} {pvpRoundPlayer2Feedback?.label}</span>
               </div>
             </div>
-            <div className="pvp-round-answer-feedback">
-              <div className={`pvp-round-answer-chip ${pvpRoundPlayer1Feedback.cssClass}`}>
-                <span className="pvp-round-answer-name">{pvpMatch?.player1_nickname || 'Jogador 1'}</span>
-                <span className="pvp-round-answer-state">{pvpRoundPlayer1Feedback.emoji} {pvpRoundPlayer1Feedback.label}</span>
-              </div>
-              <div className={`pvp-round-answer-chip ${pvpRoundPlayer2Feedback.cssClass}`}>
-                <span className="pvp-round-answer-name">{pvpMatch?.player2_nickname || 'Jogador 2'}</span>
-                <span className="pvp-round-answer-state">{pvpRoundPlayer2Feedback.emoji} {pvpRoundPlayer2Feedback.label}</span>
-              </div>
-            </div>
-            <div className={`pvp-round-countdown ${pvpRoundResultCountdownClass}`}>Proxima pergunta em {pvpRoundResultRemainingSec}s</div>
-            <div className="pvp-round-emoji-actions pvp-round-emoji-actions-modal">
-              {pvpBattleEmojis.map((emoji) => (
-                <button
-                  key={`modal_${emoji}`}
-                  className={`pvp-emoji-btn ${pvpEmojiCooldownActive ? 'is-cooldown' : ''}`}
-                  onClick={() => sendPvpEmoji(emoji)}
-                  disabled={pvpEmojiCooldownActive}
-                  aria-label={`Enviar emoji ${emoji}`}
-                >
-                  <span className="pvp-emoji-glyph" aria-hidden="true">{emoji}</span>
-                  {pvpEmojiCooldownActive ? (
-                    <>
-                      <span
-                        className="pvp-emoji-cooldown-fill"
-                        style={{ height: `${pvpEmojiCooldownFillPct}%` }}
-                        aria-hidden="true"
-                      />
-                      <span className="pvp-emoji-cooldown-label" aria-hidden="true">{pvpEmojiCooldownLabel}</span>
-                    </>
-                  ) : null}
-                </button>
-              ))}
-            </div>
+            <span className={cx(styles.nextIn, pvpRoundResultCountdownClass ? styles.nextInUrgent : '')} role="timer">
+              Próxima pergunta em {pvpRoundResultRemainingSec}s
+            </span>
+            <EmojiBar
+              emojis={pvpBattleEmojis}
+              onSend={sendPvpEmoji}
+              cooldownActive={pvpEmojiCooldownActive}
+              cooldownPct={pvpEmojiCooldownFillPct}
+              cooldownLabel={pvpEmojiCooldownLabel}
+            />
           </div>
-        </div>
+        </Modal>
       ) : null}
     </div>
   );
