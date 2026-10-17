@@ -388,6 +388,8 @@ import {
   writeLeagueSnapshotLocal,
   writePvpKnowledgeAreaLocal
 } from './app/helpers';
+import AppShell, { SplashScreen } from './layout/AppShell';
+import { getShellMode, getTabForScreen, getTabScreen, TAB_ROOT_SCREENS } from './layout/nav';
 import HomeScreen from './screens/HomeScreen';
 import PlayModeScreen from './screens/PlayModeScreen';
 import KnowledgeAreaScreen from './screens/KnowledgeAreaScreen';
@@ -438,7 +440,6 @@ import PvpOpponentLeftOverlay from './overlays/PvpOpponentLeftOverlay';
 import PvpCompensationModal from './overlays/PvpCompensationModal';
 import PassClaimFx from './overlays/PassClaimFx';
 import RewardParticles from './overlays/RewardParticles';
-import MusicPlayer from './overlays/MusicPlayer';
 
 export default function CodeQuizApp() {
   const [screen, setScreen] = useState('login');
@@ -569,7 +570,6 @@ export default function CodeQuizApp() {
 
   const [quizState, setQuizState] = useState(null);
   const [quizMenuOpen, setQuizMenuOpen] = useState(false);
-  const [quizClockMs, setQuizClockMs] = useState(Date.now());
   const [feedbackState, setFeedbackState] = useState(null);
   const [resultState, setResultState] = useState(null);
   const [rewardFxParticles, setRewardFxParticles] = useState([]);
@@ -3374,7 +3374,7 @@ export default function CodeQuizApp() {
   }, [screen, pvpState.status]);
 
   useEffect(() => {
-    if (screen !== 'rankings') return;
+    if (screen !== 'rankings' && screen !== 'home') return;
     let cancelled = false;
     let retryCount = 0;
     let watchdogTimer = null;
@@ -3765,14 +3765,6 @@ export default function CodeQuizApp() {
   }, [authUser?.uid]);
 
   useEffect(() => {
-    if (screen !== 'quiz' || !quizState || quizState.answered || typeof window === 'undefined') return;
-    const tick = () => setQuizClockMs(Date.now());
-    tick();
-    const timer = window.setInterval(tick, 90);
-    return () => window.clearInterval(timer);
-  }, [screen, quizState?.index, quizState?.answered, quizState?.questionStartedAtMs]);
-
-  useEffect(() => {
     if (screen !== 'quiz' || !quizState || quizState.answered) return;
     const roundSeconds = getPveRoundSeconds();
     const startedAtMs = Math.max(0, Number(quizState.questionStartedAtMs || 0)) || Date.now();
@@ -3836,17 +3828,6 @@ export default function CodeQuizApp() {
 
   const quizRoundSeconds = getPveRoundSeconds();
   const quizQuestionStartMs = Math.max(0, Number(quizState?.questionStartedAtMs || 0));
-  const quizElapsedMs = quizQuestionStartMs > 0
-    ? Math.max(0, quizClockMs - quizQuestionStartMs)
-    : 0;
-  const quizRemainingMs = quizState
-    ? Math.max(0, quizRoundSeconds * 1000 - quizElapsedMs)
-    : 0;
-  const quizRemainingSec = Math.ceil(quizRemainingMs / 1000);
-  const quizTimerPct = quizState
-    ? Math.max(0, Math.min(100, (quizRemainingMs / Math.max(1, quizRoundSeconds * 1000)) * 100))
-    : 0;
-  const quizTimerClass = quizRemainingSec <= 5 ? 'danger' : quizRemainingSec <= 10 ? 'warning' : '';
 
   const currentQuestion = quizState ? quizState.questions[quizState.index] : null;
 
@@ -15139,47 +15120,129 @@ export default function CodeQuizApp() {
 
   const showPreload = booting || authLoading || !progressReady || !shopReady;
   if (showPreload) {
-    return (
-      <div id="app" className={appRootClassName}>
-        <div className="screen active preload-screen">
-          <div className="preload-card">
-            <div className="preload-logo">{'</>'}</div>
-            <div className="preload-title">CodeQuiz</div>
-            <div className="preload-subtitle">Inicializando sua sessão...</div>
-            <div className="preload-bar">
-              <div className="preload-bar-fill" />
-            </div>
-          </div>
-        </div>
-      </div>
-    );
+    return <SplashScreen />;
+  }
+
+  const pvpDuelStatus = String(pvpState.status || '').trim().toLowerCase();
+  const pvpLobbyBusy = Boolean(
+    ['queueing', 'pending_accept', 'active', 'round_result'].includes(pvpDuelStatus)
+    || pvpTeamRoomId
+    || pvpEliminationRoomId
+    || String(pvpEliminationQueueState?.status || '').trim().toLowerCase() === 'queueing'
+  );
+  const shellMode = getShellMode(screen, { pvpLobbyBusy });
+  const shellProfile = activeAuthUser ? {
+    avatar: displayAvatar,
+    frameClass: avatarFrameClass,
+    frameStyle: avatarFrameStyle,
+    nickname: heroNickname,
+    level: safeLevel,
+    xp: safeXp,
+    xpNext: xpForNextLevel,
+    xpPercent,
+    coins: safeCoins,
+    pveTier: pveCategory,
+    pvpTier: pvpCategory
+  } : null;
+  const shellMusic = {
+    enabled: audioSettings.musicEnabled === true,
+    mode: musicMode,
+    trackName: activeMusicTrack?.name || '',
+    onToggle: (enabled) => updateAudioSetting('musicEnabled', enabled === true),
+    onSkip: handleMusicSkip
+  };
+
+  const homeContinueTrack = (() => {
+    const candidates = LANGUAGES.map((language) => ({
+      language,
+      progress: Math.max(0, Math.min(100, Number(languageProgress.get(language.id) || 0)))
+    }));
+    const inProgress = candidates
+      .filter((entry) => entry.progress > 0 && entry.progress < 100)
+      .sort((a, b) => b.progress - a.progress)[0];
+    const areaGroup = LANGUAGE_THEME_GROUPS.find((group) => group.area === selectedKnowledgeArea) || LANGUAGE_THEME_GROUPS[0];
+    const fallbackId = areaGroup?.languages?.[0] || LANGUAGES[0]?.id;
+    const picked = inProgress || candidates.find((entry) => entry.language.id === fallbackId) || candidates[0];
+    if (!picked) return null;
+    return {
+      id: picked.language.id,
+      name: picked.language.name,
+      desc: picked.language.desc,
+      icon: picked.language.icon,
+      color: picked.language.color,
+      progress: Math.round(picked.progress),
+      started: picked.progress > 0
+    };
+  })();
+
+  function startPveFlow() {
+    setScreen('knowledge-area');
+  }
+
+  function startPvpFlow() {
+    resetPvpTeamState();
+    setPvpMode('');
+    setScreen('challenge');
+  }
+
+  function openPveTrack(languageId) {
+    const safeId = String(languageId || '').trim();
+    if (!safeId) return;
+    const group = LANGUAGE_THEME_GROUPS.find((entry) => entry.languages.includes(safeId));
+    if (group?.area) setSelectedKnowledgeArea(group.area);
+    setSelectedLanguage(safeId);
+    const topics = getTopicsByLanguage(TOPICS, safeId);
+    setSelectedTopic(topics[0]?.id || '');
+    setScreen('topic');
+  }
+
+  function navigateToTab(tabKey) {
+    closePlayerHeroMenu();
+    const target = getTabScreen(tabKey);
+    if (target !== screen) setScreen(target);
+    if (typeof window !== 'undefined') window.scrollTo({ top: 0 });
   }
 
   return (
     <>
-      <div id="app" className={appRootClassName}>
+      <AppShell
+        mode={shellMode}
+        activeTab={getTabForScreen(screen)}
+        showTopBar={TAB_ROOT_SCREENS.has(screen)}
+        onNavigate={navigateToTab}
+        onOpenHistory={openPlayerHistoryPanel}
+        profile={shellProfile}
+        music={shellMusic}
+        toast={toast}
+        className={appRootClassName}
+      >
         {screen === 'home' ? (
           <HomeScreen vm={{
+            authUser,
             avatarFrameClass,
             avatarFrameStyle,
+            buildCosmeticSnapshot,
+            continueTrack: homeContinueTrack,
             displayAvatar,
+            evolutionPass,
             heroBackground,
             heroBackgroundMeta,
             heroNickname,
-            homeAuthUser,
-            homeScreenClassName,
             openPlayerHistoryPanel,
-            playerHeroMenuOpen,
-            playerHeroMenuRef,
+            openPveTrack,
             progress,
             pveCategory,
             pvpCategory,
+            rankingsLoading,
+            rankingsMode,
+            rankingsRows,
             safeCoins,
             safeLevel,
             safeXp,
+            setRankingsMode,
             setScreen,
-            showHomeProfileHero,
-            togglePlayerHeroMenu,
+            startPveFlow,
+            startPvpFlow,
             xpForNextLevel,
             xpPercent
           }} />
@@ -15187,24 +15250,17 @@ export default function CodeQuizApp() {
 
         {screen === 'play-mode' ? (
           <PlayModeScreen vm={{
-            resetPvpTeamState,
-            screen,
-            setPvpMode,
-            setScreen,
-            triggerAppBackNavigation
+            chooseKnowledgeAreaForPve,
+            languageProgress,
+            startPveFlow,
+            startPvpFlow
           }} />
         ) : null}
 
         {screen === 'knowledge-area' ? (
           <KnowledgeAreaScreen vm={{
             chooseKnowledgeAreaForPve,
-            handleKnowledgeAreaTouchEnd,
-            handleKnowledgeAreaTouchStart,
-            kaCarouselIndex,
-            playSfx,
-            screen,
-            setKaCarouselIndex,
-            shiftKnowledgeAreaCarousel,
+            languageProgress,
             triggerAppBackNavigation
           }} />
         ) : null}
@@ -15213,7 +15269,7 @@ export default function CodeQuizApp() {
           <TrackSelectScreen vm={{
             languageProgress,
             languageThemeSections,
-            screen,
+            selectedKnowledgeArea,
             selectedLanguage,
             setScreen,
             setSelectedLanguage,
@@ -15224,13 +15280,15 @@ export default function CodeQuizApp() {
 
         {screen === 'topic' ? (
           <TopicScreen vm={{
+            beginPveRound,
             languageProgress,
-            screen,
             selectedLanguage,
             selectedLanguageMeta,
             selectedTopic,
+            selectedTopicDifficultyProgress,
+            selectedTopicMeta,
+            selectedTopicQuestionCountByDifficulty,
             selectedTopics,
-            setScreen,
             setSelectedTopic,
             topicProgress,
             topicQuestionCountByDifficulty,
@@ -15241,8 +15299,9 @@ export default function CodeQuizApp() {
         {screen === 'difficulty' ? (
           <DifficultyScreen vm={{
             beginPveRound,
-            screen,
+            selectedLanguageMeta,
             selectedTopicDifficultyProgress,
+            selectedTopicMeta,
             selectedTopicQuestionCountByDifficulty,
             triggerAppBackNavigation
           }} />
@@ -15253,13 +15312,14 @@ export default function CodeQuizApp() {
             confirmQuizAnswer,
             currentQuestion,
             handleAnswer,
+            music: shellMusic,
             openQuizMenu,
+            quizMenuOpen,
             quizQuestionHasOverflow,
             quizQuestionScrollRef,
+            quizQuestionStartMs,
+            quizRoundSeconds,
             quizState,
-            quizTimerClass,
-            quizTimerPct,
-            screen,
             selectedLanguageMeta,
             selectedTopicMeta
           }} />
@@ -15268,8 +15328,7 @@ export default function CodeQuizApp() {
         {screen === 'feedback' ? (
           <FeedbackScreen vm={{
             feedbackState,
-            nextQuestion,
-            screen
+            nextQuestion
           }} />
         ) : null}
 
@@ -15281,7 +15340,6 @@ export default function CodeQuizApp() {
             quizRankingRows,
             resetQuizFlow,
             resultState,
-            screen,
             selectedLanguageMeta,
             selectedTopicMeta,
             setScreen,
@@ -15701,7 +15759,7 @@ export default function CodeQuizApp() {
           }} />
         ) : null}
 
-      </div>
+      </AppShell>
 
       {pvpTeamCreateRoomOpen ? (
         <TeamRoomCreateModal vm={{
@@ -15932,13 +15990,6 @@ export default function CodeQuizApp() {
         }} />
       ) : null}
 
-      {showMusicPlayer ? (
-        <MusicPlayer vm={{
-          activeMusicTrack,
-          handleMusicSkip,
-          musicMode
-        }} />
-      ) : null}
 
     </>
   );

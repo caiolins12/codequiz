@@ -449,6 +449,9 @@ async function requestWorker(pathname, payload = {}, options = {}) {
       const { data, error, status, statusText } = await rpcQuery;
       if (error) {
         const statusCode = Number(status || 0);
+        if (process.env.NODE_ENV !== 'production' && statusCode === 403 && typeof console !== 'undefined') {
+          console.warn(`[dbClient] ${rpcName} negado em "${rpcArgs?.p_path ?? ''}"`, rpcArgs?.p_patch ? Object.keys(rpcArgs.p_patch) : '');
+        }
         const requestError = new Error(
           `DB request falhou (${statusCode} ${statusText || ''}): ${error.message || 'sem detalhes'}`
         );

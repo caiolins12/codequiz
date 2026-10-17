@@ -1,0 +1,144 @@
+/* CodeQuiz — design tokens (visual "arcade vibrante").
+   Todos os tokens usam o prefixo --cq- para não colidir com variáveis antigas. */
+
+:root {
+  /* Fundo e superfícies */
+  --cq-bg-0: #0b0820;
+  --cq-bg-1: #120e33;
+  --cq-bg-2: #19144a;
+  --cq-surface-1: #1d1852;
+  --cq-surface-2: #261f66;
+  --cq-surface-3: #31297e;
+  --cq-surface-inset: #140f3c;
+  --cq-overlay: rgba(6, 4, 22, 0.72);
+  --cq-border: rgba(255, 255, 255, 0.08);
+  --cq-border-strong: rgba(255, 255, 255, 0.16);
+  --cq-highlight: rgba(255, 255, 255, 0.06);
+
+  /* Texto */
+  --cq-text-1: #ffffff;
+  --cq-text-2: #cfc9f7;
+  --cq-text-3: #9890cf;
+  --cq-text-inverse: #170f3d;
+
+  /* Marca e acentos (cor + tom escuro para o efeito 3D) */
+  --cq-violet: #7b5cff;
+  --cq-violet-dark: #5638d6;
+  --cq-violet-light: #a690ff;
+  --cq-pink: #ff4fb4;
+  --cq-pink-dark: #c72a86;
+  --cq-cyan: #23d2fb;
+  --cq-cyan-dark: #0d9cc4;
+  --cq-lime: #3ee07f;
+  --cq-lime-dark: #1fa85a;
+  --cq-orange: #ff8a3d;
+  --cq-orange-dark: #d1621c;
+  --cq-gold: #ffd24a;
+  --cq-gold-dark: #d99a12;
+  --cq-red: #ff5c6c;
+  --cq-red-dark: #cf3347;
+  --cq-blue: #4c8dff;
+  --cq-blue-dark: #2c63d1;
+
+  /* Semântica */
+  --cq-success: var(--cq-lime);
+  --cq-danger: var(--cq-red);
+  --cq-warning: var(--cq-gold);
+  --cq-info: var(--cq-cyan);
+  --cq-coin: var(--cq-gold);
+  --cq-xp: var(--cq-blue);
+
+  /* Raridades da loja */
+  --cq-rarity-common: #a3abcf;
+  --cq-rarity-uncommon: #3ee07f;
+  --cq-rarity-rare: #3aa8ff;
+  --cq-rarity-epic: #b863ff;
+  --cq-rarity-legendary: #ffc53d;
+
+  /* Ligas */
+  --cq-tier-bronze: #e0955b;
+  --cq-tier-silver: #cdd6ea;
+  --cq-tier-gold: #ffcc3d;
+  --cq-tier-platinum: #62e6d7;
+  --cq-tier-diamond: #8cb8ff;
+
+  /* Gradientes */
+  --cq-grad-primary: linear-gradient(135deg, #8f72ff 0%, #6a4cf5 100%);
+  --cq-grad-hero: linear-gradient(130deg, #6a4cf5 0%, #b13fe0 52%, #ff4fb4 100%);
+  --cq-grad-pink: linear-gradient(135deg, #ff73c6 0%, #e8379a 100%);
+  --cq-grad-cyan: linear-gradient(135deg, #48e3ff 0%, #129fd0 100%);
+  --cq-grad-lime: linear-gradient(135deg, #6cf0a0 0%, #22b260 100%);
+  --cq-grad-gold: linear-gradient(135deg, #ffe17a 0%, #ffad1f 100%);
+  --cq-grad-orange: linear-gradient(135deg, #ffad6b 0%, #ff6a2b 100%);
+  --cq-grad-surface: linear-gradient(160deg, rgba(255, 255, 255, 0.07) 0%, rgba(255, 255, 255, 0.015) 100%);
+
+  /* Tipografia (famílias definidas pelo next/font em app/layout.js) */
+  --cq-font-display: var(--font-fredoka), 'Fredoka', 'Nunito', system-ui, sans-serif;
+  --cq-font-body: var(--font-nunito), 'Nunito', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --cq-font-mono: var(--font-jetbrains), 'JetBrains Mono', ui-monospace, 'SFMono-Regular', monospace;
+
+  --cq-text-xs: 0.75rem;
+  --cq-text-sm: 0.8125rem;
+  --cq-text-md: 0.9375rem;
+  --cq-text-lg: 1.0625rem;
+  --cq-text-xl: 1.25rem;
+  --cq-text-2xl: 1.5rem;
+  --cq-text-3xl: clamp(1.625rem, 1.2rem + 1.6vw, 2.125rem);
+  --cq-text-4xl: clamp(2rem, 1.4rem + 2.6vw, 3rem);
+
+  /* Espaçamento (base 4) */
+  --cq-space-1: 4px;
+  --cq-space-2: 8px;
+  --cq-space-3: 12px;
+  --cq-space-4: 16px;
+  --cq-space-5: 20px;
+  --cq-space-6: 24px;
+  --cq-space-8: 32px;
+  --cq-space-10: 40px;
+  --cq-space-12: 48px;
+  --cq-space-16: 64px;
+
+  /* Raios */
+  --cq-radius-sm: 10px;
+  --cq-radius-md: 14px;
+  --cq-radius-lg: 20px;
+  --cq-radius-xl: 28px;
+  --cq-radius-pill: 999px;
+
+  /* Sombras */
+  --cq-shadow-card: 0 12px 32px rgba(5, 2, 28, 0.42), inset 0 1px 0 var(--cq-highlight);
+  --cq-shadow-pop: 0 18px 48px rgba(5, 2, 28, 0.55);
+  --cq-shadow-press: 0 4px 0;
+  --cq-glow-violet: 0 0 0 4px rgba(123, 92, 255, 0.28);
+
+  /* Movimento */
+  --cq-ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --cq-ease-bounce: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --cq-dur-fast: 120ms;
+  --cq-dur-base: 200ms;
+  --cq-dur-slow: 360ms;
+
+  /* Camadas */
+  --cq-z-base: 1;
+  --cq-z-sticky: 20;
+  --cq-z-nav: 40;
+  --cq-z-overlay: 80;
+  --cq-z-modal: 100;
+  --cq-z-toast: 140;
+
+  /* Layout */
+  --cq-sidebar-width: 264px;
+  --cq-tabbar-height: 64px;
+  --cq-topbar-height: 60px;
+  --cq-content-max: 1180px;
+  --cq-safe-top: env(safe-area-inset-top, 0px);
+  --cq-safe-bottom: env(safe-area-inset-bottom, 0px);
+  --cq-safe-left: env(safe-area-inset-left, 0px);
+  --cq-safe-right: env(safe-area-inset-right, 0px);
+}
+
+/* Breakpoints usados nos módulos:
+   mobile  < 768px
+   tablet  768px – 1023px (navegação mobile, grades de 2 colunas)
+   desktop >= 1024px (menu lateral)
+   wide    >= 1440px */

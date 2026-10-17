@@ -1,0 +1,83 @@
+.bar {
+  --bar-height: 10px;
+  --bar-color: var(--cq-grad-primary);
+  position: relative;
+  width: 100%;
+  height: var(--bar-height);
+  border-radius: var(--cq-radius-pill);
+  background: rgba(8, 5, 30, 0.6);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.45);
+  overflow: hidden;
+}
+
+.fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: inherit;
+  background: var(--bar-color);
+  transition: width var(--cq-dur-slow) var(--cq-ease-out);
+}
+
+.fill::after {
+  content: '';
+  position: absolute;
+  inset: 2px 6px auto;
+  height: 30%;
+  border-radius: var(--cq-radius-pill);
+  background: rgba(255, 255, 255, 0.32);
+}
+
+.xs { --bar-height: 6px; }
+.sm { --bar-height: 8px; }
+.md { --bar-height: 12px; }
+.lg { --bar-height: 16px; }
+
+.xs .fill::after,
+.sm .fill::after {
+  display: none;
+}
+
+.violet { --bar-color: var(--cq-grad-primary); }
+.blue { --bar-color: linear-gradient(90deg, #6aa4ff, #3b78f0); }
+.lime { --bar-color: var(--cq-grad-lime); }
+.gold { --bar-color: var(--cq-grad-gold); }
+.pink { --bar-color: var(--cq-grad-pink); }
+.cyan { --bar-color: var(--cq-grad-cyan); }
+.orange { --bar-color: var(--cq-grad-orange); }
+.red { --bar-color: linear-gradient(90deg, #ff8a96, #e63a50); }
+
+.striped .fill {
+  background-image:
+    repeating-linear-gradient(-45deg, rgba(255, 255, 255, 0.16) 0 8px, transparent 8px 16px),
+    var(--bar-color);
+}
+
+/* Anel */
+.ring {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+
+.ringSvg {
+  position: absolute;
+  inset: 0;
+  transform: rotate(-90deg);
+}
+
+.ringTrack {
+  stroke: rgba(8, 5, 30, 0.55);
+}
+
+.ringValue {
+  transition: stroke-dashoffset var(--cq-dur-slow) var(--cq-ease-out);
+}
+
+.ringContent {
+  position: relative;
+  display: grid;
+  place-items: center;
+  text-align: center;
+  line-height: 1.1;
+}

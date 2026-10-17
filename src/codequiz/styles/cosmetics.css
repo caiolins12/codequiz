@@ -1,0 +1,3057 @@
+/* Cosméticos da loja (molduras cos-frame-* e fundos cos-bg-*).
+   Extraído do CSS antigo: os efeitos são aplicados por classe em qualquer avatar/fundo. */
+
+:root {
+  --primary: #6c63ff;
+  --frame-inner-bg-default: rgba(19, 27, 49, 0.9);
+}
+
+.cq-avatar[class*="cos-frame-"] {
+  z-index: 1;
+}
+
+.cos-legendary-frame {
+  box-shadow:
+  inset 0 0 10px rgba(255, 255, 255, 0.22),
+  inset 0 0 24px rgba(168, 236, 255, 0.18),
+  0 0 14px rgba(255, 206, 126, 0.34),
+  0 0 30px rgba(128, 214, 255, 0.3),
+  0 0 48px rgba(135, 92, 255, 0.3);
+  animation: none !important;
+  transform: none !important;
+}
+
+.cos-legendary-frame::before,
+.cos-legendary-frame::after {
+  display: none;
+  animation: none !important;
+  opacity: 1 !important;
+}
+
+.cos-legendary-bg {
+  box-shadow:
+  inset 0 0 24px rgba(255, 255, 255, 0.14),
+  inset 0 0 78px rgba(114, 88, 255, 0.22),
+  0 0 24px rgba(132, 208, 255, 0.24),
+  0 0 42px rgba(255, 180, 103, 0.2);
+}
+
+.cos-legendary-bg::before,
+.cos-legendary-bg::after {
+  display: none;
+}
+
+.cos-legendary-frame.cos-frame-diamond::before,
+.cos-legendary-frame.cos-frame-diamond::after,
+.cos-legendary-frame.cos-frame-phoenix::before,
+.cos-legendary-frame.cos-frame-phoenix::after,
+.cos-legendary-frame.cos-frame-void::before,
+.cos-legendary-frame.cos-frame-void::after,
+.cos-legendary-frame.cos-frame-cosmic::before,
+.cos-legendary-frame.cos-frame-cosmic::after,
+.cos-legendary-frame.cos-frame-divine::before,
+.cos-legendary-frame.cos-frame-divine::after,
+.cos-legendary-frame.cos-frame-arcane::before,
+.cos-legendary-frame.cos-frame-arcane::after,
+.cos-legendary-frame.cos-frame-eclipse::before,
+.cos-legendary-frame.cos-frame-eclipse::after,
+.cos-legendary-frame.cos-frame-sakura::before,
+.cos-legendary-frame.cos-frame-sakura::after,
+.cos-legendary-bg.cos-bg-bg_cyberstorm::before,
+.cos-legendary-bg.cos-bg-bg_cyberstorm::after,
+.cos-legendary-bg.cos-bg-bg_royal_nebula::before,
+.cos-legendary-bg.cos-bg-bg_royal_nebula::after {
+  display: block;
+  animation: none !important;
+}
+
+.cos-legendary-frame.cos-frame-diamond::before {
+  opacity: 0.9;
+  background:
+  radial-gradient(circle at 26% 22%, rgba(224, 255, 255, 0.78) 0 2px, transparent 4px),
+  radial-gradient(circle at 78% 72%, rgba(176, 236, 255, 0.68) 0 2px, transparent 4px),
+  conic-gradient(from 0deg, rgba(166, 245, 255, 0.34), rgba(170, 124, 255, 0.3), rgba(166, 245, 255, 0.34));
+}
+
+.cos-legendary-frame.cos-frame-diamond::after {
+  opacity: 0.84;
+  background:
+  linear-gradient(118deg, transparent 20%, rgba(238, 255, 255, 0.66) 50%, transparent 82%),
+  radial-gradient(circle at 50% 50%, rgba(124, 244, 255, 0.34), transparent 62%);
+}
+
+.cos-legendary-frame.cos-frame-phoenix::before {
+  opacity: 0.92;
+  background:
+  radial-gradient(circle at 24% 82%, rgba(255, 206, 108, 0.8) 0 2px, transparent 4px),
+  radial-gradient(circle at 74% 24%, rgba(255, 136, 66, 0.76) 0 2px, transparent 4px),
+  linear-gradient(138deg, rgba(255, 170, 78, 0.34), rgba(255, 74, 0, 0.28), rgba(255, 219, 162, 0.24));
+}
+
+.cos-legendary-frame.cos-frame-phoenix::after {
+  opacity: 0.86;
+  background:
+  radial-gradient(circle at 48% 88%, rgba(255, 240, 184, 0.62), transparent 56%),
+  linear-gradient(112deg, transparent 18%, rgba(255, 244, 206, 0.56) 50%, transparent 84%);
+}
+
+.cos-legendary-frame.cos-frame-void::before {
+  opacity: 0.9;
+  background:
+  radial-gradient(circle at 18% 24%, rgba(216, 174, 255, 0.74) 0 2px, transparent 4px),
+  radial-gradient(circle at 84% 78%, rgba(118, 98, 255, 0.74) 0 2px, transparent 4px),
+  radial-gradient(circle at 50% 50%, rgba(28, 12, 68, 0.56), transparent 62%);
+}
+
+.cos-legendary-frame.cos-frame-void::after {
+  opacity: 0.84;
+  background:
+  linear-gradient(126deg, rgba(142, 102, 255, 0.34), rgba(22, 8, 58, 0.28), rgba(200, 162, 255, 0.3)),
+  linear-gradient(108deg, transparent 22%, rgba(224, 210, 255, 0.44) 50%, transparent 80%);
+}
+
+.cos-legendary-frame.cos-frame-cosmic::before {
+  opacity: 0.88;
+  background:
+  radial-gradient(circle at 18% 24%, rgba(205, 189, 255, 0.76) 0 2px, transparent 4px),
+  radial-gradient(circle at 84% 74%, rgba(148, 198, 255, 0.72) 0 2px, transparent 4px),
+  conic-gradient(from 0deg, rgba(142, 102, 255, 0.28), rgba(84, 156, 255, 0.24), rgba(142, 102, 255, 0.28));
+}
+
+.cos-legendary-frame.cos-frame-cosmic::after {
+  opacity: 0.82;
+  background:
+  linear-gradient(118deg, transparent 20%, rgba(228, 236, 255, 0.5) 50%, transparent 82%),
+  radial-gradient(circle at 50% 50%, rgba(132, 174, 255, 0.28), transparent 62%);
+}
+
+.cos-legendary-frame.cos-frame-divine::before {
+  opacity: 0.9;
+  background:
+  radial-gradient(circle at 20% 26%, rgba(255, 242, 186, 0.8) 0 2px, transparent 4px),
+  radial-gradient(circle at 80% 74%, rgba(255, 216, 114, 0.76) 0 2px, transparent 4px),
+  conic-gradient(from 0deg, rgba(255, 218, 122, 0.3), rgba(255, 168, 62, 0.24), rgba(255, 218, 122, 0.3));
+}
+
+.cos-legendary-frame.cos-frame-divine::after {
+  opacity: 0.84;
+  background:
+  linear-gradient(116deg, transparent 18%, rgba(255, 250, 220, 0.54) 50%, transparent 84%),
+  radial-gradient(circle at 50% 50%, rgba(255, 214, 112, 0.28), transparent 62%);
+}
+
+.cos-legendary-frame.cos-frame-arcane::before {
+  opacity: 0.9;
+  background:
+  radial-gradient(circle at 22% 24%, rgba(194, 176, 255, 0.78) 0 2px, transparent 4px),
+  radial-gradient(circle at 78% 76%, rgba(98, 226, 246, 0.74) 0 2px, transparent 4px),
+  conic-gradient(from 0deg, rgba(160, 102, 255, 0.28), rgba(68, 214, 236, 0.22), rgba(160, 102, 255, 0.28));
+}
+
+.cos-legendary-frame.cos-frame-arcane::after {
+  opacity: 0.84;
+  background:
+  linear-gradient(124deg, rgba(156, 102, 255, 0.28), rgba(42, 16, 96, 0.24), rgba(102, 214, 236, 0.22)),
+  linear-gradient(108deg, transparent 22%, rgba(216, 202, 255, 0.42) 50%, transparent 80%);
+}
+
+.cos-legendary-frame.cos-frame-eclipse::before {
+  opacity: 0.9;
+  background:
+  radial-gradient(circle at 16% 50%, rgba(255, 226, 132, 0.8) 0 2px, transparent 4px),
+  radial-gradient(circle at 84% 50%, rgba(255, 176, 82, 0.74) 0 2px, transparent 4px),
+  radial-gradient(circle at 50% 50%, rgba(20, 14, 8, 0.56), transparent 62%);
+}
+
+.cos-legendary-frame.cos-frame-eclipse::after {
+  opacity: 0.84;
+  background:
+  linear-gradient(126deg, rgba(255, 208, 108, 0.28), rgba(42, 26, 10, 0.24), rgba(255, 154, 54, 0.22)),
+  linear-gradient(108deg, transparent 24%, rgba(255, 234, 176, 0.4) 50%, transparent 80%);
+}
+
+.cos-legendary-frame.cos-frame-sakura::before {
+  opacity: 0.9;
+  background:
+  radial-gradient(circle at 24% 24%, rgba(255, 202, 232, 0.8) 0 2px, transparent 4px),
+  radial-gradient(circle at 76% 74%, rgba(255, 156, 206, 0.74) 0 2px, transparent 4px),
+  conic-gradient(from 0deg, rgba(255, 166, 212, 0.3), rgba(255, 118, 186, 0.22), rgba(255, 166, 212, 0.3));
+}
+
+.cos-legendary-frame.cos-frame-sakura::after {
+  opacity: 0.84;
+  background:
+  linear-gradient(118deg, transparent 18%, rgba(255, 224, 240, 0.48) 50%, transparent 82%),
+  radial-gradient(circle at 50% 50%, rgba(255, 154, 204, 0.26), transparent 62%);
+}
+
+.cos-legendary-bg.cos-bg-bg_cyberstorm::before {
+  opacity: 0.74;
+  background:
+  linear-gradient(132deg, rgba(0, 255, 255, 0.24), rgba(114, 74, 255, 0.28), rgba(0, 255, 255, 0.22)),
+  repeating-linear-gradient(118deg, rgba(176, 250, 255, 0.2) 0 2px, transparent 2px 20px);
+}
+
+.cos-legendary-bg.cos-bg-bg_cyberstorm::after {
+  opacity: 0.68;
+  background:
+  radial-gradient(circle at 20% 24%, rgba(164, 255, 255, 0.42), transparent 34%),
+  radial-gradient(circle at 78% 72%, rgba(174, 146, 255, 0.42), transparent 36%),
+  linear-gradient(108deg, transparent 28%, rgba(255, 255, 255, 0.34) 50%, transparent 72%);
+}
+
+.cos-legendary-bg.cos-bg-bg_royal_nebula::before {
+  opacity: 0.76;
+  background:
+  linear-gradient(128deg, rgba(255, 201, 110, 0.28), rgba(148, 94, 255, 0.3), rgba(255, 201, 110, 0.24)),
+  conic-gradient(from 0deg, rgba(255, 224, 146, 0.18), rgba(176, 126, 255, 0.22), rgba(255, 224, 146, 0.18));
+}
+
+.cos-legendary-bg.cos-bg-bg_royal_nebula::after {
+  opacity: 0.7;
+  background:
+  radial-gradient(circle at 24% 78%, rgba(255, 222, 154, 0.46), transparent 36%),
+  radial-gradient(circle at 76% 24%, rgba(202, 144, 255, 0.46), transparent 38%),
+  linear-gradient(108deg, transparent 30%, rgba(255, 248, 214, 0.36) 50%, transparent 72%);
+}
+
+[class*="cos-frame-"]::before {
+  content: '';
+  position: absolute;
+  inset: -14%;
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.5;
+}
+
+[class*="cos-frame-"]::after {
+  content: '';
+  position: absolute;
+  inset: -12%;
+  pointer-events: none;
+  z-index: 1;
+  opacity: 0.45;
+}
+
+[class*="cos-frame-"] {
+  box-shadow: 0 0 0 rgba(0, 0, 0, 0);
+}
+
+.cos-frame-default::before {
+  background:
+  radial-gradient(circle at 18% 22%, rgba(175, 193, 255, 0.3) 0 2px, transparent 2px),
+  radial-gradient(circle at 82% 72%, rgba(255, 255, 255, 0.22) 0 1px, transparent 1px);
+  animation: cosmetic-particle-drift 6.2s linear infinite;
+}
+
+.cos-frame-default::after {
+  background: linear-gradient(112deg, transparent 18%, rgba(186, 174, 255, 0.24) 48%, transparent 82%);
+  animation: cosmetic-shimmer 3s linear infinite;
+}
+
+.cos-frame-gold::after {
+  background: linear-gradient(112deg, transparent 18%, rgba(255, 224, 120, 0.4) 48%, transparent 82%);
+  animation: cosmetic-shimmer 2.8s linear infinite;
+}
+
+.cos-frame-gold::before {
+  background:
+  radial-gradient(circle at 18% 22%, rgba(255, 240, 180, 0.48) 0 2px, transparent 2px),
+  radial-gradient(circle at 80% 78%, rgba(255, 214, 102, 0.42) 0 1.5px, transparent 1.5px);
+  animation: cosmetic-particle-drift 5.2s linear infinite;
+}
+
+.cos-frame-fire::after {
+  background: radial-gradient(circle at 50% 90%, rgba(255, 87, 34, 0.55), transparent 65%);
+  animation: cosmetic-breath 1.1s ease-in-out infinite;
+}
+
+.cos-frame-fire::before {
+  background:
+  radial-gradient(circle at 20% 78%, rgba(255, 149, 0, 0.46) 0 2px, transparent 2px),
+  radial-gradient(circle at 70% 20%, rgba(255, 78, 0, 0.42) 0 1.6px, transparent 1.6px);
+  animation: cosmetic-particle-drift 3.6s linear infinite;
+}
+
+.cos-frame-ice::after {
+  background:
+  linear-gradient(140deg, rgba(168, 238, 255, 0.26), transparent 42%),
+  radial-gradient(circle at 70% 20%, rgba(190, 250, 255, 0.35), transparent 45%);
+  animation: cosmetic-shimmer 3.5s linear infinite;
+}
+
+.cos-frame-ice::before {
+  background:
+  radial-gradient(circle at 16% 18%, rgba(214, 247, 255, 0.42) 0 2px, transparent 2px),
+  radial-gradient(circle at 78% 76%, rgba(187, 241, 255, 0.36) 0 1.4px, transparent 1.4px);
+  animation: cosmetic-particle-drift 5.8s linear infinite;
+}
+
+.cos-frame-neon::after {
+  background: radial-gradient(circle, rgba(199, 123, 255, 0.28), transparent 65%);
+  animation: cosmetic-breath 1s ease-in-out infinite;
+}
+
+.cos-frame-neon::before {
+  background:
+  radial-gradient(circle at 12% 30%, rgba(215, 122, 255, 0.36) 0 2px, transparent 2px),
+  radial-gradient(circle at 82% 62%, rgba(127, 220, 255, 0.34) 0 1.5px, transparent 1.5px);
+  animation: cosmetic-particle-drift 4.6s linear infinite;
+}
+
+.cos-frame-rainbow::after {
+  background: conic-gradient(from 0deg, rgba(255, 0, 132, 0.32), rgba(255, 165, 2, 0.32), rgba(0, 212, 170, 0.32), rgba(0, 119, 255, 0.32), rgba(255, 0, 132, 0.32));
+  animation: cosmetic-hue-shift 2.5s linear infinite;
+}
+
+.cos-frame-rainbow::before {
+  background:
+  radial-gradient(circle at 22% 26%, rgba(255, 255, 255, 0.34) 0 1.8px, transparent 1.8px),
+  radial-gradient(circle at 78% 74%, rgba(255, 255, 255, 0.32) 0 1.3px, transparent 1.3px);
+  animation: cosmetic-particle-drift 4.8s linear infinite;
+}
+
+.cos-frame-diamond::after {
+  background:
+  linear-gradient(112deg, transparent 12%, rgba(242, 255, 255, 0.5) 50%, transparent 88%),
+  repeating-linear-gradient(160deg, rgba(196, 240, 255, 0.14) 0 1px, transparent 1px 8px),
+  radial-gradient(circle at 18% 76%, rgba(130, 225, 255, 0.28) 0 2px, transparent 2px),
+  radial-gradient(circle at 82% 20%, rgba(159, 203, 255, 0.22) 0 1.5px, transparent 1.5px),
+  radial-gradient(circle at 50% 48%, rgba(120, 238, 255, 0.2), transparent 62%),
+  radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.08) 0 18%, transparent 58%);
+  background-size: 175% 100%, 120% 120%, 120px 120px, 140px 140px, cover, 140% 140%;
+  animation: legendary-reflect-glint 2s ease-in-out infinite, legendary-fluid-flow 4s linear infinite, legendary-prism-spin 7.2s linear infinite reverse, legendary-lens-glow 2.8s ease-in-out infinite;
+  mix-blend-mode: soft-light;
+  opacity: 0.7;
+}
+
+.cos-frame-diamond::before {
+  background:
+  conic-gradient(from 0deg, rgba(174, 255, 255, 0.24), rgba(162, 120, 255, 0.2), rgba(174, 255, 255, 0.24)),
+  radial-gradient(circle at 20% 24%, rgba(220, 255, 255, 0.58) 0 2px, transparent 3px),
+  radial-gradient(circle at 78% 66%, rgba(167, 248, 255, 0.48) 0 1.4px, transparent 2.5px),
+  radial-gradient(ellipse at 50% 94%, rgba(192, 233, 255, 0.2) 0 28%, transparent 68%),
+  radial-gradient(ellipse at 62% 86%, rgba(225, 242, 255, 0.16) 0 26%, transparent 64%);
+  background-size: cover, 120px 120px, 140px 140px, 120% 120%, 130% 130%;
+  animation: legendary-prism-spin 5.6s linear infinite, cosmetic-particle-drift 2.8s linear infinite, legendary-smoke-drift 5.2s ease-in-out infinite, legendary-spectrum-shift 7.6s ease-in-out infinite;
+}
+
+.cos-frame-diamond {
+  box-shadow:
+  0 0 22px rgba(128, 245, 255, 0.56),
+  0 0 44px rgba(153, 120, 255, 0.4),
+  0 0 62px rgba(162, 218, 255, 0.3);
+}
+
+.cos-frame-ghost::after {
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.26), transparent 68%);
+  animation: cosmetic-breath 1.7s ease-in-out infinite;
+}
+
+.cos-frame-ghost::before {
+  background:
+  radial-gradient(circle at 20% 20%, rgba(255, 255, 255, 0.26) 0 2px, transparent 2px),
+  radial-gradient(circle at 76% 78%, rgba(240, 244, 255, 0.22) 0 1.4px, transparent 1.4px);
+  animation: cosmetic-particle-drift 6.8s linear infinite;
+}
+
+.cos-frame-matrix::after {
+  background:
+  repeating-linear-gradient(180deg, rgba(0, 255, 65, 0.16) 0 3px, transparent 3px 8px);
+  animation: cosmetic-shimmer 2.1s linear infinite;
+}
+
+.cos-frame-matrix::before {
+  background:
+  radial-gradient(circle at 14% 28%, rgba(0, 255, 86, 0.4) 0 1.5px, transparent 1.5px),
+  radial-gradient(circle at 84% 72%, rgba(101, 255, 133, 0.32) 0 1.3px, transparent 1.3px);
+  animation: cosmetic-particle-drift 3.1s linear infinite;
+}
+
+.cos-frame-phoenix::after {
+  background:
+  radial-gradient(circle at 24% 84%, rgba(255, 196, 74, 0.42), transparent 34%),
+  radial-gradient(circle at 74% 24%, rgba(255, 84, 22, 0.36), transparent 40%),
+  radial-gradient(circle at 50% 56%, rgba(255, 92, 0, 0.3), transparent 42%),
+  repeating-radial-gradient(circle at 50% 78%, rgba(255, 210, 140, 0.16) 0 1.2px, transparent 1.2px 8px),
+  linear-gradient(140deg, rgba(255, 132, 54, 0.2), transparent 58%),
+  radial-gradient(circle at 48% 88%, rgba(255, 244, 194, 0.14) 0 20%, transparent 56%);
+  background-size: cover, cover, 130% 130%, 120% 120%, cover, 120% 120%;
+  animation: cosmetic-breath 0.88s ease-in-out infinite, legendary-flare-flicker 1.7s ease-in-out infinite, legendary-ember-rise 1.6s linear infinite, legendary-electro-surge 3.8s ease-in-out infinite, legendary-lens-glow 2.6s ease-in-out infinite;
+}
+
+.cos-frame-phoenix::before {
+  background:
+  radial-gradient(circle at 22% 22%, rgba(255, 236, 172, 0.58) 0 2px, transparent 3px),
+  radial-gradient(circle at 80% 74%, rgba(255, 140, 76, 0.52) 0 1.6px, transparent 2.5px),
+  radial-gradient(ellipse at 48% 56%, rgba(255, 98, 0, 0.36), transparent 56%),
+  radial-gradient(ellipse at 26% 88%, rgba(124, 104, 96, 0.2) 0 28%, transparent 70%),
+  radial-gradient(ellipse at 72% 90%, rgba(162, 148, 138, 0.18) 0 26%, transparent 68%),
+  radial-gradient(ellipse at 50% 94%, rgba(255, 241, 214, 0.18) 0 24%, transparent 72%);
+  background-size: 120px 120px, 140px 140px, cover, 130% 130%, 130% 130%, cover;
+  animation: legendary-ember-rise 1.7s linear infinite, cosmetic-particle-drift 1.8s linear infinite, legendary-smoke-drift 4.1s ease-in-out infinite;
+}
+
+.cos-frame-phoenix {
+  box-shadow:
+  0 0 22px rgba(255, 168, 56, 0.68),
+  0 0 46px rgba(255, 90, 0, 0.48),
+  0 0 66px rgba(255, 214, 132, 0.32);
+}
+
+.cos-frame-void::after {
+  background:
+  linear-gradient(125deg, rgba(98, 56, 224, 0.36), rgba(18, 9, 48, 0.14), rgba(194, 146, 255, 0.32)),
+  conic-gradient(from 0deg at 52% 50%, rgba(194, 156, 255, 0.12), rgba(40, 18, 99, 0.2), rgba(194, 156, 255, 0.12)),
+  radial-gradient(circle at 52% 50%, rgba(36, 18, 90, 0.22), transparent 58%),
+  repeating-linear-gradient(166deg, rgba(191, 221, 255, 0.1) 0 1px, transparent 1px 9px),
+  linear-gradient(112deg, transparent 24%, rgba(255, 255, 255, 0.18) 52%, transparent 82%),
+  repeating-radial-gradient(circle at 50% 50%, rgba(184, 151, 255, 0.08) 0 2px, transparent 2px 11px);
+  background-size: 240% 240%, 200% 200%, cover, 100% 100%, 170% 100%, 130% 130%;
+  animation: legendary-void-drift 2.5s ease-in-out infinite, legendary-rain-fall 1.9s linear infinite, legendary-reflect-glint 2.6s ease-in-out infinite, legendary-electro-surge 4.2s ease-in-out infinite, legendary-spectrum-shift 7.8s ease-in-out infinite;
+}
+
+.cos-frame-void::before {
+  background:
+  radial-gradient(circle at 16% 26%, rgba(214, 180, 255, 0.46) 0 2px, transparent 3px),
+  radial-gradient(circle at 84% 72%, rgba(114, 82, 255, 0.46) 0 1.4px, transparent 2.5px),
+  radial-gradient(ellipse at 50% 50%, rgba(20, 10, 45, 0.5), transparent 52%),
+  radial-gradient(ellipse at 34% 84%, rgba(118, 125, 138, 0.16) 0 28%, transparent 68%),
+  radial-gradient(ellipse at 66% 90%, rgba(160, 165, 176, 0.14) 0 26%, transparent 64%),
+  radial-gradient(circle at 30% 8%, rgba(225, 242, 255, 0.34) 0 1.2px, transparent 2px),
+  radial-gradient(circle at 70% 20%, rgba(224, 236, 245, 0.28) 0 1px, transparent 2px),
+  repeating-linear-gradient(178deg, rgba(201, 232, 255, 0.1) 0 1px, transparent 1px 10px);
+  background-size: 120px 120px, 140px 140px, cover, 130% 130%, 130% 130%, 84px 84px, 96px 96px, 100% 100%;
+  animation: cosmetic-stars 3.1s linear infinite, legendary-nebula-orbit 7.2s linear infinite, legendary-smoke-drift 5s ease-in-out infinite, legendary-lens-glow 3.3s ease-in-out infinite;
+}
+
+.cos-frame-void {
+  box-shadow:
+  0 0 20px rgba(170, 124, 255, 0.58),
+  0 0 42px rgba(69, 36, 176, 0.46),
+  0 0 62px rgba(132, 180, 255, 0.28);
+}
+
+[class*="cos-bg-"]::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.62;
+}
+
+[class*="cos-bg-"]::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+  opacity: 0.55;
+}
+
+[class*="cos-bg-"]>* {
+  position: relative;
+  z-index: 2;
+}
+
+.cos-bg-bg_default::before {
+  background:
+  radial-gradient(circle at 18% 72%, rgba(255, 255, 255, 0.22) 0 2px, transparent 2px),
+  radial-gradient(circle at 80% 22%, rgba(186, 174, 255, 0.2) 0 1.2px, transparent 1.2px);
+  animation: cosmetic-particle-drift 6.2s linear infinite;
+}
+
+.cos-bg-bg_default::after {
+  background: linear-gradient(120deg, transparent 24%, rgba(255, 255, 255, 0.14) 52%, transparent 80%);
+  animation: cosmetic-shimmer 3.6s linear infinite;
+}
+
+.cos-bg-bg_sunset::before {
+  background:
+  radial-gradient(circle at 24% 78%, rgba(255, 197, 122, 0.28) 0 2px, transparent 2px),
+  radial-gradient(circle at 74% 26%, rgba(255, 112, 154, 0.22) 0 1.4px, transparent 1.4px);
+  animation: cosmetic-particle-drift 5.8s linear infinite;
+}
+
+.cos-bg-bg_sunset::after {
+  background: linear-gradient(120deg, rgba(255, 133, 70, 0.28), rgba(255, 219, 128, 0.2), rgba(255, 107, 157, 0.24));
+  background-size: 220% 220%;
+  animation: cosmetic-wave 4.4s ease-in-out infinite;
+}
+
+.cos-bg-bg_ocean::before {
+  background:
+  radial-gradient(circle at 22% 22%, rgba(139, 233, 255, 0.26) 0 2px, transparent 2px),
+  radial-gradient(circle at 78% 74%, rgba(72, 245, 225, 0.24) 0 1.4px, transparent 1.4px);
+  animation: cosmetic-particle-drift 5.2s linear infinite;
+}
+
+.cos-bg-bg_ocean::after {
+  background: linear-gradient(120deg, rgba(0, 174, 255, 0.24), rgba(0, 212, 170, 0.28), rgba(0, 102, 255, 0.2));
+  background-size: 220% 220%;
+  animation: cosmetic-wave 4.2s ease-in-out infinite;
+}
+
+.cos-bg-bg_forest::before {
+  background:
+  radial-gradient(circle at 20% 80%, rgba(147, 223, 137, 0.24) 0 2px, transparent 2px),
+  radial-gradient(circle at 78% 26%, rgba(194, 255, 170, 0.2) 0 1.2px, transparent 1.2px);
+  animation: cosmetic-particle-drift 6.4s linear infinite;
+}
+
+.cos-bg-bg_forest::after {
+  background: linear-gradient(120deg, rgba(90, 200, 120, 0.2), rgba(52, 120, 60, 0.28), rgba(129, 211, 87, 0.2));
+  background-size: 220% 220%;
+  animation: cosmetic-wave 5s ease-in-out infinite;
+}
+
+.cos-bg-bg_galaxy::before {
+  background:
+  radial-gradient(circle at 12% 20%, rgba(255, 255, 255, 0.22) 0 2px, transparent 2px),
+  radial-gradient(circle at 86% 76%, rgba(255, 255, 255, 0.18) 0 1px, transparent 1px),
+  radial-gradient(circle at 56% 44%, rgba(163, 115, 255, 0.24), transparent 36%);
+  animation: cosmetic-stars 8.4s linear infinite;
+}
+
+.cos-bg-bg_galaxy::after {
+  background:
+  radial-gradient(circle at 20% 30%, rgba(255, 255, 255, 0.22) 0 2px, transparent 2px),
+  radial-gradient(circle at 80% 70%, rgba(255, 255, 255, 0.2) 0 1px, transparent 1px),
+  radial-gradient(circle at 50% 45%, rgba(196, 154, 255, 0.22), transparent 46%);
+  background-size: 130px 130px, 160px 160px, cover;
+  animation: cosmetic-stars 7s linear infinite;
+}
+
+.cos-bg-bg_lava::before {
+  background:
+  radial-gradient(circle at 24% 82%, rgba(255, 156, 42, 0.28) 0 2px, transparent 2px),
+  radial-gradient(circle at 74% 22%, rgba(255, 92, 0, 0.22) 0 1.4px, transparent 1.4px);
+  animation: cosmetic-particle-drift 3.2s linear infinite;
+}
+
+.cos-bg-bg_lava::after {
+  background:
+  radial-gradient(circle at 40% 65%, rgba(255, 80, 0, 0.34), transparent 40%),
+  radial-gradient(circle at 70% 35%, rgba(255, 179, 0, 0.22), transparent 36%);
+  animation: cosmetic-breath 1.2s ease-in-out infinite;
+}
+
+.cos-bg-bg_aurora::before {
+  background:
+  radial-gradient(circle at 20% 78%, rgba(188, 255, 229, 0.2) 0 2px, transparent 2px),
+  radial-gradient(circle at 80% 26%, rgba(189, 165, 255, 0.24) 0 1.5px, transparent 1.5px);
+  animation: cosmetic-particle-drift 6s linear infinite;
+}
+
+.cos-bg-bg_aurora::after {
+  background: linear-gradient(130deg, rgba(0, 255, 170, 0.16), rgba(129, 92, 255, 0.2), rgba(91, 200, 255, 0.18), rgba(0, 255, 170, 0.16));
+  background-size: 260% 260%;
+  animation: cosmetic-wave 5.2s ease-in-out infinite;
+}
+
+.cos-bg-bg_cyberstorm::before {
+  background:
+  radial-gradient(circle at 16% 22%, rgba(148, 250, 255, 0.36) 0 2px, transparent 3px),
+  radial-gradient(circle at 82% 78%, rgba(130, 174, 255, 0.3) 0 1.5px, transparent 2.5px),
+  radial-gradient(ellipse at 52% 44%, rgba(72, 34, 140, 0.32), transparent 52%),
+  repeating-linear-gradient(112deg, rgba(156, 250, 255, 0.1) 0 1px, transparent 1px 18px),
+  repeating-linear-gradient(168deg, rgba(206, 232, 255, 0.12) 0 1px, transparent 1px 14px),
+  radial-gradient(ellipse at 22% 88%, rgba(126, 142, 161, 0.18) 0 28%, transparent 68%),
+  radial-gradient(ellipse at 78% 92%, rgba(168, 177, 196, 0.16) 0 26%, transparent 64%),
+  radial-gradient(circle at 18% 12%, rgba(201, 255, 205, 0.24) 0 1.2px, transparent 2px),
+  radial-gradient(circle at 74% 18%, rgba(239, 250, 255, 0.24) 0 1.2px, transparent 2px);
+  background-size: 120px 120px, 140px 140px, cover, cover, 100% 100%, 130% 130%, 130% 130%, 64px 64px, 80px 80px;
+  animation: cosmetic-stars 4.2s linear infinite, legendary-arc-flash 2.8s linear infinite, legendary-smoke-drift 4.8s ease-in-out infinite, legendary-spectrum-shift 6.8s ease-in-out infinite;
+}
+
+.cos-bg-bg_cyberstorm::after {
+  background:
+  linear-gradient(132deg, rgba(0, 248, 255, 0.14), rgba(112, 76, 255, 0.2), rgba(0, 248, 255, 0.12)),
+  radial-gradient(ellipse at 30% 30%, rgba(186, 255, 255, 0.16), transparent 50%),
+  radial-gradient(ellipse at 70% 70%, rgba(160, 120, 255, 0.18), transparent 50%),
+  linear-gradient(108deg, transparent 30%, rgba(255, 255, 255, 0.12) 50%, transparent 70%);
+  background-size: 260% 260%, cover, cover, 200% 100%;
+  animation: cosmetic-wave 2.4s ease-in-out infinite, legendary-electro-surge 4.8s ease-in-out infinite, legendary-lens-glow 3.4s ease-in-out infinite;
+}
+
+.cos-bg-bg_cyberstorm {
+  box-shadow:
+  inset 0 0 34px rgba(90, 246, 255, 0.24),
+  inset 0 0 66px rgba(112, 76, 255, 0.26),
+  0 0 26px rgba(91, 214, 255, 0.3),
+  0 0 48px rgba(157, 114, 255, 0.24);
+}
+
+.cos-bg-bg_royal_nebula::before {
+  background:
+  radial-gradient(circle at 20% 78%, rgba(255, 218, 132, 0.36) 0 2px, transparent 3px),
+  radial-gradient(circle at 76% 24%, rgba(192, 126, 255, 0.36) 0 1.6px, transparent 2.5px),
+  radial-gradient(ellipse at 50% 52%, rgba(255, 154, 80, 0.26), transparent 50%),
+  conic-gradient(from 0deg, rgba(255, 214, 132, 0.12), rgba(186, 122, 255, 0.14), rgba(255, 214, 132, 0.12)),
+  radial-gradient(ellipse at 24% 86%, rgba(173, 164, 154, 0.18) 0 28%, transparent 68%),
+  radial-gradient(ellipse at 76% 90%, rgba(184, 177, 190, 0.16) 0 26%, transparent 64%),
+  radial-gradient(circle at 44% 86%, rgba(132, 220, 255, 0.22) 0 1.4px, transparent 2px),
+  radial-gradient(circle at 60% 72%, rgba(152, 238, 255, 0.22) 0 1px, transparent 2px);
+  background-size: 120px 120px, 140px 140px, cover, cover, 130% 130%, 130% 130%, 96px 96px, 116px 116px;
+  animation: cosmetic-particle-drift 2.9s linear infinite, legendary-nebula-orbit 7.8s linear infinite, legendary-smoke-drift 4.8s ease-in-out infinite, legendary-spectrum-shift 7.5s ease-in-out infinite;
+}
+
+.cos-bg-bg_royal_nebula::after {
+  background:
+  linear-gradient(128deg, rgba(255, 188, 84, 0.16), rgba(142, 92, 255, 0.2), rgba(255, 188, 84, 0.14)),
+  radial-gradient(ellipse at 75% 25%, rgba(255, 226, 142, 0.2), transparent 50%),
+  radial-gradient(ellipse at 25% 75%, rgba(196, 136, 255, 0.18), transparent 50%),
+  linear-gradient(108deg, transparent 30%, rgba(255, 255, 255, 0.12) 50%, transparent 70%);
+  background-size: 260% 260%, cover, cover, 200% 100%;
+  animation: cosmetic-wave 2.8s ease-in-out infinite, legendary-electro-surge 5.2s ease-in-out infinite, legendary-lens-glow 3.2s ease-in-out infinite;
+}
+
+.cos-bg-bg_royal_nebula {
+  box-shadow:
+  inset 0 0 34px rgba(255, 205, 114, 0.24),
+  inset 0 0 68px rgba(146, 90, 255, 0.26),
+  0 0 26px rgba(255, 192, 108, 0.3),
+  0 0 44px rgba(129, 196, 255, 0.24);
+}
+
+.cq-avatar[class*="cos-frame-"] {
+  animation: cosmetic-pulse-shadow 2.4s ease-in-out infinite;
+}
+
+[class*="cos-frame-"]::before,
+[class*="cos-frame-"]::after {
+  display: none !important;
+  animation: none !important;
+}
+
+.cos-frame-default {
+  background: #2a3554 !important;
+}
+
+.cos-frame-gold {
+  background: #5a4822 !important;
+}
+
+.cos-frame-fire {
+  background: linear-gradient(135deg, #5a2014, #a33612, #db6826) !important;
+}
+
+.cos-frame-ice {
+  background: linear-gradient(135deg, #1d3f58, #2a628b, #5fa6d8) !important;
+}
+
+.cos-frame-ghost {
+  background: linear-gradient(135deg, #31374f, #4a5372, #7b84a8) !important;
+}
+
+.cos-frame-neon {
+  background: linear-gradient(132deg, #2a224f, #5530a8, #2f7a9d) !important;
+}
+
+.cos-frame-rainbow {
+  background: linear-gradient(132deg, #ca2b66, #d47f1f, #1da47c, #2f62d0, #9f3bc4) !important;
+}
+
+.cos-frame-matrix {
+  background: linear-gradient(132deg, #0f301f, #1c6d44, #1f9f6d) !important;
+}
+
+.cos-frame-neon::before,
+.cos-frame-rainbow::before,
+.cos-frame-matrix::before {
+  display: none !important;
+}
+
+.cos-frame-neon::after,
+.cos-frame-rainbow::after,
+.cos-frame-matrix::after {
+  display: block !important;
+  opacity: 0.64;
+  background:
+  linear-gradient(110deg, transparent 20%, rgba(255, 255, 255, 0.36) 50%, transparent 80%),
+  linear-gradient(132deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0));
+  background-size: 190% 100%, cover;
+  animation: cosmetic-reflect-sweep 3.2s linear infinite !important;
+}
+
+.cos-legendary-frame.cos-frame-diamond::before,
+.cos-legendary-frame.cos-frame-diamond::after,
+.cos-legendary-frame.cos-frame-phoenix::before,
+.cos-legendary-frame.cos-frame-phoenix::after,
+.cos-legendary-frame.cos-frame-void::before,
+.cos-legendary-frame.cos-frame-void::after,
+.cos-legendary-frame.cos-frame-cosmic::before,
+.cos-legendary-frame.cos-frame-cosmic::after,
+.cos-legendary-frame.cos-frame-divine::before,
+.cos-legendary-frame.cos-frame-divine::after,
+.cos-legendary-frame.cos-frame-arcane::before,
+.cos-legendary-frame.cos-frame-arcane::after,
+.cos-legendary-frame.cos-frame-eclipse::before,
+.cos-legendary-frame.cos-frame-eclipse::after,
+.cos-legendary-frame.cos-frame-sakura::before,
+.cos-legendary-frame.cos-frame-sakura::after {
+  display: block !important;
+  opacity: 0.86;
+}
+
+.cos-legendary-frame.cos-frame-diamond::before {
+  background:
+  radial-gradient(circle at 24% 24%, rgba(220, 255, 255, 0.75) 0 2px, transparent 4px),
+  radial-gradient(circle at 78% 72%, rgba(168, 234, 255, 0.68) 0 2px, transparent 4px),
+  conic-gradient(from 0deg, rgba(160, 242, 255, 0.28), rgba(166, 120, 255, 0.24), rgba(160, 242, 255, 0.28));
+  background-size: 130px 130px, 150px 150px, 220% 220%;
+  animation: legendary-diamond-drift 7.5s linear infinite;
+}
+
+.cos-legendary-frame.cos-frame-diamond::after {
+  background:
+  linear-gradient(116deg, transparent 18%, rgba(240, 255, 255, 0.48) 50%, transparent 82%),
+  radial-gradient(circle at 50% 50%, rgba(122, 232, 255, 0.24), transparent 62%);
+  background-size: 180% 100%, 150% 150%;
+  animation: legendary-diamond-sweep 5.4s ease-in-out infinite;
+}
+
+.cos-legendary-frame.cos-frame-phoenix::before {
+  background:
+  radial-gradient(circle at 24% 84%, rgba(255, 206, 108, 0.8) 0 2px, transparent 4px),
+  radial-gradient(circle at 74% 26%, rgba(255, 126, 56, 0.74) 0 2px, transparent 4px),
+  linear-gradient(142deg, rgba(255, 170, 78, 0.32), rgba(255, 82, 0, 0.24), rgba(255, 226, 170, 0.2));
+  background-size: 120px 120px, 146px 146px, 220% 220%;
+  animation: legendary-phoenix-rise 4.8s linear infinite;
+}
+
+.cos-legendary-frame.cos-frame-phoenix::after {
+  background:
+  radial-gradient(circle at 48% 90%, rgba(255, 240, 184, 0.5), transparent 56%),
+  linear-gradient(112deg, transparent 20%, rgba(255, 246, 210, 0.4) 50%, transparent 84%);
+  background-size: 160% 160%, 170% 100%;
+  animation: legendary-phoenix-heat 3.8s ease-in-out infinite;
+}
+
+.cos-legendary-frame.cos-frame-void::before {
+  background:
+  radial-gradient(circle at 16% 26%, rgba(216, 174, 255, 0.72) 0 2px, transparent 4px),
+  radial-gradient(circle at 84% 72%, rgba(116, 98, 255, 0.72) 0 2px, transparent 4px),
+  radial-gradient(circle at 50% 50%, rgba(26, 12, 66, 0.5), transparent 60%);
+  background-size: 128px 128px, 146px 146px, 180% 180%;
+  animation: legendary-void-orbit 8.2s linear infinite;
+}
+
+.cos-legendary-frame.cos-frame-void::after {
+  background:
+  linear-gradient(126deg, rgba(142, 102, 255, 0.28), rgba(22, 8, 58, 0.22), rgba(200, 162, 255, 0.24)),
+  repeating-linear-gradient(168deg, rgba(214, 198, 255, 0.16) 0 1px, transparent 1px 11px);
+  background-size: 220% 220%, 120% 120%;
+  animation: legendary-void-drift-soft 6.8s ease-in-out infinite;
+}
+
+.cos-bg-bg_forest,
+.cos-bg-bg_lava,
+.cos-bg-bg_cyberstorm,
+.cos-bg-bg_royal_nebula {
+  background-size: cover !important;
+}
+
+.cos-bg-bg_forest::before,
+.cos-bg-bg_forest::after,
+.cos-bg-bg_lava::before,
+.cos-bg-bg_lava::after,
+.cos-bg-bg_cyberstorm::before,
+.cos-bg-bg_cyberstorm::after,
+.cos-bg-bg_royal_nebula::before,
+.cos-bg-bg_royal_nebula::after {
+  display: none !important;
+  animation: none !important;
+  background: none !important;
+}
+
+.cos-bg-kaleido {
+  transform: translateZ(0);
+  will-change: background-position, filter;
+  background-size: 180% 180%, 150% 150%, 160% 160%, 170% 170%, cover !important;
+  animation: legendary-kaleido-pan 7.8s linear infinite, legendary-kaleido-breathe 5.2s ease-in-out infinite;
+}
+
+.cos-bg-kaleido[class*="cos-bg-"]::before,
+.cos-bg-kaleido[class*="cos-bg-"]::after {
+  display: block !important;
+  pointer-events: none;
+  transform-origin: 50% 50%;
+  background-repeat: repeat;
+}
+
+.cos-bg-kaleido[class*="cos-bg-"]::before {
+  opacity: 0.28 !important;
+  background:
+  repeating-conic-gradient(from 0deg at 50% 50%, rgba(255, 255, 255, 0.14) 0 6deg, transparent 6deg 17deg),
+  repeating-linear-gradient(32deg, rgba(255, 255, 255, 0.08) 0 1px, transparent 1px 11px);
+  background-size: 220% 220%, 170% 170%;
+  mix-blend-mode: screen;
+  animation: legendary-kaleido-spin-a 8.4s linear infinite !important;
+}
+
+.cos-bg-kaleido[class*="cos-bg-"]::after {
+  opacity: 0.24 !important;
+  background:
+  repeating-conic-gradient(from 180deg at 50% 50%, rgba(255, 255, 255, 0.1) 0 5deg, transparent 5deg 15deg),
+  repeating-linear-gradient(-34deg, rgba(255, 255, 255, 0.06) 0 1px, transparent 1px 12px);
+  background-size: 210% 210%, 180% 180%;
+  mix-blend-mode: soft-light;
+  animation: legendary-kaleido-spin-b 10.6s linear infinite !important;
+}
+
+.cos-bg-kaleido[data-bg-id="bg_galaxy"]::before {
+  background:
+  repeating-conic-gradient(from 0deg at 50% 50%, rgba(204, 130, 255, 0.2) 0 7deg, transparent 7deg 18deg),
+  repeating-linear-gradient(34deg, rgba(114, 214, 255, 0.14) 0 1px, transparent 1px 11px);
+}
+
+.cos-bg-kaleido[data-bg-id="bg_galaxy"]::after {
+  background:
+  repeating-conic-gradient(from 180deg at 50% 50%, rgba(128, 176, 255, 0.16) 0 5deg, transparent 5deg 15deg),
+  repeating-linear-gradient(-36deg, rgba(214, 168, 255, 0.11) 0 1px, transparent 1px 12px);
+}
+
+.cos-bg-kaleido[data-bg-id="bg_celestial"]::before {
+  background:
+  repeating-conic-gradient(from 0deg at 50% 50%, rgba(255, 219, 110, 0.3) 0 7deg, transparent 7deg 18deg),
+  repeating-linear-gradient(34deg, rgba(255, 194, 88, 0.18) 0 1px, transparent 1px 10px);
+}
+
+.cos-bg-kaleido[data-bg-id="bg_celestial"]::after {
+  background:
+  repeating-conic-gradient(from 180deg at 50% 50%, rgba(255, 238, 170, 0.22) 0 5deg, transparent 5deg 14deg),
+  repeating-linear-gradient(-32deg, rgba(255, 205, 110, 0.16) 0 1px, transparent 1px 11px);
+}
+
+.cos-bg-kaleido[data-bg-id="bg_graphite_prime"]::before {
+  background:
+  repeating-linear-gradient(108deg, rgba(255, 255, 255, 0.24) 0 2px, transparent 2px 16px),
+  repeating-linear-gradient(148deg, rgba(168, 255, 56, 0.24) 0 2px, transparent 2px 18px);
+}
+
+.cos-bg-kaleido[data-bg-id="bg_graphite_prime"] {
+  filter: saturate(1.26) contrast(1.2);
+}
+
+.cos-bg-kaleido[data-bg-id="bg_graphite_prime"]::after {
+  background:
+  repeating-linear-gradient(96deg, rgba(255, 255, 255, 0.2) 0 1px, transparent 1px 11px),
+  repeating-linear-gradient(-36deg, rgba(132, 244, 34, 0.18) 0 1px, transparent 1px 12px);
+}
+
+.cos-bg-kaleido[data-bg-id="bg_kanji_storm"]::before {
+  background:
+  repeating-linear-gradient(90deg, transparent 0 16px, rgba(232, 206, 142, 0.24) 16px 18px, transparent 18px 42px),
+  repeating-linear-gradient(0deg, transparent 0 14px, rgba(246, 228, 182, 0.2) 14px 16px, transparent 16px 36px);
+}
+
+.cos-bg-kaleido[data-bg-id="bg_kanji_storm"] {
+  filter: saturate(1.08) contrast(1.2);
+}
+
+.cos-bg-kaleido[data-bg-id="bg_kanji_storm"]::after {
+  background:
+  repeating-linear-gradient(90deg, transparent 0 26px, rgba(214, 186, 126, 0.2) 26px 30px, transparent 30px 58px),
+  repeating-linear-gradient(0deg, transparent 0 20px, rgba(232, 212, 164, 0.16) 20px 22px, transparent 22px 48px);
+}
+
+.cos-bg-kaleido[data-bg-id="bg_tribal_ember"]::before {
+  background:
+  repeating-conic-gradient(from 0deg at 50% 50%, rgba(255, 255, 255, 0.3) 0 9deg, transparent 9deg 19deg),
+  repeating-linear-gradient(42deg, rgba(255, 255, 255, 0.2) 0 1px, transparent 1px 9px);
+}
+
+.cos-bg-kaleido[data-bg-id="bg_tribal_ember"] {
+  filter: saturate(0.18) contrast(1.34);
+}
+
+.cos-bg-kaleido[data-bg-id="bg_tribal_ember"]::after {
+  background:
+  repeating-conic-gradient(from 180deg at 50% 50%, rgba(244, 244, 244, 0.24) 0 7deg, transparent 7deg 16deg),
+  repeating-linear-gradient(-42deg, rgba(222, 222, 222, 0.16) 0 1px, transparent 1px 10px);
+}
+
+.cos-bg-kaleido[data-bg-id="bg_draconic"]::before {
+  background:
+  repeating-conic-gradient(from 0deg at 50% 50%, rgba(255, 178, 98, 0.22) 0 7deg, transparent 7deg 18deg),
+  repeating-linear-gradient(30deg, rgba(255, 92, 64, 0.16) 0 1px, transparent 1px 10px);
+}
+
+.cos-bg-kaleido[data-bg-id="bg_draconic"]::after {
+  background:
+  repeating-conic-gradient(from 180deg at 50% 50%, rgba(186, 104, 255, 0.16) 0 5deg, transparent 5deg 14deg),
+  repeating-linear-gradient(-38deg, rgba(255, 214, 144, 0.12) 0 1px, transparent 1px 12px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cos-bg-kaleido {
+    animation: none !important;
+    filter: saturate(1.08) contrast(1.04) !important;
+  }
+
+  .cos-bg-kaleido[class*="cos-bg-"]::before,
+.cos-bg-kaleido[class*="cos-bg-"]::after {
+    animation: none !important;
+    opacity: 0.14 !important;
+  }
+}
+
+.cos-bg-bg_sunset,
+.cos-bg-bg_aurora,
+.cos-bg-bg_voltage,
+.cos-bg-bg_galaxy,
+.cos-bg-bg_celestial,
+.cos-bg-bg_draconic,
+.cos-bg-bg_graphite_prime,
+.cos-bg-bg_kanji_storm,
+.cos-bg-bg_tribal_ember,
+.cos-bg-bg_graphite_havoc,
+.cos-bg-bg_kanji_reactor,
+.cos-bg-bg_tribal_cipher {
+  animation: none !important;
+  filter: none !important;
+  box-shadow: none !important;
+  background-repeat: no-repeat, no-repeat, no-repeat !important;
+  background-position: center center, center center, center center !important;
+  background-size: 82% 82%, 100% 100%, 100% 100% !important;
+}
+
+.cos-bg-bg_sunset::before,
+.cos-bg-bg_sunset::after,
+.cos-bg-bg_aurora::before,
+.cos-bg-bg_aurora::after,
+.cos-bg-bg_voltage::before,
+.cos-bg-bg_voltage::after,
+.cos-bg-bg_galaxy::before,
+.cos-bg-bg_galaxy::after,
+.cos-bg-bg_celestial::before,
+.cos-bg-bg_celestial::after,
+.cos-bg-bg_draconic::before,
+.cos-bg-bg_draconic::after,
+.cos-bg-bg_graphite_prime::before,
+.cos-bg-bg_graphite_prime::after,
+.cos-bg-bg_kanji_storm::before,
+.cos-bg-bg_kanji_storm::after,
+.cos-bg-bg_tribal_ember::before,
+.cos-bg-bg_tribal_ember::after,
+.cos-bg-bg_graphite_havoc::before,
+.cos-bg-bg_graphite_havoc::after,
+.cos-bg-bg_kanji_reactor::before,
+.cos-bg-bg_kanji_reactor::after,
+.cos-bg-bg_tribal_cipher::before,
+.cos-bg-bg_tribal_cipher::after {
+  display: none !important;
+  animation: none !important;
+  background: none !important;
+}
+
+.cos-bg-kaleido,
+.cos-bg-kaleido[class*="cos-bg-"]::before,
+.cos-bg-kaleido[class*="cos-bg-"]::after {
+  animation: none !important;
+  background: none !important;
+}
+
+.cos-bg-bg_graphite_prime::before,
+.cos-bg-bg_kanji_storm::before,
+.cos-bg-bg_tribal_ember::before,
+.cos-bg-bg_graphite_havoc::before,
+.cos-bg-bg_kanji_reactor::before,
+.cos-bg-bg_tribal_cipher::before {
+  display: block !important;
+  background: inherit !important;
+  background-repeat: no-repeat !important;
+  background-position: center center !important;
+  background-size: 82% 82%, 100% 100%, 100% 100% !important;
+  mix-blend-mode: screen !important;
+  opacity: 0.44 !important;
+  filter: blur(2.4px) saturate(1.74) brightness(1.24) contrast(1.12);
+  animation: legend-neon-sign-flicker 5s linear infinite !important;
+}
+
+.cos-bg-bg_graphite_prime::after,
+.cos-bg-bg_kanji_storm::after,
+.cos-bg-bg_tribal_ember::after,
+.cos-bg-bg_graphite_havoc::after,
+.cos-bg-bg_kanji_reactor::after,
+.cos-bg-bg_tribal_cipher::after {
+  display: block !important;
+  background: inherit !important;
+  background-repeat: no-repeat !important;
+  background-position: center center !important;
+  background-size: 82% 82%, 100% 100%, 100% 100% !important;
+  mix-blend-mode: lighten !important;
+  opacity: 0.28 !important;
+  filter: blur(6.4px) saturate(1.66) brightness(1.16) contrast(1.08);
+  animation: legend-neon-sign-flicker-soft 5s linear infinite !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cos-bg-bg_graphite_prime::before,
+.cos-bg-bg_kanji_storm::before,
+.cos-bg-bg_tribal_ember::before,
+.cos-bg-bg_graphite_havoc::before,
+.cos-bg-bg_kanji_reactor::before,
+.cos-bg-bg_tribal_cipher::before,
+.cos-bg-bg_graphite_prime::after,
+.cos-bg-bg_kanji_storm::after,
+.cos-bg-bg_tribal_ember::after,
+.cos-bg-bg_graphite_havoc::after,
+.cos-bg-bg_kanji_reactor::after,
+.cos-bg-bg_tribal_cipher::after {
+    animation: none !important;
+    opacity: 0.14 !important;
+  }
+}
+
+.cos-bg-bg_aurora_prismatica {
+  box-shadow:
+  inset 0 0 32px rgba(127, 246, 215, 0.24),
+  inset 0 0 58px rgba(126, 179, 255, 0.22),
+  0 0 24px rgba(111, 216, 255, 0.28),
+  0 0 42px rgba(157, 136, 255, 0.22);
+}
+
+.cos-bg-bg_aurora_prismatica::before {
+  background:
+  radial-gradient(circle at 18% 24%, rgba(236, 255, 247, 0.56) 0 1.8px, transparent 2.8px),
+  radial-gradient(circle at 34% 62%, rgba(196, 244, 255, 0.5) 0 1.5px, transparent 2.5px),
+  radial-gradient(circle at 58% 42%, rgba(177, 163, 255, 0.46) 0 1.35px, transparent 2.35px),
+  radial-gradient(circle at 78% 76%, rgba(182, 238, 255, 0.5) 0 1.4px, transparent 2.4px),
+  radial-gradient(circle at 88% 28%, rgba(189, 255, 229, 0.44) 0 1.2px, transparent 2.2px);
+  background-size: 90px 90px, 114px 114px, 102px 102px, 126px 126px, 96px 96px;
+  mix-blend-mode: screen;
+  filter: blur(0.26px) saturate(1.22) brightness(1.04) contrast(1.04);
+  animation: cosmetic-particle-drift 4.8s linear infinite, legend-neon-particle-outdoor 6.2s ease-in-out infinite !important;
+}
+
+.cos-bg-bg_aurora_prismatica::after {
+  background:
+  radial-gradient(circle at 12% 72%, rgba(214, 255, 242, 0.42) 0 1.25px, transparent 2.2px),
+  radial-gradient(circle at 28% 28%, rgba(170, 230, 255, 0.38) 0 1.1px, transparent 2px),
+  radial-gradient(circle at 50% 84%, rgba(170, 170, 255, 0.36) 0 1px, transparent 1.9px),
+  radial-gradient(circle at 72% 24%, rgba(160, 210, 255, 0.38) 0 1.1px, transparent 2px),
+  radial-gradient(circle at 86% 62%, rgba(167, 255, 231, 0.36) 0 0.95px, transparent 1.85px);
+  background-size: 86px 86px, 108px 108px, 98px 98px, 116px 116px, 94px 94px;
+  mix-blend-mode: lighten;
+  filter: blur(1.14px) saturate(1.16) brightness(1.02) contrast(1.04);
+  animation: cosmetic-particle-drift 5.5s linear infinite, legend-neon-particle-outdoor-soft 6.2s ease-in-out infinite !important;
+}
+
+.cos-bg-bg_abissal_vortex {
+  box-shadow:
+  inset 0 0 34px rgba(46, 99, 255, 0.22),
+  inset 0 0 68px rgba(14, 165, 233, 0.2),
+  0 0 24px rgba(67, 120, 255, 0.26),
+  0 0 44px rgba(74, 180, 255, 0.2);
+}
+
+.cos-bg-bg_abissal_vortex::before {
+  background:
+  radial-gradient(circle at 20% 22%, rgba(214, 233, 255, 0.42) 0 1.5px, transparent 2.5px),
+  radial-gradient(circle at 34% 72%, rgba(158, 198, 255, 0.38) 0 1.25px, transparent 2.25px),
+  radial-gradient(circle at 52% 48%, rgba(90, 141, 255, 0.36) 0 1.15px, transparent 2.15px),
+  radial-gradient(circle at 78% 74%, rgba(138, 188, 255, 0.4) 0 1.35px, transparent 2.35px),
+  radial-gradient(circle at 86% 26%, rgba(105, 180, 255, 0.34) 0 1.05px, transparent 2px);
+  background-size: 88px 88px, 110px 110px, 98px 98px, 122px 122px, 94px 94px;
+  mix-blend-mode: screen;
+  filter: blur(0.28px) saturate(1.2) brightness(1.04) contrast(1.04);
+  animation: cosmetic-particle-drift 5s linear infinite, legend-neon-particle-outdoor 6.4s ease-in-out infinite !important;
+}
+
+.cos-bg-bg_abissal_vortex::after {
+  background:
+  radial-gradient(circle at 16% 78%, rgba(218, 236, 255, 0.34) 0 1.1px, transparent 2px),
+  radial-gradient(circle at 28% 30%, rgba(146, 188, 255, 0.34) 0 1px, transparent 1.9px),
+  radial-gradient(circle at 50% 84%, rgba(92, 146, 255, 0.32) 0 0.95px, transparent 1.8px),
+  radial-gradient(circle at 72% 20%, rgba(146, 198, 255, 0.34) 0 1px, transparent 1.9px),
+  radial-gradient(circle at 84% 64%, rgba(120, 178, 255, 0.32) 0 0.9px, transparent 1.75px);
+  background-size: 86px 86px, 108px 108px, 96px 96px, 114px 114px, 92px 92px;
+  mix-blend-mode: lighten;
+  filter: blur(1.22px) saturate(1.14) brightness(1.02) contrast(1.04);
+  animation: cosmetic-particle-drift 5.9s linear infinite, legend-neon-particle-outdoor-soft 6.4s ease-in-out infinite !important;
+}
+
+.cos-bg-bg_eclipse_total {
+  box-shadow:
+  inset 0 0 34px rgba(251, 191, 36, 0.24),
+  inset 0 0 64px rgba(245, 158, 11, 0.22),
+  0 0 24px rgba(255, 198, 97, 0.26),
+  0 0 40px rgba(255, 156, 68, 0.2);
+}
+
+.cos-bg-bg_eclipse_total::before {
+  background:
+  radial-gradient(circle at 18% 24%, rgba(255, 238, 178, 0.46) 0 1.5px, transparent 2.5px),
+  radial-gradient(circle at 34% 66%, rgba(255, 219, 148, 0.42) 0 1.3px, transparent 2.3px),
+  radial-gradient(circle at 52% 48%, rgba(251, 191, 36, 0.38) 0 1.2px, transparent 2.2px),
+  radial-gradient(circle at 82% 76%, rgba(255, 206, 122, 0.42) 0 1.35px, transparent 2.35px),
+  radial-gradient(circle at 86% 22%, rgba(245, 158, 11, 0.34) 0 1.05px, transparent 2px);
+  background-size: 86px 86px, 110px 110px, 98px 98px, 122px 122px, 94px 94px;
+  mix-blend-mode: screen;
+  filter: blur(0.24px) saturate(1.2) brightness(1.04) contrast(1.04);
+  animation: cosmetic-particle-drift 5.1s linear infinite, legend-neon-particle-outdoor 6.1s ease-in-out infinite !important;
+}
+
+.cos-bg-bg_eclipse_total::after {
+  background:
+  radial-gradient(circle at 14% 76%, rgba(255, 248, 220, 0.36) 0 1.1px, transparent 2px),
+  radial-gradient(circle at 30% 30%, rgba(252, 211, 77, 0.34) 0 1px, transparent 1.9px),
+  radial-gradient(circle at 52% 84%, rgba(251, 191, 36, 0.32) 0 0.95px, transparent 1.8px),
+  radial-gradient(circle at 70% 24%, rgba(245, 158, 11, 0.32) 0 0.95px, transparent 1.8px),
+  radial-gradient(circle at 86% 62%, rgba(255, 223, 162, 0.32) 0 0.9px, transparent 1.75px);
+  background-size: 86px 86px, 108px 108px, 96px 96px, 114px 114px, 92px 92px;
+  mix-blend-mode: lighten;
+  filter: blur(1.14px) saturate(1.14) brightness(1.02) contrast(1.04);
+  animation: cosmetic-particle-drift 5.7s linear infinite, legend-neon-particle-outdoor-soft 6.1s ease-in-out infinite !important;
+}
+
+.cos-bg-bg_sangue_arcano {
+  box-shadow:
+  inset 0 0 34px rgba(239, 68, 68, 0.22),
+  inset 0 0 66px rgba(185, 28, 28, 0.22),
+  0 0 24px rgba(239, 68, 68, 0.24),
+  0 0 42px rgba(251, 113, 133, 0.2);
+}
+
+.cos-bg-bg_sangue_arcano::before {
+  background:
+  radial-gradient(circle at 18% 78%, rgba(255, 216, 216, 0.5) 0 1.6px, transparent 2.6px),
+  radial-gradient(circle at 32% 26%, rgba(255, 162, 176, 0.44) 0 1.35px, transparent 2.35px),
+  radial-gradient(circle at 52% 52%, rgba(239, 68, 68, 0.4) 0 1.25px, transparent 2.25px),
+  radial-gradient(circle at 76% 22%, rgba(251, 113, 133, 0.44) 0 1.35px, transparent 2.35px),
+  radial-gradient(circle at 86% 66%, rgba(185, 28, 28, 0.34) 0 1.1px, transparent 2px);
+  background-size: 88px 88px, 110px 110px, 98px 98px, 122px 122px, 94px 94px;
+  mix-blend-mode: screen;
+  filter: blur(0.26px) saturate(1.22) brightness(1.04) contrast(1.04);
+  animation: cosmetic-particle-drift 4.7s linear infinite, legend-neon-particle-outdoor 5.9s ease-in-out infinite !important;
+}
+
+.cos-bg-bg_sangue_arcano::after {
+  background:
+  radial-gradient(circle at 14% 24%, rgba(255, 232, 232, 0.36) 0 1.1px, transparent 2px),
+  radial-gradient(circle at 30% 72%, rgba(251, 113, 133, 0.34) 0 1px, transparent 1.9px),
+  radial-gradient(circle at 52% 32%, rgba(239, 68, 68, 0.34) 0 0.95px, transparent 1.8px),
+  radial-gradient(circle at 72% 80%, rgba(220, 38, 38, 0.32) 0 0.9px, transparent 1.75px),
+  radial-gradient(circle at 86% 48%, rgba(255, 176, 176, 0.3) 0 0.85px, transparent 1.7px);
+  background-size: 86px 86px, 108px 108px, 96px 96px, 114px 114px, 92px 92px;
+  mix-blend-mode: lighten;
+  filter: blur(1.18px) saturate(1.14) brightness(1.02) contrast(1.04);
+  animation: cosmetic-particle-drift 5.4s linear infinite, legend-neon-particle-outdoor-soft 5.9s ease-in-out infinite !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cos-bg-bg_aurora_prismatica::before,
+.cos-bg-bg_aurora_prismatica::after,
+.cos-bg-bg_abissal_vortex::before,
+.cos-bg-bg_abissal_vortex::after,
+.cos-bg-bg_eclipse_total::before,
+.cos-bg-bg_eclipse_total::after,
+.cos-bg-bg_sangue_arcano::before,
+.cos-bg-bg_sangue_arcano::after {
+    animation: none !important;
+    opacity: 0.16 !important;
+  }
+}
+
+.cq-avatar[class*="cos-frame-"] {
+  animation: none !important;
+  transform: none !important;
+  filter: none !important;
+}
+
+.cq-avatar[class*="cos-frame-"]::before,
+.cq-avatar[class*="cos-frame-"]::after {
+  display: none !important;
+  animation: none !important;
+}
+
+.cq-avatar.cos-frame-default,
+.cos-frame-default {
+  border: 3px solid var(--primary) !important;
+  background-image: none !important;
+  background: var(--frame-inner-bg-default) !important;
+  box-shadow: none !important;
+}
+
+.cq-avatar.cos-frame-slate,
+.cos-frame-slate {
+  border: 3px solid #7f8aa4 !important;
+  background-image: none !important;
+  background: var(--frame-inner-bg-default) !important;
+}
+
+.cq-avatar.cos-frame-amber,
+.cos-frame-amber {
+  border: 3px solid #c7863a !important;
+  background-image: none !important;
+  background: var(--frame-inner-bg-default) !important;
+}
+
+.cq-avatar.cos-frame-ruby,
+.cos-frame-ruby {
+  border: 3px solid #ff5778 !important;
+  background-image: none !important;
+  background: rgba(66, 26, 40, 0.96) !important;
+}
+
+.cq-avatar.cos-frame-lime,
+.cos-frame-lime {
+  border: 3px solid #67e57e !important;
+  background-image: none !important;
+  background: rgba(18, 52, 34, 0.96) !important;
+}
+
+[class*="cos-frame-"].cos-frame-default::before,
+[class*="cos-frame-"].cos-frame-default::after {
+  display: none !important;
+  content: none !important;
+}
+
+.cos-frame-gold {
+  border: 3px solid #f0bf58 !important;
+  background-image:
+  linear-gradient(var(--frame-inner-bg-default), var(--frame-inner-bg-default)),
+  linear-gradient(132deg, #ffcf6a, #ffd700, #ffb347) !important;
+  background-origin: border-box !important;
+  background-clip: padding-box, border-box !important;
+  box-shadow: none !important;
+}
+
+.cos-frame-fire {
+  border: 3px solid #ff8248 !important;
+  background-image:
+  linear-gradient(145deg, rgba(75, 28, 18, 0.94), rgba(120, 44, 18, 0.9)),
+  linear-gradient(132deg, #ff9b5d, #ff5f28, #ffbf7a) !important;
+  background-origin: border-box !important;
+  background-clip: padding-box, border-box !important;
+  box-shadow: none !important;
+}
+
+.cos-frame-ice {
+  background-image:
+  linear-gradient(145deg, rgba(20, 56, 82, 0.94), rgba(38, 86, 118, 0.9)),
+  linear-gradient(132deg, #7adfff, #4bbcff, #a9ebff) !important;
+  box-shadow: none !important;
+}
+
+.cos-frame-ghost {
+  background-image:
+  linear-gradient(145deg, rgba(45, 50, 74, 0.94), rgba(72, 80, 108, 0.9)),
+  linear-gradient(132deg, #c8d2ff, #9aa7df, #e2e8ff) !important;
+  box-shadow: none !important;
+}
+
+.cos-frame-neon {
+  background-image:
+  linear-gradient(145deg, rgba(26, 18, 62, 0.96), rgba(44, 32, 98, 0.92), rgba(24, 74, 102, 0.9)),
+  linear-gradient(132deg, #dd8bff, #9a4cff, #5ce6ff) !important;
+  box-shadow: inset 0 0 10px rgba(170, 102, 255, 0.28), inset 0 0 18px rgba(84, 196, 255, 0.22) !important;
+}
+
+.cos-frame-rainbow {
+  background-image:
+  linear-gradient(145deg, rgba(34, 26, 82, 0.96), rgba(48, 34, 104, 0.92), rgba(34, 74, 112, 0.9)),
+  linear-gradient(132deg, #ff4b91, #ff9e3d, #45d5a0, #58a0ff, #bd67ff, #ff4b91) !important;
+  box-shadow: inset 0 0 10px rgba(180, 122, 255, 0.24), inset 0 0 18px rgba(88, 160, 255, 0.2) !important;
+}
+
+.cos-frame-matrix {
+  background-image:
+  linear-gradient(145deg, rgba(10, 38, 24, 0.96), rgba(16, 58, 34, 0.92), rgba(18, 88, 50, 0.9)),
+  linear-gradient(132deg, #a6ffb8, #3de96e, #74ffd0) !important;
+  box-shadow: inset 0 0 10px rgba(84, 224, 124, 0.24), inset 0 0 18px rgba(116, 255, 170, 0.18) !important;
+}
+
+[class*="cos-frame-"]::before {
+  z-index: 0 !important;
+}
+
+[class*="cos-frame-"]::after {
+  z-index: 1 !important;
+}
+
+[class*="cos-frame-"].cos-frame-diamond,
+[class*="cos-frame-"].cos-frame-phoenix,
+[class*="cos-frame-"].cos-frame-void,
+[class*="cos-frame-"].cos-frame-cosmic,
+[class*="cos-frame-"].cos-frame-divine,
+[class*="cos-frame-"].cos-frame-arcane,
+[class*="cos-frame-"].cos-frame-eclipse,
+[class*="cos-frame-"].cos-frame-sakura,
+[class*="cos-frame-"].cos-frame-aurora,
+[class*="cos-frame-"].cos-frame-abissal,
+[class*="cos-frame-"].cos-frame-sangue {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+  border-style: solid !important;
+  border-width: 4px !important;
+  background-origin: border-box !important;
+  background-clip: padding-box, border-box !important;
+}
+
+[class*="cos-frame-"].cos-frame-diamond::before,
+[class*="cos-frame-"].cos-frame-phoenix::before,
+[class*="cos-frame-"].cos-frame-void::before,
+[class*="cos-frame-"].cos-frame-cosmic::before,
+[class*="cos-frame-"].cos-frame-divine::before,
+[class*="cos-frame-"].cos-frame-arcane::before,
+[class*="cos-frame-"].cos-frame-eclipse::before,
+[class*="cos-frame-"].cos-frame-sakura::before,
+[class*="cos-frame-"].cos-frame-aurora::before,
+[class*="cos-frame-"].cos-frame-abissal::before,
+[class*="cos-frame-"].cos-frame-sangue::before {
+  content: '' !important;
+  display: block !important;
+  position: absolute;
+  inset: 2px;
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 0 !important;
+}
+
+[class*="cos-frame-"].cos-frame-diamond::after,
+[class*="cos-frame-"].cos-frame-phoenix::after,
+[class*="cos-frame-"].cos-frame-void::after,
+[class*="cos-frame-"].cos-frame-cosmic::after,
+[class*="cos-frame-"].cos-frame-divine::after,
+[class*="cos-frame-"].cos-frame-arcane::after,
+[class*="cos-frame-"].cos-frame-eclipse::after,
+[class*="cos-frame-"].cos-frame-sakura::after,
+[class*="cos-frame-"].cos-frame-aurora::after,
+[class*="cos-frame-"].cos-frame-abissal::after,
+[class*="cos-frame-"].cos-frame-sangue::after {
+  content: '' !important;
+  display: block !important;
+  position: absolute;
+  inset: 2px;
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 1 !important;
+}
+
+[class*="cos-frame-"].cos-frame-diamond {
+  border-color: #8adfff !important;
+  background-image:
+  /* Inner themed background: crystal facets */
+  conic-gradient(from 0deg at 50% 50%,
+  rgba(180, 240, 255, 0.12) 0deg, rgba(120, 200, 255, 0.06) 30deg,
+  rgba(200, 160, 255, 0.1) 60deg, rgba(160, 230, 255, 0.04) 90deg,
+  rgba(220, 245, 255, 0.14) 120deg, rgba(100, 190, 255, 0.06) 150deg,
+  rgba(180, 140, 255, 0.1) 180deg, rgba(140, 220, 255, 0.05) 210deg,
+  rgba(200, 250, 255, 0.12) 240deg, rgba(120, 180, 255, 0.06) 270deg,
+  rgba(190, 150, 255, 0.11) 300deg, rgba(170, 235, 255, 0.05) 330deg,
+  rgba(180, 240, 255, 0.12) 360deg),
+  /* Crystal refraction lines */
+  linear-gradient(60deg, transparent 42%, rgba(200, 240, 255, 0.08) 44%, rgba(220, 250, 255, 0.14) 46%, transparent 48%),
+  linear-gradient(120deg, transparent 38%, rgba(180, 220, 255, 0.08) 40%, rgba(210, 245, 255, 0.12) 42%, transparent 44%),
+  linear-gradient(-30deg, transparent 52%, rgba(190, 160, 255, 0.06) 54%, rgba(220, 200, 255, 0.1) 56%, transparent 58%),
+  linear-gradient(145deg, rgba(22, 50, 74, 0.93), rgba(36, 76, 110, 0.89)),
+  linear-gradient(138deg, #d5f4ff, #8adfff, #6dc8ff, #d5f4ff) !important;
+  background-size: 100% 100%, 100% 100%, 100% 100%, 100% 100%, 100% 100%, 230% 230% !important;
+  box-shadow:
+  0 0 20px rgba(138, 223, 255, 0.86),
+  0 0 34px rgba(109, 200, 255, 0.48),
+  inset 0 0 16px rgba(220, 244, 255, 0.24) !important;
+  animation: legend-frame-diamond 3.2s ease-in-out infinite, legend-frame-rotate 18s linear infinite, legend-diamond-prismatic 6s ease-in-out infinite !important;
+}
+
+[class*="cos-frame-"].cos-frame-diamond::before {
+  background:
+  /* Sparkle particles that shimmer like light hitting crystal */
+  radial-gradient(circle at 16% 78%, rgba(255, 255, 255, 1) 0 1.8px, transparent 2.8px),
+  radial-gradient(circle at 34% 24%, rgba(199, 242, 255, 0.96) 0 1.6px, transparent 2.6px),
+  radial-gradient(circle at 58% 66%, rgba(167, 228, 255, 0.94) 0 1.5px, transparent 2.4px),
+  radial-gradient(circle at 78% 32%, rgba(130, 212, 255, 0.92) 0 1.4px, transparent 2.3px),
+  radial-gradient(circle at 88% 74%, rgba(255, 255, 255, 0.96) 0 1.3px, transparent 2.2px),
+  radial-gradient(circle at 50% 50%, rgba(200, 160, 255, 0.92) 0 1.2px, transparent 2px);
+  animation: legend-particle-firefly 5.6s ease-in-out infinite, legend-diamond-twinkle-burst 2.4s ease-in-out infinite !important;
+}
+
+[class*="cos-frame-"].cos-frame-diamond::after {
+  background:
+  /* Prismatic rainbow flash layer */
+  conic-gradient(from 0deg at 50% 50%,
+  rgba(255, 200, 200, 0.18) 0deg, rgba(255, 255, 200, 0.18) 60deg,
+  rgba(200, 255, 200, 0.18) 120deg, rgba(200, 255, 255, 0.18) 180deg,
+  rgba(200, 200, 255, 0.18) 240deg, rgba(255, 200, 255, 0.18) 300deg,
+  rgba(255, 200, 200, 0.18) 360deg),
+  radial-gradient(circle at 22% 36%, rgba(255, 255, 255, 0.94) 0 1px, transparent 1.9px),
+  radial-gradient(circle at 42% 82%, rgba(210, 245, 255, 0.92) 0 1px, transparent 1.9px),
+  radial-gradient(circle at 74% 18%, rgba(164, 228, 255, 0.92) 0 0.95px, transparent 1.8px),
+  radial-gradient(circle at 82% 58%, rgba(122, 210, 255, 0.9) 0 0.95px, transparent 1.8px);
+  opacity: 0.9 !important;
+  animation: legend-diamond-rainbow-spin 8s linear infinite, legend-particle-twinkle 1.9s ease-in-out infinite !important;
+}
+
+[class*="cos-frame-"].cos-frame-phoenix {
+  border-color: #f97316 !important;
+  background-image:
+  /* Inner themed background: stylized flame wing silhouettes */
+  radial-gradient(ellipse at 20% 60%, rgba(255, 160, 40, 0.16) 0%, transparent 50%),
+  radial-gradient(ellipse at 80% 60%, rgba(255, 160, 40, 0.16) 0%, transparent 50%),
+  /* Left wing feather strokes */
+  linear-gradient(205deg, transparent 30%, rgba(255, 180, 60, 0.1) 32%, rgba(255, 140, 30, 0.14) 34%, transparent 36%),
+  linear-gradient(215deg, transparent 24%, rgba(255, 200, 80, 0.08) 26%, rgba(255, 160, 40, 0.12) 28%, transparent 30%),
+  linear-gradient(225deg, transparent 18%, rgba(255, 220, 100, 0.06) 20%, rgba(255, 180, 50, 0.1) 22%, transparent 24%),
+  /* Right wing feather strokes (mirrored) */
+  linear-gradient(335deg, transparent 30%, rgba(255, 180, 60, 0.1) 32%, rgba(255, 140, 30, 0.14) 34%, transparent 36%),
+  linear-gradient(325deg, transparent 24%, rgba(255, 200, 80, 0.08) 26%, rgba(255, 160, 40, 0.12) 28%, transparent 30%),
+  linear-gradient(315deg, transparent 18%, rgba(255, 220, 100, 0.06) 20%, rgba(255, 180, 50, 0.1) 22%, transparent 24%),
+  /* Central heat core */
+  radial-gradient(ellipse at 50% 85%, rgba(255, 100, 20, 0.2) 0%, rgba(255, 60, 10, 0.08) 30%, transparent 60%),
+  linear-gradient(145deg, rgba(78, 30, 14, 0.93), rgba(124, 46, 18, 0.89)),
+  linear-gradient(138deg, #fdba74, #f97316, #ef4444, #fdba74) !important;
+  background-size: 100% 100%, 100% 100%, 100% 100%, 100% 100%, 100% 100%, 100% 100%, 100% 100%, 100% 100%, 100% 100%, 100% 100%, 220% 220% !important;
+  box-shadow:
+  0 0 22px rgba(249, 115, 22, 0.88),
+  0 0 38px rgba(239, 68, 68, 0.5),
+  inset 0 0 18px rgba(251, 146, 60, 0.28) !important;
+  animation: legend-frame-flame 2s ease-in-out infinite, legend-phoenix-heat-pulse 3s ease-in-out infinite !important;
+}
+
+[class*="cos-frame-"].cos-frame-phoenix::before {
+  background:
+  /* Rising sparks — 9 embers scattered in a tall tile, repeats seamlessly */
+  radial-gradient(circle at 12% 8%, rgba(255, 250, 210, 1) 0 1.6px, transparent 2.6px),
+  radial-gradient(circle at 72% 18%, rgba(255, 200, 100, 0.97) 0 1.45px, transparent 2.4px),
+  radial-gradient(circle at 38% 32%, rgba(255, 170, 60, 0.95) 0 1.35px, transparent 2.25px),
+  radial-gradient(circle at 86% 44%, rgba(255, 140, 40, 0.94) 0 1.5px, transparent 2.4px),
+  radial-gradient(circle at 22% 56%, rgba(255, 230, 160, 0.98) 0 1.4px, transparent 2.3px),
+  radial-gradient(circle at 62% 65%, rgba(255, 120, 30, 0.93) 0 1.3px, transparent 2.2px),
+  radial-gradient(circle at 48% 78%, rgba(255, 190, 80, 0.96) 0 1.55px, transparent 2.5px),
+  radial-gradient(circle at 8% 88%, rgba(255, 160, 50, 0.94) 0 1.25px, transparent 2.15px),
+  radial-gradient(circle at 78% 95%, rgba(255, 245, 200, 0.99) 0 1.35px, transparent 2.25px);
+  background-size: 100% 180% !important;
+  background-repeat: repeat-y !important;
+  filter: drop-shadow(0 0 4px rgba(255, 170, 50, 0.92)) !important;
+  mix-blend-mode: screen !important;
+  animation: legend-phoenix-sparks-rise-a 3.4s linear infinite, legend-phoenix-sparks-sway-a 2.1s ease-in-out infinite !important;
+}
+
+[class*="cos-frame-"].cos-frame-phoenix::after {
+  background:
+  /* Secondary sparks — different positions/sizes, slower rise */
+  radial-gradient(circle at 52% 5%, rgba(255, 220, 140, 0.94) 0 1.15px, transparent 2px),
+  radial-gradient(circle at 28% 14%, rgba(255, 160, 60, 0.92) 0 1.05px, transparent 1.9px),
+  radial-gradient(circle at 82% 26%, rgba(255, 245, 200, 0.96) 0 1.2px, transparent 2.05px),
+  radial-gradient(circle at 16% 38%, rgba(255, 130, 40, 0.9) 0 1px, transparent 1.85px),
+  radial-gradient(circle at 68% 48%, rgba(255, 200, 100, 0.93) 0 1.1px, transparent 1.95px),
+  radial-gradient(circle at 42% 60%, rgba(255, 110, 25, 0.88) 0 0.95px, transparent 1.8px),
+  radial-gradient(circle at 90% 72%, rgba(255, 180, 70, 0.91) 0 1.08px, transparent 1.9px),
+  radial-gradient(circle at 32% 84%, rgba(255, 240, 180, 0.95) 0 1.15px, transparent 2px),
+  radial-gradient(circle at 58% 93%, rgba(255, 150, 50, 0.9) 0 1px, transparent 1.85px);
+  background-size: 100% 240% !important;
+  background-repeat: repeat-y !important;
+  opacity: 0.92 !important;
+  filter: drop-shadow(0 0 3px rgba(255, 140, 30, 0.85)) !important;
+  mix-blend-mode: screen !important;
+  animation: legend-phoenix-sparks-rise-b 5.1s linear infinite, legend-phoenix-sparks-sway-b 2.9s ease-in-out infinite !important;
+}
+
+[class*="cos-frame-"].cos-frame-void {
+  border-color: #9b7bff !important;
+  background-image:
+  /* Inner themed background: swirling nebula vortex */
+  conic-gradient(from 45deg at 50% 50%,
+  rgba(155, 123, 255, 0.12) 0deg, rgba(34, 24, 88, 0.03) 45deg,
+  rgba(82, 130, 220, 0.1) 90deg, rgba(28, 20, 78, 0.03) 135deg,
+  rgba(180, 140, 255, 0.12) 180deg, rgba(30, 24, 86, 0.03) 225deg,
+  rgba(88, 130, 220, 0.1) 270deg, rgba(20, 14, 66, 0.03) 315deg,
+  rgba(155, 123, 255, 0.12) 360deg),
+  /* Spiral arm traces */
+  radial-gradient(ellipse at 35% 35%, rgba(140, 110, 255, 0.1) 0%, transparent 40%),
+  radial-gradient(ellipse at 65% 65%, rgba(100, 160, 255, 0.08) 0%, transparent 40%),
+  radial-gradient(ellipse at 30% 70%, rgba(180, 150, 255, 0.06) 0%, transparent 35%),
+  radial-gradient(ellipse at 70% 30%, rgba(90, 140, 255, 0.06) 0%, transparent 35%),
+  /* Central singularity */
+  radial-gradient(circle at 50% 50%, rgba(4, 3, 12, 0.66) 0%, rgba(18, 10, 44, 0.2) 20%, transparent 45%),
+  linear-gradient(145deg, rgba(10, 8, 30, 0.96), rgba(20, 10, 46, 0.93)),
+  linear-gradient(138deg, #c6b1ff, #9b7bff, #6f58de, #c6b1ff) !important;
+  background-size: 100% 100%, 100% 100%, 100% 100%, 100% 100%, 100% 100%, 100% 100%, 100% 100%, 220% 220% !important;
+  box-shadow:
+  0 0 24px rgba(155, 123, 255, 0.9),
+  0 0 42px rgba(111, 88, 222, 0.48),
+  inset 0 0 18px rgba(214, 190, 255, 0.28) !important;
+  animation: legend-frame-void 4.8s ease-in-out infinite, legend-frame-rotate 14s linear infinite, legend-void-warp 10s linear infinite !important;
+}
+
+[class*="cos-frame-"].cos-frame-void::before {
+  background:
+  /* Orbiting star particles */
+  radial-gradient(circle at 50% 6%, rgba(229, 217, 255, 0.98) 0 1.6px, transparent 2.5px),
+  radial-gradient(circle at 94% 50%, rgba(194, 168, 255, 0.96) 0 1.5px, transparent 2.4px),
+  radial-gradient(circle at 50% 94%, rgba(154, 128, 255, 0.94) 0 1.4px, transparent 2.3px),
+  radial-gradient(circle at 6% 50%, rgba(239, 231, 255, 0.94) 0 1.4px, transparent 2.3px),
+  /* Extra orbiting particles */
+  radial-gradient(circle at 76% 18%, rgba(120, 180, 255, 0.9) 0 1.1px, transparent 2px),
+  radial-gradient(circle at 18% 76%, rgba(200, 170, 255, 0.88) 0 1px, transparent 1.9px);
+  background-repeat: no-repeat;
+  animation: legend-particle-orbit 10.8s linear infinite, legend-void-orbit-pulse 3s ease-in-out infinite !important;
+}
+
+[class*="cos-frame-"].cos-frame-void::after {
+  background:
+  /* Distant star field */
+  radial-gradient(circle at 20% 24%, rgba(255, 255, 255, 0.92) 0 1.1px, transparent 2px),
+  radial-gradient(circle at 36% 76%, rgba(219, 199, 255, 0.88) 0 1px, transparent 1.9px),
+  radial-gradient(circle at 58% 42%, rgba(183, 157, 255, 0.86) 0 1px, transparent 1.9px),
+  radial-gradient(circle at 74% 70%, rgba(155, 123, 255, 0.84) 0 0.95px, transparent 1.8px),
+  radial-gradient(circle at 84% 28%, rgba(227, 212, 255, 0.86) 0 0.95px, transparent 1.8px),
+  radial-gradient(circle at 46% 14%, rgba(100, 160, 255, 0.82) 0 0.85px, transparent 1.7px),
+  radial-gradient(circle at 14% 52%, rgba(200, 180, 255, 0.8) 0 0.8px, transparent 1.65px),
+  /* Subtle nebula wash */
+  radial-gradient(ellipse at 50% 50%, rgba(140, 110, 255, 0.08) 0%, transparent 50%);
+  opacity: 0.86 !important;
+  animation: legend-particle-twinkle 1.8s ease-in-out infinite, legend-void-star-drift 12s ease-in-out infinite !important;
+}
+
+[class*="cos-frame-"].cos-frame-cosmic {
+  border-color: #7c3aed !important;
+  background-image:
+  linear-gradient(145deg, rgba(30, 20, 66, 0.93), rgba(22, 34, 84, 0.89)),
+  linear-gradient(138deg, #8b5cf6, #3b82f6, #6366f1, #8b5cf6) !important;
+  background-size: 100% 100%, 220% 220% !important;
+  box-shadow:
+  0 0 22px rgba(139, 92, 246, 0.86),
+  0 0 38px rgba(59, 130, 246, 0.42),
+  inset 0 0 16px rgba(139, 92, 246, 0.24) !important;
+  animation: legend-frame-cosmic 6s linear infinite, legend-frame-pulse 2s ease-in-out infinite !important;
+}
+
+[class*="cos-frame-"].cos-frame-cosmic::before {
+  background:
+  radial-gradient(circle at 50% 6%, rgba(196, 181, 253, 0.96) 0 1.45px, transparent 2.35px),
+  radial-gradient(circle at 94% 50%, rgba(147, 197, 253, 0.94) 0 1.35px, transparent 2.25px),
+  radial-gradient(circle at 50% 94%, rgba(129, 140, 248, 0.92) 0 1.3px, transparent 2.2px),
+  radial-gradient(circle at 6% 50%, rgba(224, 231, 255, 0.92) 0 1.25px, transparent 2.15px);
+  background-repeat: no-repeat;
+  animation: legend-particle-orbit 9.8s linear infinite !important;
+}
+
+[class*="cos-frame-"].cos-frame-cosmic::after {
+  background:
+  radial-gradient(circle at 20% 24%, rgba(255, 255, 255, 0.9) 0 1px, transparent 2px),
+  radial-gradient(circle at 36% 76%, rgba(196, 181, 253, 0.88) 0 0.95px, transparent 1.9px),
+  radial-gradient(circle at 58% 42%, rgba(147, 197, 253, 0.88) 0 0.95px, transparent 1.9px),
+  radial-gradient(circle at 74% 70%, rgba(129, 140, 248, 0.86) 0 0.9px, transparent 1.8px),
+  radial-gradient(circle at 84% 28%, rgba(224, 231, 255, 0.88) 0 0.9px, transparent 1.8px);
+  opacity: 0.86 !important;
+  animation: legend-particle-twinkle 1.7s ease-in-out infinite !important;
+}
+
+[class*="cos-frame-"].cos-frame-divine {
+  border-color: #facc15 !important;
+  background-image:
+  linear-gradient(145deg, rgba(66, 48, 10, 0.93), rgba(98, 68, 12, 0.89)),
+  linear-gradient(138deg, #fde68a, #facc15, #f59e0b, #fde68a) !important;
+  background-size: 100% 100%, 230% 230% !important;
+  box-shadow:
+  0 0 20px rgba(234, 179, 8, 0.86),
+  0 0 34px rgba(251, 191, 36, 0.46),
+  inset 0 0 16px rgba(253, 224, 71, 0.24) !important;
+  animation: legend-frame-divine 3s ease-in-out infinite, legend-frame-rotate 20s linear infinite !important;
+}
+
+[class*="cos-frame-"].cos-frame-divine::before {
+  background:
+  radial-gradient(circle at 16% 78%, rgba(254, 243, 199, 0.96) 0 1.6px, transparent 2.5px),
+  radial-gradient(circle at 34% 24%, rgba(254, 240, 138, 0.94) 0 1.5px, transparent 2.4px),
+  radial-gradient(circle at 58% 66%, rgba(250, 204, 21, 0.94) 0 1.5px, transparent 2.4px),
+  radial-gradient(circle at 78% 32%, rgba(253, 224, 71, 0.9) 0 1.4px, transparent 2.3px),
+  radial-gradient(circle at 88% 74%, rgba(255, 255, 255, 0.92) 0 1.2px, transparent 2.1px);
+  animation: legend-particle-firefly 6.1s ease-in-out infinite, legend-particle-glow-pulse 1.5s ease-in-out infinite !important;
+}
+
+[class*="cos-frame-"].cos-frame-divine::after {
+  background:
+  radial-gradient(circle at 22% 36%, rgba(255, 255, 255, 0.92) 0 1px, transparent 1.9px),
+  radial-gradient(circle at 42% 82%, rgba(253, 224, 71, 0.9) 0 1px, transparent 1.9px),
+  radial-gradient(circle at 74% 18%, rgba(254, 240, 138, 0.9) 0 0.95px, transparent 1.8px),
+  radial-gradient(circle at 82% 58%, rgba(250, 204, 21, 0.88) 0 0.95px, transparent 1.8px),
+  radial-gradient(circle at 50% 50%, rgba(253, 224, 71, 0.18), transparent 62%);
+  opacity: 0.9 !important;
+  animation: legend-particle-firefly 7.2s ease-in-out -1.3s infinite, legend-particle-twinkle 1.9s ease-in-out infinite !important;
+}
+
+[class*="cos-frame-"].cos-frame-arcane {
+  border-color: #a78bfa !important;
+  background-image:
+  /* Inner themed background: arcane rune circle */
+  conic-gradient(from 30deg at 50% 50%,
+  rgba(168, 85, 247, 0.14) 0deg, rgba(99, 102, 241, 0.06) 36deg,
+  rgba(6, 182, 212, 0.12) 72deg, rgba(139, 92, 246, 0.04) 108deg,
+  rgba(168, 85, 247, 0.14) 144deg, rgba(99, 102, 241, 0.06) 180deg,
+  rgba(6, 182, 212, 0.12) 216deg, rgba(139, 92, 246, 0.04) 252deg,
+  rgba(168, 85, 247, 0.14) 288deg, rgba(99, 102, 241, 0.06) 324deg,
+  rgba(168, 85, 247, 0.14) 360deg),
+  /* Mystic energy veins */
+  linear-gradient(40deg, transparent 40%, rgba(6, 182, 212, 0.1) 44%, rgba(168, 85, 247, 0.15) 48%, transparent 52%),
+  linear-gradient(160deg, transparent 35%, rgba(139, 92, 246, 0.1) 39%, rgba(99, 102, 241, 0.14) 43%, transparent 47%),
+  linear-gradient(-60deg, transparent 48%, rgba(6, 182, 212, 0.08) 52%, rgba(168, 85, 247, 0.12) 56%, transparent 60%),
+  /* Core glow */
+  radial-gradient(circle at 50% 50%, rgba(139, 92, 246, 0.18) 0%, rgba(99, 102, 241, 0.08) 25%, transparent 50%),
+  linear-gradient(145deg, rgba(18, 12, 52, 0.93), rgba(36, 20, 76, 0.89)),
+  linear-gradient(138deg, #c4b5fd, #a78bfa, #818cf8, #c4b5fd) !important;
+  background-size: 100% 100%, 100% 100%, 100% 100%, 100% 100%, 100% 100%, 100% 100%, 230% 230% !important;
+  box-shadow:
+  0 0 22px rgba(168, 85, 247, 0.88),
+  0 0 38px rgba(99, 102, 241, 0.46),
+  inset 0 0 16px rgba(196, 181, 253, 0.26) !important;
+  animation: legend-frame-arcane 4s ease-in-out infinite, legend-frame-rotate 16s linear infinite, legend-arcane-pulse 5s ease-in-out infinite !important;
+}
+
+[class*="cos-frame-"].cos-frame-arcane::before {
+  background:
+  /* Arcane spark particles */
+  radial-gradient(circle at 18% 26%, rgba(196, 181, 253, 0.98) 0 1.7px, transparent 2.7px),
+  radial-gradient(circle at 42% 72%, rgba(6, 182, 212, 0.96) 0 1.5px, transparent 2.4px),
+  radial-gradient(circle at 68% 22%, rgba(168, 85, 247, 0.94) 0 1.4px, transparent 2.3px),
+  radial-gradient(circle at 82% 68%, rgba(129, 140, 248, 0.94) 0 1.3px, transparent 2.2px),
+  radial-gradient(circle at 30% 50%, rgba(6, 182, 212, 0.92) 0 1.2px, transparent 2px),
+  radial-gradient(circle at 74% 46%, rgba(196, 181, 253, 0.9) 0 1.1px, transparent 1.9px),
+  radial-gradient(circle at 50% 86%, rgba(168, 85, 247, 0.88) 0 1px, transparent 1.8px);
+  animation: legend-particle-firefly 6.2s ease-in-out infinite, legend-arcane-rune-spin 3.6s ease-in-out infinite !important;
+}
+
+[class*="cos-frame-"].cos-frame-arcane::after {
+  background:
+  /* Swirling arcane energy field */
+  conic-gradient(from 120deg at 50% 50%,
+  rgba(168, 85, 247, 0.12) 0deg, transparent 60deg,
+  rgba(6, 182, 212, 0.12) 120deg, transparent 180deg,
+  rgba(99, 102, 241, 0.12) 240deg, transparent 300deg,
+  rgba(168, 85, 247, 0.12) 360deg),
+  /* Spell mote particles */
+  radial-gradient(circle at 24% 38%, rgba(255, 255, 255, 0.92) 0 1px, transparent 1.9px),
+  radial-gradient(circle at 56% 18%, rgba(196, 181, 253, 0.9) 0 0.95px, transparent 1.8px),
+  radial-gradient(circle at 78% 54%, rgba(6, 182, 212, 0.88) 0 0.9px, transparent 1.75px),
+  radial-gradient(circle at 38% 82%, rgba(129, 140, 248, 0.88) 0 0.9px, transparent 1.75px),
+  radial-gradient(circle at 62% 62%, rgba(168, 85, 247, 0.86) 0 0.85px, transparent 1.7px);
+  opacity: 0.88 !important;
+  animation: legend-arcane-vortex-spin 10s linear infinite, legend-particle-twinkle 2s ease-in-out infinite !important;
+}
+
+[class*="cos-frame-"].cos-frame-eclipse {
+  border-color: #fbbf24 !important;
+  background-image:
+  /* Inner themed background: solar corona — bright edge, dark center */
+  radial-gradient(circle at 50% 50%,
+  rgba(2, 2, 2, 0.82) 0%, rgba(12, 9, 6, 0.62) 20%,
+  rgba(98, 64, 14, 0.14) 40%, rgba(245, 158, 11, 0.1) 55%,
+  rgba(251, 191, 36, 0.18) 70%, transparent 85%),
+  /* Light ray streaks */
+  linear-gradient(0deg, transparent 42%, rgba(251, 191, 36, 0.1) 46%, rgba(253, 224, 71, 0.16) 50%, rgba(251, 191, 36, 0.1) 54%, transparent 58%),
+  linear-gradient(90deg, transparent 42%, rgba(245, 158, 11, 0.08) 46%, rgba(252, 211, 77, 0.14) 50%, rgba(245, 158, 11, 0.08) 54%, transparent 58%),
+  linear-gradient(45deg, transparent 44%, rgba(251, 191, 36, 0.06) 48%, rgba(253, 224, 71, 0.1) 50%, rgba(251, 191, 36, 0.06) 52%, transparent 56%),
+  linear-gradient(135deg, transparent 44%, rgba(245, 158, 11, 0.06) 48%, rgba(252, 211, 77, 0.1) 50%, rgba(245, 158, 11, 0.06) 52%, transparent 56%),
+  linear-gradient(145deg, rgba(8, 7, 5, 0.96), rgba(18, 14, 8, 0.92)),
+  linear-gradient(138deg, #fde68a, #fbbf24, #f59e0b, #fde68a) !important;
+  background-size: 100% 100%, 100% 100%, 100% 100%, 100% 100%, 100% 100%, 100% 100%, 230% 230% !important;
+  box-shadow:
+  0 0 22px rgba(251, 191, 36, 0.9),
+  0 0 40px rgba(245, 158, 11, 0.5),
+  inset 0 0 16px rgba(253, 224, 71, 0.22) !important;
+  animation: legend-frame-eclipse 4.4s ease-in-out infinite, legend-frame-rotate 20s linear infinite, legend-eclipse-corona-pulse 3s ease-in-out infinite !important;
+}
+
+[class*="cos-frame-"].cos-frame-eclipse::before {
+  background:
+  /* Corona flare particles */
+  radial-gradient(circle at 14% 50%, rgba(253, 224, 71, 0.98) 0 1.8px, transparent 2.8px),
+  radial-gradient(circle at 50% 8%, rgba(251, 191, 36, 0.96) 0 1.6px, transparent 2.5px),
+  radial-gradient(circle at 86% 50%, rgba(245, 158, 11, 0.94) 0 1.5px, transparent 2.4px),
+  radial-gradient(circle at 50% 92%, rgba(252, 211, 77, 0.94) 0 1.5px, transparent 2.4px),
+  radial-gradient(circle at 24% 22%, rgba(255, 255, 255, 0.92) 0 1.3px, transparent 2.2px),
+  radial-gradient(circle at 76% 78%, rgba(253, 224, 71, 0.9) 0 1.2px, transparent 2px),
+  radial-gradient(circle at 78% 24%, rgba(251, 191, 36, 0.88) 0 1.1px, transparent 1.9px);
+  filter: drop-shadow(0 0 3px rgba(251, 191, 36, 0.7)) !important;
+  animation: legend-particle-firefly 5.8s ease-in-out infinite, legend-particle-glow-pulse 2.2s ease-in-out infinite !important;
+}
+
+[class*="cos-frame-"].cos-frame-eclipse::after {
+  background:
+  /* Rotating light halo */
+  conic-gradient(from 0deg at 50% 50%,
+  rgba(253, 224, 71, 0.14) 0deg, transparent 30deg,
+  rgba(251, 191, 36, 0.14) 90deg, transparent 120deg,
+  rgba(245, 158, 11, 0.14) 180deg, transparent 210deg,
+  rgba(252, 211, 77, 0.14) 270deg, transparent 300deg,
+  rgba(253, 224, 71, 0.14) 360deg),
+  /* Distant sparkles */
+  radial-gradient(circle at 22% 64%, rgba(255, 255, 255, 0.9) 0 0.95px, transparent 1.8px),
+  radial-gradient(circle at 48% 28%, rgba(253, 224, 71, 0.88) 0 0.9px, transparent 1.75px),
+  radial-gradient(circle at 72% 42%, rgba(251, 191, 36, 0.86) 0 0.85px, transparent 1.7px),
+  radial-gradient(circle at 36% 78%, rgba(252, 211, 77, 0.84) 0 0.85px, transparent 1.7px),
+  radial-gradient(circle at 82% 72%, rgba(245, 158, 11, 0.82) 0 0.8px, transparent 1.65px);
+  opacity: 0.88 !important;
+  animation: legend-eclipse-ray-rotate 12s linear infinite, legend-particle-twinkle 1.8s ease-in-out infinite !important;
+}
+
+[class*="cos-frame-"].cos-frame-sakura {
+  border-color: #f472b6 !important;
+  background-image:
+  /* Inner themed background: scattered petal shapes */
+  radial-gradient(ellipse 12% 8% at 24% 30%, rgba(244, 114, 182, 0.14) 0%, transparent 100%),
+  radial-gradient(ellipse 10% 14% at 68% 26%, rgba(249, 168, 212, 0.12) 0%, transparent 100%),
+  radial-gradient(ellipse 14% 10% at 42% 72%, rgba(253, 164, 175, 0.13) 0%, transparent 100%),
+  radial-gradient(ellipse 8% 12% at 78% 66%, rgba(244, 114, 182, 0.11) 0%, transparent 100%),
+  radial-gradient(ellipse 12% 8% at 16% 58%, rgba(249, 168, 212, 0.1) 0%, transparent 100%),
+  /* Soft floral watercolor wash */
+  radial-gradient(circle at 50% 50%, rgba(244, 114, 182, 0.08) 0%, rgba(249, 168, 212, 0.04) 30%, transparent 55%),
+  linear-gradient(145deg, rgba(52, 18, 38, 0.93), rgba(66, 24, 50, 0.89)),
+  linear-gradient(138deg, #fecdd3, #f9a8d4, #f472b6, #fecdd3) !important;
+  background-size: 100% 100%, 100% 100%, 100% 100%, 100% 100%, 100% 100%, 100% 100%, 100% 100%, 230% 230% !important;
+  box-shadow:
+  0 0 20px rgba(244, 114, 182, 0.86),
+  0 0 36px rgba(249, 168, 212, 0.44),
+  inset 0 0 16px rgba(253, 164, 175, 0.24) !important;
+  animation: legend-frame-sakura 3.6s ease-in-out infinite, legend-frame-rotate 22s linear infinite !important;
+}
+
+[class*="cos-frame-"].cos-frame-sakura::before {
+  background:
+  /* Falling petal particles — layer A (180% tile, top-to-bottom) */
+  radial-gradient(ellipse 3.5px 2.5px at 12% 14%, rgba(255, 183, 197, 0.95) 0%, transparent 100%),
+  radial-gradient(ellipse 3px 2px at 34% 42%, rgba(249, 168, 212, 0.92) 0%, transparent 100%),
+  radial-gradient(ellipse 2.5px 3.5px at 56% 8%, rgba(244, 114, 182, 0.9) 0%, transparent 100%),
+  radial-gradient(ellipse 3px 2.5px at 72% 56%, rgba(253, 164, 175, 0.88) 0%, transparent 100%),
+  radial-gradient(ellipse 2.5px 3px at 88% 28%, rgba(249, 168, 212, 0.9) 0%, transparent 100%),
+  radial-gradient(ellipse 3.5px 2px at 24% 72%, rgba(255, 183, 197, 0.86) 0%, transparent 100%),
+  radial-gradient(ellipse 2.5px 3px at 48% 88%, rgba(244, 114, 182, 0.88) 0%, transparent 100%),
+  radial-gradient(ellipse 3px 2px at 78% 102%, rgba(253, 164, 175, 0.86) 0%, transparent 100%),
+  radial-gradient(ellipse 2.5px 2.5px at 62% 136%, rgba(249, 168, 212, 0.84) 0%, transparent 100%);
+  background-size: 100% 180%;
+  background-repeat: repeat-y;
+  filter: drop-shadow(0 0 2px rgba(244, 114, 182, 0.6)) !important;
+  mix-blend-mode: screen !important;
+  animation: legend-sakura-petals-fall-a 4.2s linear infinite, legend-sakura-sway-a 3.8s ease-in-out infinite !important;
+}
+
+[class*="cos-frame-"].cos-frame-sakura::after {
+  background:
+  /* Falling petal particles — layer B (240% tile, different positions) */
+  radial-gradient(ellipse 2.5px 3px at 8% 22%, rgba(253, 164, 175, 0.92) 0%, transparent 100%),
+  radial-gradient(ellipse 3px 2px at 28% 68%, rgba(244, 114, 182, 0.9) 0%, transparent 100%),
+  radial-gradient(ellipse 2.5px 3.5px at 46% 34%, rgba(255, 183, 197, 0.88) 0%, transparent 100%),
+  radial-gradient(ellipse 3.5px 2.5px at 66% 94%, rgba(249, 168, 212, 0.86) 0%, transparent 100%),
+  radial-gradient(ellipse 2px 3px at 82% 52%, rgba(244, 114, 182, 0.88) 0%, transparent 100%),
+  radial-gradient(ellipse 3px 2.5px at 18% 112%, rgba(253, 164, 175, 0.84) 0%, transparent 100%),
+  radial-gradient(ellipse 2.5px 2px at 42% 148%, rgba(249, 168, 212, 0.82) 0%, transparent 100%),
+  radial-gradient(ellipse 3px 3px at 74% 176%, rgba(255, 183, 197, 0.84) 0%, transparent 100%),
+  radial-gradient(ellipse 2.5px 2.5px at 58% 208%, rgba(244, 114, 182, 0.8) 0%, transparent 100%);
+  background-size: 100% 240%;
+  background-repeat: repeat-y;
+  filter: drop-shadow(0 0 2px rgba(249, 168, 212, 0.5)) !important;
+  mix-blend-mode: screen !important;
+  opacity: 0.9 !important;
+  animation: legend-sakura-petals-fall-b 6.3s linear infinite, legend-sakura-sway-b 4.4s ease-in-out infinite !important;
+}
+
+[class*="cos-frame-"].cos-frame-aurora {
+  border-color: #7ef6d7 !important;
+  background-image:
+  conic-gradient(from 24deg at 50% 50%,
+  rgba(126, 246, 215, 0.14) 0deg, rgba(79, 209, 255, 0.08) 56deg,
+  rgba(143, 123, 255, 0.12) 112deg, rgba(99, 102, 241, 0.06) 168deg,
+  rgba(126, 246, 215, 0.14) 224deg, rgba(79, 209, 255, 0.08) 280deg,
+  rgba(143, 123, 255, 0.12) 336deg, rgba(126, 246, 215, 0.14) 360deg),
+  linear-gradient(122deg, transparent 30%, rgba(142, 255, 223, 0.14) 42%, transparent 54%),
+  linear-gradient(148deg, transparent 34%, rgba(121, 186, 255, 0.12) 46%, transparent 58%),
+  linear-gradient(168deg, transparent 38%, rgba(172, 148, 255, 0.12) 50%, transparent 62%),
+  radial-gradient(circle at 50% 50%, rgba(97, 229, 255, 0.18) 0%, transparent 56%),
+  linear-gradient(145deg, rgba(10, 30, 44, 0.94), rgba(18, 48, 62, 0.9)),
+  linear-gradient(138deg, #b5ffe9, #7ef6d7, #4fd1ff, #8f7bff, #b5ffe9) !important;
+  background-size: 100% 100%, 100% 100%, 100% 100%, 100% 100%, 100% 100%, 100% 100%, 240% 240% !important;
+  box-shadow:
+  0 0 22px rgba(126, 246, 215, 0.86),
+  0 0 38px rgba(79, 209, 255, 0.48),
+  inset 0 0 18px rgba(143, 123, 255, 0.22) !important;
+  animation: legend-frame-cosmic 5.8s linear infinite, legend-frame-rotate 24s linear infinite, legend-frame-pulse 2.2s ease-in-out infinite !important;
+}
+
+[class*="cos-frame-"].cos-frame-aurora::before {
+  background:
+  radial-gradient(circle at 14% 72%, rgba(229, 255, 246, 0.96) 0 1.6px, transparent 2.5px),
+  radial-gradient(circle at 32% 28%, rgba(163, 247, 255, 0.94) 0 1.5px, transparent 2.4px),
+  radial-gradient(circle at 52% 64%, rgba(157, 198, 255, 0.92) 0 1.35px, transparent 2.2px),
+  radial-gradient(circle at 72% 24%, rgba(194, 166, 255, 0.9) 0 1.25px, transparent 2.1px),
+  radial-gradient(circle at 86% 68%, rgba(198, 255, 228, 0.9) 0 1.15px, transparent 2px),
+  radial-gradient(circle at 22% 48%, rgba(126, 246, 215, 0.88) 0 1.1px, transparent 1.9px),
+  radial-gradient(circle at 64% 84%, rgba(79, 209, 255, 0.86) 0 1px, transparent 1.8px);
+  animation: legend-particle-firefly 6.6s ease-in-out infinite, cosmetic-wave 6.8s ease-in-out infinite !important;
+}
+
+[class*="cos-frame-"].cos-frame-aurora::after {
+  background:
+  linear-gradient(116deg, transparent 24%, rgba(210, 255, 237, 0.2) 50%, transparent 76%),
+  conic-gradient(from 0deg at 50% 50%,
+  rgba(126, 246, 215, 0.12) 0deg, transparent 66deg,
+  rgba(79, 209, 255, 0.12) 132deg, transparent 198deg,
+  rgba(143, 123, 255, 0.12) 264deg, transparent 330deg,
+  rgba(126, 246, 215, 0.12) 360deg),
+  radial-gradient(circle at 26% 38%, rgba(255, 255, 255, 0.9) 0 1px, transparent 1.9px),
+  radial-gradient(circle at 74% 62%, rgba(199, 244, 255, 0.88) 0 0.95px, transparent 1.8px),
+  radial-gradient(circle at 44% 80%, rgba(170, 185, 255, 0.86) 0 0.9px, transparent 1.75px);
+  opacity: 0.9 !important;
+  animation: legend-frame-rotate 16s linear reverse infinite, legend-particle-twinkle 2.1s ease-in-out infinite !important;
+}
+
+[class*="cos-frame-"].cos-frame-abissal {
+  border-color: #2c5ff2 !important;
+  background-image:
+  radial-gradient(circle at 50% 50%, rgba(6, 10, 24, 0.78) 0%, rgba(9, 18, 44, 0.46) 20%, transparent 52%),
+  conic-gradient(from 45deg at 50% 50%,
+  rgba(37, 99, 235, 0.14) 0deg, rgba(14, 30, 80, 0.06) 60deg,
+  rgba(14, 165, 233, 0.1) 120deg, rgba(8, 20, 56, 0.06) 180deg,
+  rgba(56, 99, 255, 0.14) 240deg, rgba(11, 34, 90, 0.06) 300deg,
+  rgba(37, 99, 235, 0.14) 360deg),
+  linear-gradient(145deg, rgba(6, 10, 24, 0.96), rgba(10, 20, 46, 0.93)),
+  linear-gradient(138deg, #60a5fa, #2563eb, #1d4ed8, #0ea5e9, #60a5fa) !important;
+  background-size: 100% 100%, 100% 100%, 100% 100%, 230% 230% !important;
+  box-shadow:
+  0 0 24px rgba(37, 99, 235, 0.9),
+  0 0 42px rgba(14, 165, 233, 0.42),
+  inset 0 0 18px rgba(96, 165, 250, 0.18) !important;
+  animation: legend-frame-void 5s ease-in-out infinite, legend-frame-rotate 20s linear infinite, legend-void-warp 9s linear infinite !important;
+}
+
+[class*="cos-frame-"].cos-frame-abissal::before {
+  background:
+  radial-gradient(circle at 50% 6%, rgba(213, 232, 255, 0.96) 0 1.5px, transparent 2.4px),
+  radial-gradient(circle at 92% 50%, rgba(96, 165, 250, 0.92) 0 1.4px, transparent 2.3px),
+  radial-gradient(circle at 50% 94%, rgba(14, 165, 233, 0.9) 0 1.35px, transparent 2.25px),
+  radial-gradient(circle at 8% 50%, rgba(125, 211, 252, 0.9) 0 1.25px, transparent 2.1px),
+  radial-gradient(circle at 26% 76%, rgba(156, 194, 255, 0.86) 0 1.05px, transparent 1.9px),
+  radial-gradient(circle at 72% 24%, rgba(115, 167, 255, 0.86) 0 1.05px, transparent 1.9px);
+  background-repeat: no-repeat;
+  animation: legend-particle-orbit 11s linear infinite, cosmetic-particle-drift 4.8s linear infinite !important;
+}
+
+[class*="cos-frame-"].cos-frame-abissal::after {
+  background:
+  repeating-linear-gradient(166deg, rgba(191, 221, 255, 0.1) 0 1px, transparent 1px 9px),
+  radial-gradient(circle at 22% 22%, rgba(220, 238, 255, 0.82) 0 1px, transparent 1.9px),
+  radial-gradient(circle at 78% 76%, rgba(125, 211, 252, 0.8) 0 0.95px, transparent 1.8px),
+  radial-gradient(circle at 54% 48%, rgba(37, 99, 235, 0.14), transparent 58%);
+  opacity: 0.86 !important;
+  animation: legend-particle-twinkle 1.8s ease-in-out infinite, legend-frame-pulse 3.2s ease-in-out infinite !important;
+}
+
+[class*="cos-frame-"].cos-frame-sangue {
+  border-color: #ef4444 !important;
+  background-image:
+  radial-gradient(ellipse at 22% 34%, rgba(251, 113, 133, 0.14) 0%, transparent 44%),
+  radial-gradient(ellipse at 78% 68%, rgba(220, 38, 38, 0.14) 0%, transparent 46%),
+  linear-gradient(156deg, transparent 34%, rgba(239, 68, 68, 0.12) 42%, transparent 50%),
+  linear-gradient(128deg, transparent 40%, rgba(185, 28, 28, 0.12) 48%, transparent 56%),
+  radial-gradient(circle at 50% 50%, rgba(127, 29, 29, 0.16) 0%, transparent 56%),
+  linear-gradient(145deg, rgba(42, 8, 14, 0.96), rgba(64, 10, 20, 0.92)),
+  linear-gradient(138deg, #fb7185, #ef4444, #dc2626, #b91c1c, #fb7185) !important;
+  background-size: 100% 100%, 100% 100%, 100% 100%, 100% 100%, 100% 100%, 100% 100%, 230% 230% !important;
+  box-shadow:
+  0 0 22px rgba(239, 68, 68, 0.88),
+  0 0 40px rgba(220, 38, 38, 0.5),
+  inset 0 0 18px rgba(251, 113, 133, 0.2) !important;
+  animation: legend-frame-flame 2.4s ease-in-out infinite, legend-frame-pulse 1.8s ease-in-out infinite !important;
+}
+
+[class*="cos-frame-"].cos-frame-sangue::before {
+  background:
+  radial-gradient(circle at 12% 112%, rgba(255, 224, 210, 0.96) 0 1.6px, transparent 2.5px),
+  radial-gradient(circle at 30% 109%, rgba(251, 146, 60, 0.94) 0 1.45px, transparent 2.35px),
+  radial-gradient(circle at 50% 113%, rgba(239, 68, 68, 0.93) 0 1.35px, transparent 2.25px),
+  radial-gradient(circle at 70% 110%, rgba(220, 38, 38, 0.92) 0 1.25px, transparent 2.15px),
+  radial-gradient(circle at 88% 114%, rgba(185, 28, 28, 0.9) 0 1.15px, transparent 2.05px);
+  background-size: 100% 185% !important;
+  background-repeat: repeat-y !important;
+  filter: drop-shadow(0 0 5px rgba(239, 68, 68, 0.86)) !important;
+  animation: legend-particle-fire-sparks 2.2s ease-out infinite, legend-particle-firefly 4.8s ease-in-out infinite !important;
+}
+
+[class*="cos-frame-"].cos-frame-sangue::after {
+  background:
+  radial-gradient(circle at 20% 30%, rgba(255, 245, 235, 0.88) 0 0.95px, transparent 1.8px),
+  radial-gradient(circle at 48% 78%, rgba(251, 113, 133, 0.86) 0 0.9px, transparent 1.75px),
+  radial-gradient(circle at 72% 20%, rgba(239, 68, 68, 0.84) 0 0.85px, transparent 1.7px),
+  radial-gradient(circle at 82% 58%, rgba(220, 38, 38, 0.82) 0 0.8px, transparent 1.65px),
+  radial-gradient(circle at 50% 50%, rgba(127, 29, 29, 0.16), transparent 64%);
+  opacity: 0.9 !important;
+  animation: legend-particle-twinkle 1.7s ease-in-out infinite, cosmetic-breath 1.6s ease-in-out infinite !important;
+}
+
+.cq-avatar.cos-frame-fire::before,
+[class*="cos-frame-"].cos-frame-fire::before,
+.cq-avatar.cos-frame-fire::after,
+[class*="cos-frame-"].cos-frame-fire::after {
+  content: '' !important;
+  display: block !important;
+  position: absolute;
+  inset: 2px;
+  border-radius: 50%;
+  pointer-events: none;
+  mix-blend-mode: screen;
+  will-change: background-position, opacity, transform;
+}
+
+[class*="cos-frame-"].cos-frame-fire::before {
+  z-index: 2 !important;
+  opacity: 1 !important;
+  background:
+  radial-gradient(circle at 12% 112%, rgba(255, 232, 190, 0.99) 0 1.8px, transparent 2.8px),
+  radial-gradient(circle at 30% 109%, rgba(255, 192, 118, 0.98) 0 1.65px, transparent 2.65px),
+  radial-gradient(circle at 50% 113%, rgba(255, 154, 82, 0.96) 0 1.55px, transparent 2.55px),
+  radial-gradient(circle at 70% 110%, rgba(255, 124, 58, 0.94) 0 1.45px, transparent 2.45px),
+  radial-gradient(circle at 88% 114%, rgba(255, 96, 38, 0.92) 0 1.35px, transparent 2.35px);
+  filter: drop-shadow(0 0 6px rgba(255, 168, 78, 0.9));
+  animation: legend-particle-fire-sparks 1.95s ease-out infinite !important;
+}
+
+[class*="cos-frame-"].cos-frame-fire::after {
+  z-index: 2 !important;
+  opacity: 0.96 !important;
+  background:
+  radial-gradient(circle at 18% 112%, rgba(255, 245, 220, 0.96) 0 1.2px, transparent 2px),
+  radial-gradient(circle at 40% 109%, rgba(255, 214, 150, 0.94) 0 1.12px, transparent 1.92px),
+  radial-gradient(circle at 60% 113%, rgba(255, 180, 112, 0.92) 0 1.06px, transparent 1.86px),
+  radial-gradient(circle at 80% 110%, rgba(255, 144, 82, 0.9) 0 1px, transparent 1.8px),
+  radial-gradient(circle at 94% 114%, rgba(255, 114, 58, 0.88) 0 0.95px, transparent 1.74px);
+  filter: drop-shadow(0 0 5px rgba(255, 148, 62, 0.84));
+  animation: legend-particle-fire-sparks 2.4s ease-out -0.9s infinite, legend-particle-glow-pulse 1.2s ease-in-out infinite !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [class*="cos-frame-"].cos-frame-diamond,
+[class*="cos-frame-"].cos-frame-phoenix,
+[class*="cos-frame-"].cos-frame-void,
+[class*="cos-frame-"].cos-frame-cosmic,
+[class*="cos-frame-"].cos-frame-divine,
+[class*="cos-frame-"].cos-frame-diamond::before,
+[class*="cos-frame-"].cos-frame-diamond::after,
+[class*="cos-frame-"].cos-frame-phoenix::before,
+[class*="cos-frame-"].cos-frame-phoenix::after,
+[class*="cos-frame-"].cos-frame-void::before,
+[class*="cos-frame-"].cos-frame-void::after,
+[class*="cos-frame-"].cos-frame-cosmic::before,
+[class*="cos-frame-"].cos-frame-cosmic::after,
+[class*="cos-frame-"].cos-frame-divine::before,
+[class*="cos-frame-"].cos-frame-divine::after,
+[class*="cos-frame-"].cos-frame-arcane,
+[class*="cos-frame-"].cos-frame-eclipse,
+[class*="cos-frame-"].cos-frame-sakura,
+[class*="cos-frame-"].cos-frame-aurora,
+[class*="cos-frame-"].cos-frame-abissal,
+[class*="cos-frame-"].cos-frame-sangue,
+[class*="cos-frame-"].cos-frame-arcane::before,
+[class*="cos-frame-"].cos-frame-arcane::after,
+[class*="cos-frame-"].cos-frame-eclipse::before,
+[class*="cos-frame-"].cos-frame-eclipse::after,
+[class*="cos-frame-"].cos-frame-sakura::before,
+[class*="cos-frame-"].cos-frame-sakura::after,
+[class*="cos-frame-"].cos-frame-aurora::before,
+[class*="cos-frame-"].cos-frame-aurora::after,
+[class*="cos-frame-"].cos-frame-abissal::before,
+[class*="cos-frame-"].cos-frame-abissal::after,
+[class*="cos-frame-"].cos-frame-sangue::before,
+[class*="cos-frame-"].cos-frame-sangue::after {
+    animation: none !important;
+  }
+
+  [class*="cos-frame-"].cos-frame-fire::before,
+[class*="cos-frame-"].cos-frame-fire::after {
+    animation: none !important;
+    transform: none !important;
+    opacity: 0.92 !important;
+  }
+
+  [class*="cos-frame-"].cos-frame-fire::before {
+    background-position: 14% 78%, 32% 68%, 52% 74%, 72% 62%, 90% 70% !important;
+  }
+
+  [class*="cos-frame-"].cos-frame-fire::after {
+    background-position: 20% 72%, 42% 62%, 62% 68%, 82% 58%, 94% 64% !important;
+  }
+}
+
+@keyframes cosmetic-shimmer {
+  0% {
+  transform: translateX(-135%) skewX(-18deg);
+  opacity: 0;
+  }
+  30% {
+  opacity: 0.35;
+  }
+  100% {
+  transform: translateX(145%) skewX(-18deg);
+  opacity: 0;
+  }
+}
+
+@keyframes cosmetic-hue-shift {
+  0% {
+  filter: hue-rotate(0deg);
+  }
+  100% {
+  filter: hue-rotate(360deg);
+  }
+}
+
+@keyframes cosmetic-breath {
+  0%,
+100% {
+  transform: scale(1);
+  opacity: 0.34;
+  }
+  50% {
+  transform: scale(1.08);
+  opacity: 0.62;
+  }
+}
+
+@keyframes cosmetic-stars {
+  0% {
+  background-position: 0% 0%, 0% 0%;
+  }
+  100% {
+  background-position: 140px -120px, -160px 140px;
+  }
+}
+
+@keyframes cosmetic-wave {
+  0%,
+100% {
+  background-position: 0% 50%;
+  }
+  50% {
+  background-position: 100% 50%;
+  }
+}
+
+@keyframes cosmetic-particle-drift {
+  0% {
+  transform: translateY(0) translateX(0);
+  opacity: 0.25;
+  }
+  50% {
+  transform: translateY(-8px) translateX(4px);
+  opacity: 0.62;
+  }
+  100% {
+  transform: translateY(-16px) translateX(-3px);
+  opacity: 0.2;
+  }
+}
+
+@keyframes cosmetic-reflect-sweep {
+  0% {
+  transform: translateX(-120%) skewX(-18deg);
+  opacity: 0;
+  }
+  22% {
+  opacity: 0.45;
+  }
+  100% {
+  transform: translateX(140%) skewX(-18deg);
+  opacity: 0;
+  }
+}
+
+@keyframes cosmetic-pulse-shadow {
+  0%,
+100% {
+  box-shadow: 0 0 0 rgba(255, 255, 255, 0), 0 0 16px rgba(108, 99, 255, 0.22);
+  }
+  50% {
+  box-shadow: 0 0 12px rgba(255, 255, 255, 0.2), 0 0 22px rgba(108, 99, 255, 0.36);
+  }
+}
+
+@keyframes legendary-prism-spin {
+  0% {
+  transform: rotate(0deg) scale(1);
+  opacity: 0.36;
+  }
+  50% {
+  transform: rotate(180deg) scale(1.06);
+  opacity: 0.62;
+  }
+  100% {
+  transform: rotate(360deg) scale(1);
+  opacity: 0.34;
+  }
+}
+
+@keyframes legendary-flare-flicker {
+  0%,
+100% {
+  opacity: 0.22;
+  filter: brightness(1);
+  }
+  14% {
+  opacity: 0.48;
+  filter: brightness(1.26);
+  }
+  28% {
+  opacity: 0.34;
+  filter: brightness(1.12);
+  }
+  46% {
+  opacity: 0.68;
+  filter: brightness(1.46);
+  }
+  62% {
+  opacity: 0.42;
+  filter: brightness(1.18);
+  }
+  82% {
+  opacity: 0.58;
+  filter: brightness(1.34);
+  }
+}
+
+@keyframes legendary-void-drift {
+  0% {
+  background-position: 0% 50%, 0% 0%;
+  }
+  50% {
+  background-position: 100% 50%, 40px -30px;
+  }
+  100% {
+  background-position: 0% 50%, -40px 30px;
+  }
+}
+
+@keyframes legendary-arc-flash {
+  0%,
+100% {
+  opacity: 0.1;
+  filter: brightness(1);
+  }
+  9% {
+  opacity: 0.44;
+  filter: brightness(1.32);
+  }
+  11% {
+  opacity: 0.16;
+  }
+  13% {
+  opacity: 0.66;
+  filter: brightness(1.62);
+  }
+  16% {
+  opacity: 0.14;
+  }
+  34% {
+  opacity: 0.22;
+  }
+  36% {
+  opacity: 0.54;
+  filter: brightness(1.42);
+  }
+  38% {
+  opacity: 0.12;
+  }
+  56% {
+  opacity: 0.28;
+  }
+  58% {
+  opacity: 0.48;
+  filter: brightness(1.3);
+  }
+  60% {
+  opacity: 0.14;
+  }
+  76% {
+  opacity: 0.24;
+  }
+  78% {
+  opacity: 0.6;
+  filter: brightness(1.56);
+  }
+  81% {
+  opacity: 0.12;
+  }
+}
+
+@keyframes legendary-nebula-orbit {
+  0% {
+  transform: rotate(0deg) scale(1);
+  opacity: 0.28;
+  }
+  50% {
+  transform: rotate(180deg) scale(1.08);
+  opacity: 0.5;
+  }
+  100% {
+  transform: rotate(360deg) scale(1);
+  opacity: 0.26;
+  }
+}
+
+@keyframes legendary-ember-rise {
+  0% {
+  background-position: 18% 92%, 78% 86%, 56% 95%;
+  opacity: 0.28;
+  }
+  50% {
+  background-position: 22% 52%, 72% 38%, 52% 54%;
+  opacity: 0.56;
+  }
+  100% {
+  background-position: 26% 6%, 66% -8%, 48% 4%;
+  opacity: 0.14;
+  }
+}
+
+@keyframes legendary-smoke-drift {
+  0% {
+  background-position: 0% 100%, 100% 92%;
+  opacity: 0.2;
+  }
+  50% {
+  background-position: 12% 56%, 86% 46%;
+  opacity: 0.34;
+  }
+  100% {
+  background-position: 24% 8%, 72% 2%;
+  opacity: 0.16;
+  }
+}
+
+@keyframes legendary-fluid-flow {
+  0% {
+  background-position: 0% 54%, 100% 46%, 0% 100%;
+  }
+  50% {
+  background-position: 100% 46%, 0% 54%, 48% 0%;
+  }
+  100% {
+  background-position: 0% 54%, 100% 46%, 100% 100%;
+  }
+}
+
+@keyframes legendary-rain-fall {
+  0% {
+  background-position: 0 -36px, 0 -72px;
+  opacity: 0.2;
+  }
+  100% {
+  background-position: 0 46px, 0 88px;
+  opacity: 0.36;
+  }
+}
+
+@keyframes legendary-reflect-glint {
+  0% {
+  transform: translateX(-120%) skewX(-24deg);
+  opacity: 0;
+  }
+  18% {
+  opacity: 0.62;
+  }
+  44% {
+  opacity: 0.08;
+  }
+  100% {
+  transform: translateX(150%) skewX(-24deg);
+  opacity: 0;
+  }
+}
+
+@keyframes legendary-electro-surge {
+  0%,
+100% {
+  opacity: 0.16;
+  transform: translateX(-7%) scale(1);
+  }
+  50% {
+  opacity: 0.46;
+  transform: translateX(7%) scale(1.05);
+  }
+}
+
+@keyframes legendary-spectrum-shift {
+  0% {
+  background-position: 0% 50%, 100% 50%, 0 0;
+  filter: saturate(1) hue-rotate(0deg);
+  }
+  50% {
+  background-position: 100% 50%, 0% 50%, 42px -28px;
+  filter: saturate(1.2) hue-rotate(6deg);
+  }
+  100% {
+  background-position: 0% 50%, 100% 50%, -42px 28px;
+  filter: saturate(1) hue-rotate(0deg);
+  }
+}
+
+@keyframes legendary-lens-glow {
+  0%,
+100% {
+  opacity: 0.34;
+  transform: scale(0.98);
+  }
+  50% {
+  opacity: 0.72;
+  transform: scale(1.04);
+  }
+}
+
+@keyframes legendary-kaleido-pan {
+  0% {
+  background-position: 50% 50%, 12% 18%, 88% 82%, 50% 50%, 50% 50%;
+  }
+  25% {
+  background-position: 64% 38%, 82% 16%, 14% 86%, 36% 64%, 50% 50%;
+  }
+  50% {
+  background-position: 50% 22%, 86% 84%, 16% 12%, 64% 36%, 50% 50%;
+  }
+  75% {
+  background-position: 34% 36%, 18% 86%, 84% 14%, 62% 68%, 50% 50%;
+  }
+  100% {
+  background-position: 50% 50%, 12% 18%, 88% 82%, 50% 50%, 50% 50%;
+  }
+}
+
+@keyframes legendary-kaleido-breathe {
+  0%,
+100% {
+  filter: saturate(1.12) contrast(1.08);
+  }
+  50% {
+  filter: saturate(1.24) contrast(1.14);
+  }
+}
+
+@keyframes legendary-kaleido-spin-a {
+  0% {
+  transform: rotate(0deg) scale(1);
+  }
+  50% {
+  transform: rotate(180deg) scale(1.06);
+  }
+  100% {
+  transform: rotate(360deg) scale(1);
+  }
+}
+
+@keyframes legendary-kaleido-spin-b {
+  0% {
+  transform: rotate(360deg) scale(1.04);
+  }
+  50% {
+  transform: rotate(180deg) scale(0.98);
+  }
+  100% {
+  transform: rotate(0deg) scale(1.04);
+  }
+}
+
+@keyframes legendary-diamond-drift {
+  0% {
+  background-position: 12% 88%, 84% 76%, 0% 50%;
+  }
+  50% {
+  background-position: 22% 42%, 74% 30%, 100% 50%;
+  }
+  100% {
+  background-position: 30% -8%, 66% -18%, 0% 50%;
+  }
+}
+
+@keyframes legendary-diamond-sweep {
+  0% {
+  background-position: -120% 50%, 42% 50%;
+  }
+  50% {
+  background-position: 50% 50%, 58% 50%;
+  }
+  100% {
+  background-position: 160% 50%, 42% 50%;
+  }
+}
+
+@keyframes legendary-phoenix-rise {
+  0% {
+  background-position: 18% 92%, 78% 88%, 0% 60%;
+  }
+  50% {
+  background-position: 26% 52%, 70% 42%, 60% 50%;
+  }
+  100% {
+  background-position: 34% 2%, 62% -8%, 100% 40%;
+  }
+}
+
+@keyframes legendary-phoenix-heat {
+  0% {
+  background-position: 50% 100%, -100% 50%;
+  }
+  50% {
+  background-position: 50% 72%, 50% 50%;
+  }
+  100% {
+  background-position: 50% 100%, 160% 50%;
+  }
+}
+
+@keyframes legendary-void-orbit {
+  0% {
+  background-position: 14% 24%, 84% 74%, 50% 50%;
+  }
+  50% {
+  background-position: 78% 22%, 22% 76%, 50% 50%;
+  }
+  100% {
+  background-position: 14% 24%, 84% 74%, 50% 50%;
+  }
+}
+
+@keyframes legendary-void-drift-soft {
+  0% {
+  background-position: 0% 50%, 0% 0%;
+  }
+  50% {
+  background-position: 100% 50%, 30px -24px;
+  }
+  100% {
+  background-position: 0% 50%, -30px 24px;
+  }
+}
+
+@keyframes legend-neon-sign-flicker {
+  /* 0-32%: pisca apaga/acende rapido */
+  0%,
+16%,
+32%,
+52%,
+62%,
+82% {
+  opacity: 0.045;
+  filter: blur(1.4px) saturate(0.9) brightness(0.52) contrast(0.9);
+  }
+  8%,
+24%,
+52.4%,
+82.4%,
+100% {
+  opacity: 0.56;
+  filter: blur(2.7px) saturate(1.98) brightness(1.48) contrast(1.22);
+  }
+  /* micro oscilacao para parecer outdoor real */
+  11%,
+27%,
+56%,
+86% {
+  opacity: 0.34;
+  filter: blur(2.1px) saturate(1.42) brightness(1.04) contrast(1.08);
+  }
+  /* 32-52% apagado por 1s,
+52-62% aceso por 0.5s,
+62-82% apagado por 1s */
+  40%,
+70% {
+  opacity: 0.028;
+  filter: blur(1.2px) saturate(0.84) brightness(0.42) contrast(0.86);
+  }
+}
+
+@keyframes legend-neon-sign-flicker-soft {
+  0%,
+16%,
+32%,
+52%,
+62%,
+82% {
+  opacity: 0.01;
+  filter: blur(4.8px) saturate(0.84) brightness(0.34) contrast(0.84);
+  }
+  8%,
+24%,
+52.4%,
+82.4%,
+100% {
+  opacity: 0.36;
+  filter: blur(6.8px) saturate(1.92) brightness(1.24) contrast(1.12);
+  }
+  11%,
+27%,
+56%,
+86% {
+  opacity: 0.22;
+  filter: blur(6.1px) saturate(1.36) brightness(0.92) contrast(1.02);
+  }
+  40%,
+70% {
+  opacity: 0.004;
+  filter: blur(4.4px) saturate(0.78) brightness(0.28) contrast(0.8);
+  }
+}
+
+@keyframes legend-neon-particle-outdoor {
+  0%,
+7%,
+16%,
+34%,
+52%,
+73%,
+100% {
+  opacity: 0.28;
+  filter: blur(0.26px) saturate(1.18) brightness(0.86) contrast(1.02);
+  }
+  3%,
+12%,
+26%,
+44%,
+63%,
+84% {
+  opacity: 0.5;
+  filter: blur(0.34px) saturate(1.4) brightness(1.16) contrast(1.1);
+  }
+  20%,
+56%,
+92% {
+  opacity: 0.18;
+  filter: blur(0.22px) saturate(1.04) brightness(0.72) contrast(0.98);
+  }
+}
+
+@keyframes legend-neon-particle-outdoor-soft {
+  0%,
+7%,
+16%,
+34%,
+52%,
+73%,
+100% {
+  opacity: 0.12;
+  filter: blur(1.02px) saturate(1.1) brightness(0.84) contrast(1.02);
+  }
+  3%,
+12%,
+26%,
+44%,
+63%,
+84% {
+  opacity: 0.3;
+  filter: blur(1.34px) saturate(1.34) brightness(1.12) contrast(1.1);
+  }
+  20%,
+56%,
+92% {
+  opacity: 0.08;
+  filter: blur(0.9px) saturate(0.96) brightness(0.7) contrast(0.98);
+  }
+}
+
+@keyframes legend-frame-diamond {
+  0%,
+100% {
+  box-shadow:
+  0 0 18px rgba(138, 223, 255, 0.72),
+  0 0 30px rgba(109, 200, 255, 0.34),
+  inset 0 0 14px rgba(220, 244, 255, 0.2);
+  border-color: #8adfff;
+  }
+  33% {
+  box-shadow:
+  0 0 24px rgba(180, 200, 255, 0.88),
+  0 0 38px rgba(140, 180, 255, 0.5),
+  inset 0 0 18px rgba(200, 220, 255, 0.26);
+  border-color: #a8c8ff;
+  }
+  66% {
+  box-shadow:
+  0 0 28px rgba(138, 223, 255, 0.96),
+  0 0 44px rgba(109, 200, 255, 0.6),
+  inset 0 0 20px rgba(232, 250, 255, 0.3);
+  border-color: #7aeeff;
+  }
+}
+
+@keyframes legend-frame-flame {
+  0%,
+100% {
+  box-shadow:
+  0 0 18px rgba(249, 115, 22, 0.74),
+  0 0 30px rgba(239, 68, 68, 0.36),
+  inset 0 0 14px rgba(251, 146, 60, 0.2);
+  background-position: 50% 50%, 0% 50%;
+  }
+  50% {
+  box-shadow:
+  0 0 26px rgba(249, 115, 22, 0.94),
+  0 0 42px rgba(239, 68, 68, 0.58),
+  inset 0 0 18px rgba(254, 215, 170, 0.26);
+  background-position: 50% 50%, 100% 50%;
+  }
+}
+
+@keyframes legend-frame-void {
+  0%,
+100% {
+  box-shadow:
+  0 0 18px rgba(155, 123, 255, 0.72),
+  0 0 30px rgba(111, 88, 222, 0.32),
+  inset 0 0 14px rgba(214, 190, 255, 0.2);
+  border-color: #9b7bff;
+  }
+  33% {
+  box-shadow:
+  0 0 24px rgba(100, 160, 255, 0.88),
+  0 0 40px rgba(80, 130, 255, 0.48),
+  inset 0 0 18px rgba(180, 200, 255, 0.26);
+  border-color: #7ba0ff;
+  }
+  66% {
+  box-shadow:
+  0 0 28px rgba(180, 140, 255, 0.96),
+  0 0 48px rgba(140, 100, 255, 0.56),
+  inset 0 0 22px rgba(230, 210, 255, 0.32);
+  border-color: #b490ff;
+  }
+}
+
+@keyframes legend-frame-cosmic {
+  0%,
+100% {
+  box-shadow:
+  0 0 18px rgba(139, 92, 246, 0.72),
+  0 0 30px rgba(59, 130, 246, 0.32),
+  inset 0 0 14px rgba(139, 92, 246, 0.2);
+  background-position: 50% 50%, 0% 50%;
+  }
+  50% {
+  box-shadow:
+  0 0 26px rgba(139, 92, 246, 0.94),
+  0 0 44px rgba(59, 130, 246, 0.54),
+  inset 0 0 20px rgba(165, 180, 252, 0.28);
+  background-position: 50% 50%, 100% 50%;
+  }
+}
+
+@keyframes legend-frame-divine {
+  0%,
+100% {
+  box-shadow:
+  0 0 18px rgba(234, 179, 8, 0.72),
+  0 0 30px rgba(251, 191, 36, 0.34),
+  inset 0 0 14px rgba(253, 224, 71, 0.2);
+  }
+  50% {
+  box-shadow:
+  0 0 28px rgba(234, 179, 8, 0.96),
+  0 0 46px rgba(251, 191, 36, 0.6),
+  inset 0 0 20px rgba(254, 240, 138, 0.3);
+  }
+}
+
+@keyframes legend-frame-rotate {
+  0% {
+  background-position: 50% 50%, 0% 50%;
+  }
+  100% {
+  background-position: 50% 50%, 200% 50%;
+  }
+}
+
+@keyframes legend-frame-pulse {
+  0%,
+100% {
+  border-color: #7c3aed;
+  }
+  50% {
+  border-color: #93c5fd;
+  }
+}
+
+@keyframes legend-particle-fire-sparks {
+  0% {
+  opacity: 0;
+  transform: translate3d(0, 1px, 0) scale(0.96);
+  background-position: 12% 114%, 30% 111%, 50% 115%, 70% 112%, 88% 116%;
+  }
+  25% {
+  opacity: 1;
+  transform: translate3d(0, -0.2px, 0) scale(1.04);
+  }
+  100% {
+  opacity: 0;
+  transform: translate3d(0, -2px, 0) scale(1.08);
+  background-position: 16% -12%, 36% -16%, 54% -10%, 76% -15%, 94% -11%;
+  }
+}
+
+@keyframes legend-particle-orbit {
+  0% {
+  transform: rotate(0deg);
+  }
+  100% {
+  transform: rotate(360deg);
+  }
+}
+
+@keyframes legend-particle-firefly {
+  0% {
+  transform: translate3d(0, 0, 0);
+  }
+  25% {
+  transform: translate3d(1.2px, -1.8px, 0);
+  }
+  50% {
+  transform: translate3d(-1px, -3.6px, 0);
+  }
+  75% {
+  transform: translate3d(1px, -2px, 0);
+  }
+  100% {
+  transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes legend-particle-twinkle {
+  0%,
+100% {
+  opacity: 0.34;
+  }
+  50% {
+  opacity: 1;
+  }
+}
+
+@keyframes legend-particle-glow-pulse {
+  0%,
+100% {
+  filter: brightness(0.9);
+  }
+  50% {
+  filter: brightness(1.35);
+  }
+}
+
+@keyframes legend-diamond-prismatic {
+  0%,
+100% {
+  filter: hue-rotate(0deg) brightness(1);
+  }
+  25% {
+  filter: hue-rotate(8deg) brightness(1.06);
+  }
+  50% {
+  filter: hue-rotate(-6deg) brightness(1.1);
+  }
+  75% {
+  filter: hue-rotate(4deg) brightness(1.04);
+  }
+}
+
+@keyframes legend-diamond-twinkle-burst {
+  0%,
+100% {
+  opacity: 0.7;
+  filter: brightness(0.95) drop-shadow(0 0 2px rgba(200, 240, 255, 0.6));
+  }
+  15% {
+  opacity: 1;
+  filter: brightness(1.5) drop-shadow(0 0 6px rgba(255, 255, 255, 0.95));
+  }
+  30% {
+  opacity: 0.5;
+  filter: brightness(0.85) drop-shadow(0 0 2px rgba(180, 220, 255, 0.5));
+  }
+  65% {
+  opacity: 0.95;
+  filter: brightness(1.35) drop-shadow(0 0 5px rgba(200, 180, 255, 0.9));
+  }
+  80% {
+  opacity: 0.6;
+  filter: brightness(0.9) drop-shadow(0 0 2px rgba(160, 200, 255, 0.55));
+  }
+}
+
+@keyframes legend-diamond-rainbow-spin {
+  0% {
+  transform: rotate(0deg);
+  }
+  100% {
+  transform: rotate(360deg);
+  }
+}
+
+@keyframes legend-phoenix-heat-pulse {
+  0%,
+100% {
+  filter: brightness(1) saturate(1);
+  }
+  30% {
+  filter: brightness(1.08) saturate(1.15);
+  }
+  60% {
+  filter: brightness(1.15) saturate(1.3);
+  }
+  80% {
+  filter: brightness(1.05) saturate(1.1);
+  }
+}
+
+@keyframes legend-phoenix-sparks-rise-a {
+  from {
+  background-position-y: 0%;
+  }
+  to {
+  background-position-y: 180%;
+  }
+}
+
+@keyframes legend-phoenix-sparks-rise-b {
+  from {
+  background-position-y: 0%;
+  }
+  to {
+  background-position-y: 240%;
+  }
+}
+
+@keyframes legend-phoenix-sparks-sway-a {
+  0%,
+100% {
+  transform: translateX(0);
+  }
+  25% {
+  transform: translateX(0.8px);
+  }
+  75% {
+  transform: translateX(-0.8px);
+  }
+}
+
+@keyframes legend-phoenix-sparks-sway-b {
+  0%,
+100% {
+  transform: translateX(0);
+  }
+  33% {
+  transform: translateX(-0.6px);
+  }
+  66% {
+  transform: translateX(0.7px);
+  }
+}
+
+@keyframes legend-void-warp {
+  0% {
+  filter: hue-rotate(0deg);
+  }
+  50% {
+  filter: hue-rotate(15deg);
+  }
+  100% {
+  filter: hue-rotate(0deg);
+  }
+}
+
+@keyframes legend-void-orbit-pulse {
+  0%,
+100% {
+  opacity: 0.75;
+  filter: drop-shadow(0 0 3px rgba(180, 150, 255, 0.7));
+  }
+  50% {
+  opacity: 1;
+  filter: drop-shadow(0 0 8px rgba(200, 170, 255, 0.95));
+  }
+}
+
+@keyframes legend-void-star-drift {
+  0%,
+100% {
+  transform: translate3d(0, 0, 0) scale(1);
+  }
+  25% {
+  transform: translate3d(1px, -0.8px, 0) scale(1.02);
+  }
+  50% {
+  transform: translate3d(-0.5px, 1px, 0) scale(0.98);
+  }
+  75% {
+  transform: translate3d(-1px, -0.5px, 0) scale(1.01);
+  }
+}
+
+@keyframes legend-frame-arcane {
+  0%,
+100% {
+  box-shadow:
+  0 0 20px rgba(168, 85, 247, 0.76),
+  0 0 34px rgba(99, 102, 241, 0.36),
+  inset 0 0 14px rgba(196, 181, 253, 0.22);
+  border-color: #a78bfa;
+  }
+  33% {
+  box-shadow:
+  0 0 26px rgba(6, 182, 212, 0.88),
+  0 0 42px rgba(139, 92, 246, 0.5),
+  inset 0 0 18px rgba(6, 182, 212, 0.28);
+  border-color: #818cf8;
+  }
+  66% {
+  box-shadow:
+  0 0 30px rgba(168, 85, 247, 0.96),
+  0 0 48px rgba(99, 102, 241, 0.58),
+  inset 0 0 22px rgba(196, 181, 253, 0.32);
+  border-color: #c4b5fd;
+  }
+}
+
+@keyframes legend-arcane-pulse {
+  0%,
+100% {
+  filter: brightness(1) saturate(1);
+  }
+  50% {
+  filter: brightness(1.12) saturate(1.15);
+  }
+}
+
+@keyframes legend-arcane-rune-spin {
+  0%,
+100% {
+  filter: hue-rotate(0deg) brightness(0.9);
+  }
+  25% {
+  filter: hue-rotate(15deg) brightness(1.2);
+  }
+  50% {
+  filter: hue-rotate(-10deg) brightness(0.85);
+  }
+  75% {
+  filter: hue-rotate(8deg) brightness(1.15);
+  }
+}
+
+@keyframes legend-arcane-vortex-spin {
+  0% {
+  transform: rotate(0deg);
+  }
+  100% {
+  transform: rotate(360deg);
+  }
+}
+
+@keyframes legend-frame-eclipse {
+  0%,
+100% {
+  box-shadow:
+  0 0 18px rgba(251, 191, 36, 0.78),
+  0 0 34px rgba(245, 158, 11, 0.38),
+  inset 0 0 14px rgba(253, 224, 71, 0.18);
+  border-color: #fbbf24;
+  }
+  33% {
+  box-shadow:
+  0 0 28px rgba(245, 158, 11, 0.92),
+  0 0 46px rgba(251, 191, 36, 0.54),
+  inset 0 0 20px rgba(252, 211, 77, 0.3);
+  border-color: #fcd34d;
+  }
+  66% {
+  box-shadow:
+  0 0 22px rgba(255, 140, 66, 0.84),
+  0 0 38px rgba(245, 158, 11, 0.44),
+  inset 0 0 16px rgba(253, 224, 71, 0.22);
+  border-color: #f59e0b;
+  }
+}
+
+@keyframes legend-eclipse-corona-pulse {
+  0%,
+100% {
+  filter: brightness(1) saturate(1);
+  }
+  50% {
+  filter: brightness(1.18) saturate(1.12);
+  }
+}
+
+@keyframes legend-eclipse-ray-rotate {
+  0% {
+  transform: rotate(0deg);
+  }
+  100% {
+  transform: rotate(360deg);
+  }
+}
+
+@keyframes legend-frame-sakura {
+  0%,
+100% {
+  box-shadow:
+  0 0 18px rgba(244, 114, 182, 0.74),
+  0 0 32px rgba(249, 168, 212, 0.34),
+  inset 0 0 14px rgba(253, 164, 175, 0.2);
+  border-color: #f472b6;
+  }
+  33% {
+  box-shadow:
+  0 0 24px rgba(249, 168, 212, 0.86),
+  0 0 38px rgba(253, 164, 175, 0.48),
+  inset 0 0 18px rgba(254, 205, 211, 0.28);
+  border-color: #f9a8d4;
+  }
+  66% {
+  box-shadow:
+  0 0 22px rgba(244, 114, 182, 0.9),
+  0 0 36px rgba(249, 168, 212, 0.52),
+  inset 0 0 16px rgba(253, 164, 175, 0.26);
+  border-color: #fda4af;
+  }
+}
+
+@keyframes legend-sakura-petals-fall-a {
+  from {
+  background-position-y: 0%;
+  }
+  to {
+  background-position-y: -180%;
+  }
+}
+
+@keyframes legend-sakura-petals-fall-b {
+  from {
+  background-position-y: 0%;
+  }
+  to {
+  background-position-y: -240%;
+  }
+}
+
+@keyframes legend-sakura-sway-a {
+  0%,
+100% {
+  transform: translateX(0);
+  }
+  25% {
+  transform: translateX(0.9px);
+  }
+  75% {
+  transform: translateX(-0.9px);
+  }
+}
+
+@keyframes legend-sakura-sway-b {
+  0%,
+100% {
+  transform: translateX(0);
+  }
+  33% {
+  transform: translateX(-0.7px);
+  }
+  66% {
+  transform: translateX(0.8px);
+  }
+}

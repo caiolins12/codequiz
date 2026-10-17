@@ -1,0 +1,115 @@
+.card {
+  --area-color: #7b5cff;
+  position: relative;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--cq-space-4);
+  width: 100%;
+  padding: var(--cq-space-4);
+  border: 0;
+  border-radius: var(--cq-radius-xl);
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--area-color) 26%, transparent) 0%, transparent 70%),
+    var(--cq-surface-1);
+  box-shadow: 0 5px 0 color-mix(in srgb, var(--area-color) 45%, #0b0820), var(--cq-shadow-card), inset 0 0 0 1px color-mix(in srgb, var(--area-color) 40%, transparent);
+  color: var(--cq-text-1);
+  text-align: left;
+  overflow: hidden;
+  transition: transform var(--cq-dur-base) var(--cq-ease-bounce), box-shadow var(--cq-dur-base) var(--cq-ease-out);
+}
+
+.card:hover {
+  transform: translateY(-3px);
+}
+
+.card:active {
+  transform: translateY(3px);
+  box-shadow: 0 2px 0 color-mix(in srgb, var(--area-color) 45%, #0b0820), var(--cq-shadow-card), inset 0 0 0 1px color-mix(in srgb, var(--area-color) 40%, transparent);
+}
+
+.icon {
+  display: grid;
+  place-items: center;
+  width: 60px;
+  height: 60px;
+  border-radius: 20px;
+  background: color-mix(in srgb, var(--area-color) 30%, rgba(8, 5, 30, 0.6));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--area-color) 55%, transparent);
+  font-size: 32px;
+}
+
+.body {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.name {
+  font-family: var(--cq-font-display);
+  font-size: var(--cq-text-xl);
+  font-weight: 700;
+  line-height: 1.1;
+}
+
+.desc {
+  color: var(--cq-text-2);
+  font-size: var(--cq-text-sm);
+  font-weight: 700;
+}
+
+.meta {
+  display: flex;
+  align-items: center;
+  gap: var(--cq-space-2);
+  color: var(--cq-text-3);
+  font-size: var(--cq-text-xs);
+  font-weight: 800;
+}
+
+.metaBar {
+  flex: 1 1 auto;
+  max-width: 160px;
+}
+
+.arrow {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--area-color) 30%, transparent);
+  color: #fff;
+}
+
+.arrow svg {
+  width: 20px;
+  height: 20px;
+}
+
+/* Variante vertical (grade no desktop) */
+@media (min-width: 1024px) {
+  .vertical {
+    grid-template-columns: minmax(0, 1fr);
+    align-content: start;
+    padding: var(--cq-space-6) var(--cq-space-5);
+    gap: var(--cq-space-4);
+  }
+
+  .vertical .icon {
+    width: 76px;
+    height: 76px;
+    border-radius: 24px;
+    font-size: 40px;
+  }
+
+  .vertical .arrow {
+    position: absolute;
+    top: var(--cq-space-5);
+    right: var(--cq-space-5);
+  }
+
+  .vertical .metaBar {
+    max-width: none;
+  }
+}

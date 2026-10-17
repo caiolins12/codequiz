@@ -1,0 +1,122 @@
+/* Estilos compartilhados dos overlays/modais */
+
+.stack {
+  display: grid;
+  gap: var(--cq-space-3);
+  padding-bottom: var(--cq-space-4);
+}
+
+.rewardGrid {
+  display: grid;
+  gap: var(--cq-space-2);
+  padding-bottom: var(--cq-space-2);
+}
+
+.text {
+  color: var(--cq-text-2);
+  font-weight: 600;
+  line-height: 1.55;
+}
+
+.textStrong {
+  color: var(--cq-text-1);
+  font-weight: 800;
+}
+
+.list {
+  display: grid;
+  gap: var(--cq-space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--cq-space-3);
+  padding: var(--cq-space-3);
+  border-radius: var(--cq-radius-md);
+  background: rgba(8, 5, 30, 0.38);
+  box-shadow: inset 0 0 0 1px var(--cq-border);
+  font-weight: 700;
+}
+
+.rowMain {
+  flex: 1 1 auto;
+  display: grid;
+  min-width: 0;
+}
+
+.rowTitle {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 800;
+}
+
+.rowSub {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--cq-text-3);
+  font-size: var(--cq-text-sm);
+}
+
+.center {
+  display: grid;
+  justify-items: center;
+  gap: var(--cq-space-3);
+  text-align: center;
+}
+
+.fullscreen {
+  position: fixed;
+  inset: 0;
+  z-index: var(--cq-z-modal);
+  display: grid;
+  place-items: center;
+  padding: var(--cq-space-6);
+  background: rgba(8, 5, 26, 0.86);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  animation: cq-fade-in var(--cq-dur-base) var(--cq-ease-out);
+}
+
+.fullscreenCard {
+  display: grid;
+  justify-items: center;
+  gap: var(--cq-space-3);
+  width: min(100%, 420px);
+  text-align: center;
+  animation: cq-pop-in var(--cq-dur-slow) var(--cq-ease-bounce);
+}
+
+.bigIcon {
+  display: grid;
+  place-items: center;
+  width: 96px;
+  height: 96px;
+  border-radius: 30px;
+  background: var(--cq-grad-hero);
+  box-shadow: 0 6px 0 #3b2390, 0 20px 50px rgba(106, 76, 245, 0.5);
+  font-size: 48px;
+}
+
+.bigIcon svg {
+  width: 48px;
+  height: 48px;
+}
+
+.bigTitle {
+  font-size: var(--cq-text-3xl);
+}
+
+.spinner {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 4px solid rgba(255, 255, 255, 0.2);
+  border-top-color: var(--cq-violet-light);
+  animation: cq-spin 0.75s linear infinite;
+}

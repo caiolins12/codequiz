@@ -1,191 +1,270 @@
-import { AvatarImage, isImageAvatarValue } from '../app/helpers';
+import {
+  ArrowRight,
+  ChevronRight,
+  CircleCheck,
+  Crosshair,
+  Flame,
+  Gift,
+  History,
+  Route,
+  Swords,
+  Target,
+  Ticket,
+  Trophy
+} from 'lucide-react';
+import {
+  Avatar,
+  Badge,
+  Card,
+  CoinIcon,
+  IconButton,
+  ProgressBar,
+  StatPill,
+  StatTile,
+  Tabs,
+  TierBadge,
+  XpIcon,
+  cx
+} from '../ui';
+import { buildRankingRowView } from './shared/rankings';
+import styles from './HomeScreen.module.css';
+
+function PlayCard({ variant, icon: Icon, title, text, cta, onClick, anchor }) {
+  return (
+    <button
+      type="button"
+      className={cx(styles.playCard, variant === 'pvp' ? styles.playPvp : styles.playPve)}
+      onClick={onClick}
+      data-tour-anchor={anchor}
+    >
+      <span className={styles.playIcon} aria-hidden="true"><Icon strokeWidth={2.4} /></span>
+      <span>
+        <span className={styles.playTitle}>{title}</span>
+        <span className={styles.playText}>{text}</span>
+      </span>
+      <span className={styles.playGo}>
+        {cta}
+        <ArrowRight aria-hidden="true" strokeWidth={2.8} />
+      </span>
+      <Icon className={styles.playDecor} aria-hidden="true" strokeWidth={1.6} />
+    </button>
+  );
+}
+
+const RANKING_TABS = [
+  { value: 'pve', label: 'PvE' },
+  { value: 'pvp', label: 'PvP' }
+];
 
 export default function HomeScreen({ vm }) {
   const {
+    authUser,
     avatarFrameClass,
     avatarFrameStyle,
+    buildCosmeticSnapshot,
+    continueTrack,
     displayAvatar,
+    evolutionPass,
     heroBackground,
     heroBackgroundMeta,
     heroNickname,
-    homeAuthUser,
-    homeScreenClassName,
     openPlayerHistoryPanel,
-    playerHeroMenuOpen,
-    playerHeroMenuRef,
+    openPveTrack,
     progress,
     pveCategory,
     pvpCategory,
+    rankingsLoading,
+    rankingsMode,
+    rankingsRows,
     safeCoins,
     safeLevel,
     safeXp,
+    setRankingsMode,
     setScreen,
-    showHomeProfileHero,
-    togglePlayerHeroMenu,
+    startPveFlow,
+    startPvpFlow,
     xpForNextLevel,
     xpPercent
   } = vm;
 
+  const totalCorrect = Math.max(0, Number(progress?.totalCorrect || 0));
+  const totalAnswered = Math.max(0, Number(progress?.totalAnswered || 0));
+  const accuracy = totalAnswered ? Math.round((totalCorrect / totalAnswered) * 100) : 0;
+  const bestStreak = Math.max(0, Number(progress?.bestStreak || 0));
+  const pvpWins = Math.max(0, Number(progress?.pvpWins || 0));
+  const pvpBattles = Math.max(0, Number(progress?.pvpBattles || 0));
+  const pvpPoints = Math.max(0, Number(progress?.pvpPoints || 0));
+  const pvePoints = Math.max(0, Number(progress?.rankingPoints || 0));
+
+  const passStage = evolutionPass?.activeStage || null;
+  const passClaimable = Math.max(0, Number(evolutionPass?.claimableCount || 0));
+  const passReward = passStage?.reward || {};
+
+  const rankingViews = (Array.isArray(rankingsRows) ? rankingsRows : [])
+    .map((row, index) => buildRankingRowView(row, index, rankingsMode, buildCosmeticSnapshot, authUser?.uid))
+    .slice(0, 5);
+
   return (
-    <div className={homeScreenClassName}>
-      {showHomeProfileHero ? (
-        <div
-          className={[
-            'user-profile-hero',
-            playerHeroMenuOpen ? 'menu-open' : '',
-            heroBackgroundMeta.className
-          ].filter(Boolean).join(' ')}
-          data-tour-anchor="home-hero"
-          data-bg-id={heroBackgroundMeta.id}
-          data-bg-rarity={heroBackgroundMeta.rarity}
+    <div className={styles.screen}>
+      <header className={styles.greeting}>
+        <div>
+          <h1 className={styles.greetingTitle}>Olá, {heroNickname}!</h1>
+          <p className={styles.greetingText}>Pronto para a próxima partida?</p>
+        </div>
+      </header>
+
+      <div className={styles.grid}>
+        <section
+          className={cx(styles.hero, heroBackgroundMeta?.className)}
           style={{ background: heroBackground }}
+          data-bg-id={heroBackgroundMeta?.id}
+          data-bg-rarity={heroBackgroundMeta?.rarity}
+          data-tour-anchor="home-hero"
+          aria-label="Seu perfil"
         >
-          <div className="hero-bg-glow" />
-          <div className="hero-menu-shell hero-menu-shell-legacy" aria-hidden="true">
-            <button
-              type="button"
-              className={`hero-menu-btn ${playerHeroMenuOpen ? 'active' : ''}`}
-              onClick={togglePlayerHeroMenu}
-              aria-label="Abrir menu do perfil"
-              aria-haspopup="menu"
-              aria-expanded={playerHeroMenuOpen}
-            >
-              <span />
-              <span />
-              <span />
-            </button>
-            {playerHeroMenuOpen ? (
-              <div className="hero-menu-popover" role="menu" aria-label="Menu do perfil">
-                <button type="button" className="hero-menu-item" onClick={openPlayerHistoryPanel}>
-                  <span className="hero-menu-item-icon" aria-hidden="true">🕘</span>
-                  <span className="hero-menu-item-copy">
-                    <span className="hero-menu-item-label">Historico de partidas</span>
-                    <span className="hero-menu-item-desc">Acompanhe seus resultados de PVP e PVE.</span>
-                  </span>
-                </button>
+          <span className={styles.heroShade} aria-hidden="true" />
+          <div className={styles.heroTop}>
+            <Avatar
+              avatar={displayAvatar}
+              frameClass={avatarFrameClass}
+              frameStyle={avatarFrameStyle}
+              size="xl"
+              badge={safeLevel}
+              alt="Seu avatar"
+            />
+            <div className={styles.heroInfo}>
+              <span className={styles.heroEyebrow}>Seu perfil</span>
+              <h2 className={styles.heroName}>{heroNickname}</h2>
+              <div className={styles.heroBadges}>
+                <TierBadge tierKey={pveCategory?.key} label={pveCategory?.label} prefix="PvE" variant="solid" />
+                <TierBadge tierKey={pvpCategory?.key} label={pvpCategory?.label} prefix="PvP" variant="solid" />
               </div>
-            ) : null}
+            </div>
+            <IconButton
+              icon={History}
+              label="Histórico de partidas"
+              variant="surface"
+              className={styles.heroHistory}
+              onClick={openPlayerHistoryPanel}
+            />
           </div>
-          <div className="hero-content">
-            <div className="hero-avatar-wrap">
-              <span className={`hero-avatar ${avatarFrameClass}`} style={avatarFrameStyle}>
-                {isImageAvatarValue(displayAvatar) ? (
-                  <AvatarImage className="hero-avatar-image" src={displayAvatar} alt="Avatar do jogador" fallback="🙂" />
-                ) : displayAvatar}
+          <div className={styles.xpRow}>
+            <div className={styles.xpHead}>
+              <span className={styles.xpLevel}><XpIcon /> Nível {safeLevel}</span>
+              <span className={styles.xpNumbers}>{safeXp} / {xpForNextLevel} XP</span>
+            </div>
+            <ProgressBar value={xpPercent} tone="blue" size="md" label="Progresso para o próximo nível" />
+          </div>
+          <div className={styles.heroStats}>
+            <StatPill icon={CoinIcon} value={safeCoins} label="moedas" ariaLabel={`${safeCoins} moedas`} />
+            <StatPill icon={Trophy} value={pvePoints} label="pts PvE" tone="violet" ariaLabel={`${pvePoints} pontos PvE`} />
+            <StatPill icon={Swords} value={pvpPoints} label="pts PvP" tone="orange" ariaLabel={`${pvpPoints} pontos PvP`} />
+          </div>
+        </section>
+
+        <section className={styles.play} aria-label="Jogar">
+          <PlayCard
+            variant="pve"
+            icon={Target}
+            title="Treinar"
+            text="Quiz solo por trilhas e níveis"
+            cta="Jogar"
+            onClick={startPveFlow}
+            anchor="home-play"
+          />
+          <PlayCard
+            variant="pvp"
+            icon={Swords}
+            title="Batalhar"
+            text="Duelos e equipes em tempo real"
+            cta="Entrar"
+            onClick={startPvpFlow}
+          />
+        </section>
+
+        {continueTrack ? (
+          <Card className={cx(styles.infoCard, styles.continueCard)} padding="lg">
+            <div className={styles.infoHead}>
+              <h3 className={styles.infoTitle}><Route aria-hidden="true" strokeWidth={2.4} /> {continueTrack.started ? 'Continue sua trilha' : 'Comece por aqui'}</h3>
+              <Badge tone={continueTrack.progress >= 100 ? 'lime' : 'violet'}>{continueTrack.progress}%</Badge>
+            </div>
+            <div className={styles.trackRow} style={{ '--track-color': continueTrack.color }}>
+              <span className={styles.trackIcon} aria-hidden="true">{continueTrack.icon}</span>
+              <span className={styles.trackText}>
+                <span className={styles.trackName}>{continueTrack.name}</span>
+                <span className={styles.trackDesc}>{continueTrack.desc}</span>
               </span>
-              <div className="hero-avatar-glow" />
             </div>
-            <div className="hero-info">
-              <div className="hero-name-row">
-                <div className="hero-name">{heroNickname}</div>
-                <div className="hero-menu-shell" ref={playerHeroMenuRef}>
-                  <button
-                    type="button"
-                    className={`hero-menu-btn ${playerHeroMenuOpen ? 'active' : ''}`}
-                    onClick={togglePlayerHeroMenu}
-                    aria-label="Abrir menu do perfil"
-                    aria-haspopup="menu"
-                    aria-expanded={playerHeroMenuOpen}
-                  >
-                    <span />
-                    <span />
-                    <span />
-                  </button>
-                  {playerHeroMenuOpen ? (
-                    <div className="hero-menu-popover" role="menu" aria-label="Menu do perfil">
-                      <button type="button" className="hero-menu-item" onClick={openPlayerHistoryPanel}>
-                        <span className="hero-menu-item-icon" aria-hidden="true">🕘</span>
-                        <span className="hero-menu-item-copy">
-                          <span className="hero-menu-item-label">Histórico de partidas</span>
-                          <span className="hero-menu-item-desc">Acompanhe seus resultados de PVP e PVE.</span>
-                        </span>
-                      </button>
-                    </div>
-                  ) : null}
-                </div>
-              </div>
-              <div className="hero-badges-line">
-                <div className="hero-badges-group">
-                  <span className={`tier-badge tier-badge-compact tier-${pveCategory.key}`}>PVE {pveCategory.label}</span>
-                  <span className={`tier-badge tier-badge-compact tier-${pvpCategory.key}`}>PVP {pvpCategory.label}</span>
-                </div>
-                <span className="hero-coins" aria-label={`Moedas ${safeCoins}`}>
-                  <span className="hero-coins-icon" aria-hidden="true">🪙</span>
-                  <span className="hero-coins-value">{safeCoins}</span>
-                </span>
-              </div>
-              <div className="hero-xp-bar">
-                <div className="hero-xp-fill" style={{ width: `${xpPercent}%` }} />
-              </div>
-              <div className="hero-xp-label">
-                <span className="hero-xp-level">Nv. {safeLevel}</span>
-                <span className="hero-xp-progress">{safeXp} / {xpForNextLevel} XP</span>
-              </div>
-            </div>
+            <ProgressBar value={continueTrack.progress} tone="violet" size="sm" label={`Progresso em ${continueTrack.name}`} />
+            <button type="button" className={styles.linkButton} onClick={() => openPveTrack(continueTrack.id)}>
+              {continueTrack.started ? 'Continuar' : 'Começar trilha'} <ChevronRight aria-hidden="true" strokeWidth={2.8} />
+            </button>
+          </Card>
+        ) : null}
+
+        <Card className={cx(styles.infoCard, styles.passCard)} padding="lg">
+          <div className={styles.infoHead}>
+            <h3 className={styles.infoTitle}><Ticket aria-hidden="true" strokeWidth={2.4} /> Passe de Evolução</h3>
+            <Badge tone="gold">Nível {evolutionPass?.currentLevel || 1}/{evolutionPass?.totalLevels || 1}</Badge>
           </div>
-        </div>
-      ) : null}
-
-      {!showHomeProfileHero ? (
-        <>
-          <div className="home-header">
-            <div className="logo-icon">{'</>'}</div>
-            <h1>Code Quiz</h1>
-            <p className="subtitle">Next.js + React + Cloudflare Workers</p>
+          {passStage ? (
+            <div className={styles.passStage}>
+              <span className={styles.passIcon} aria-hidden="true">{passStage.icon || '🏆'}</span>
+              <span className={styles.trackText}>
+                <span className={styles.trackName}>{passStage.name}</span>
+                <span className={styles.trackDesc}>{passStage.desc}</span>
+              </span>
+            </div>
+          ) : null}
+          <div className={styles.progressLine}>
+            <span className={styles.progressLabel}>
+              <span>Etapa atual</span>
+              <span>{Math.round(evolutionPass?.currentStageProgressPct || 0)}%</span>
+            </span>
+            <ProgressBar value={evolutionPass?.currentStageProgressPct || 0} tone="gold" size="sm" label="Progresso da etapa do passe" />
           </div>
-
-          <div className="player-stats-modern">
-            <div className="stat-card-modern stat-level">
-              <span className="stat-icon stat-icon-float">🏅</span>
-              <div className="stat-value">{progress.level}</div>
-              <div className="stat-label">Nivel</div>
-            </div>
-            <div className="stat-card-modern stat-xp">
-              <span className="stat-icon stat-icon-float">⭐</span>
-              <div className="stat-value">{progress.rankingPoints}</div>
-              <div className="stat-label">Pontos PVE</div>
-            </div>
-            <div className="stat-card-modern stat-streak">
-              <span className="stat-icon stat-icon-float">⚔️</span>
-              <div className="stat-value">{progress.pvpPoints}</div>
-              <div className="stat-label">Pontos PVP</div>
-            </div>
+          <div className={styles.rewardRow}>
+            {passClaimable ? (
+              <Badge tone="lime" icon={Gift}>{passClaimable} para coletar</Badge>
+            ) : null}
+            {passReward?.xp ? <Badge tone="blue">+{passReward.xp} XP</Badge> : null}
+            {passReward?.coins ? <Badge tone="gold">+{passReward.coins} moedas</Badge> : null}
           </div>
-        </>
-      ) : null}
+          <button type="button" className={styles.linkButton} onClick={() => setScreen('achievements')}>
+            {passClaimable ? 'Coletar recompensas' : 'Ver passe'} <ChevronRight aria-hidden="true" strokeWidth={2.8} />
+          </button>
+        </Card>
 
-      <div className="home-actions">
-        <button
-          className="btn btn-primary btn-lg btn-modern home-play-btn"
-          data-tour-anchor="home-play"
-          onClick={() => setScreen('play-mode')}
-        >
-          <span className="btn-icon">▶</span>
-          <span className="btn-text">Jogar Agora</span>
-          <span className="btn-arrow">›</span>
-        </button>
+        <Card className={cx(styles.infoCard, styles.rankCard)} padding="lg">
+          <div className={styles.infoHead}>
+            <h3 className={styles.infoTitle}><Trophy aria-hidden="true" strokeWidth={2.4} /> Top jogadores</h3>
+            <Tabs items={RANKING_TABS} value={rankingsMode} onChange={setRankingsMode} size="sm" ariaLabel="Modo do ranking" />
+          </div>
+          {rankingsLoading && !rankingViews.length ? (
+            <p className={styles.trackDesc}>Carregando ranking...</p>
+          ) : (
+            <ol className={styles.rankList}>
+              {rankingViews.map((row) => (
+                <li key={row.key} className={cx(styles.rankItem, row.isSelf ? styles.rankSelf : '')}>
+                  <span className={cx(styles.rankPos, styles[`rankPos${row.position}`] || '')}>{row.position}</span>
+                  <Avatar avatar={row.avatar} frameClass={row.frameClass} frameStyle={row.frameStyle} size="xs" />
+                  <span className={styles.rankName}>{row.nickname}{row.isSelf ? ' (você)' : ''}</span>
+                  <span className={styles.rankPoints}>{row.points}</span>
+                </li>
+              ))}
+            </ol>
+          )}
+          <button type="button" className={styles.linkButton} onClick={() => setScreen('rankings')}>
+            Ver ranking completo <ChevronRight aria-hidden="true" strokeWidth={2.8} />
+          </button>
+        </Card>
 
-        <div className="home-actions-grid" data-tour-anchor="home-tools">
-          <button className="btn btn-secondary btn-modern home-tool-btn home-tool-btn-rankings" onClick={() => setScreen('rankings')}>
-            <span className="btn-icon">🏆</span>
-            <span className="btn-text">Rankings</span>
-          </button>
-          <button className="btn btn-secondary btn-modern home-tool-btn home-tool-btn-shop" onClick={() => setScreen('shop')}>
-            <span className="btn-icon">🛒</span>
-            <span className="btn-text">Loja</span>
-          </button>
-          <button className="btn btn-secondary btn-modern home-tool-btn home-tool-btn-pass" onClick={() => setScreen('achievements')}>
-            <span className="btn-icon">🎟️</span>
-            <span className="btn-text">Passe de Evolução</span>
-          </button>
-          <button
-            className="btn btn-secondary btn-modern home-tool-btn home-tool-btn-settings"
-            onClick={() => setScreen(homeAuthUser ? 'settings' : 'login')}
-          >
-            <span className="btn-icon">⚙️</span>
-            <span className="btn-text">Configurações</span>
-          </button>
-        </div>
+        <section className={styles.stats} aria-label="Suas estatísticas">
+          <StatTile icon={CircleCheck} label="Acertos" value={totalCorrect} tone="lime" />
+          <StatTile icon={Crosshair} label="Precisão" value={`${accuracy}%`} tone="cyan" />
+          <StatTile icon={Flame} label="Melhor sequência" value={bestStreak} tone="orange" />
+          <StatTile icon={Swords} label="Vitórias PvP" value={`${pvpWins}/${pvpBattles}`} tone="pink" />
+        </section>
       </div>
     </div>
   );

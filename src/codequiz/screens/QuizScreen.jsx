@@ -1,100 +1,139 @@
+import { useEffect } from 'react';
+import { Check, Flame, Heart, Menu, Music2, VolumeX } from 'lucide-react';
 import { DIFFICULTY_LABELS } from '../lib/constants';
+import { Badge, Button, IconButton, StatPill, TimerBar, cx } from '../ui';
+import AnswerOptions from './shared/AnswerOptions';
+import QuestionCard from './shared/QuestionCard';
+import styles from './shared/Game.module.css';
+
+const DIFFICULTY_TONES = { easy: 'lime', medium: 'orange', hard: 'pink' };
+
+function segmentClass(entry, index, currentIndex) {
+  if (entry) {
+    if (entry.isCorrect) return styles.segCorrect;
+    if (entry.isTimeout) return styles.segTimeout;
+    return styles.segWrong;
+  }
+  return index === currentIndex ? styles.segCurrent : '';
+}
 
 export default function QuizScreen({ vm }) {
   const {
     confirmQuizAnswer,
     currentQuestion,
     handleAnswer,
+    music,
     openQuizMenu,
+    quizMenuOpen,
     quizQuestionHasOverflow,
     quizQuestionScrollRef,
+    quizQuestionStartMs,
+    quizRoundSeconds,
     quizState,
-    quizTimerClass,
-    quizTimerPct,
-    screen,
     selectedLanguageMeta,
     selectedTopicMeta
   } = vm;
 
+  const total = quizState?.questions?.length || 0;
+  const index = quizState?.index || 0;
+  const answered = !!quizState?.answered;
+  const selected = Number(quizState?.selectedIndex);
+  const hasSelection = Number.isFinite(selected) && selected >= 0 && quizState?.selectedIndex !== null;
+  const canConfirm = !!quizState && !answered && hasSelection;
+  const lives = Math.max(0, Number(quizState?.lives ?? 3));
+  const difficulty = quizState?.difficulty || 'easy';
+  const answerLog = Array.isArray(quizState?.answerLog) ? quizState.answerLog : [];
+  const optionCount = currentQuestion?.opts?.length || 0;
+
+  // Atalhos: 1–4 / A–D escolhem, Enter confirma.
+  useEffect(() => {
+    const handleKey = (event) => {
+      if (quizMenuOpen || answered || event.repeat || event.altKey || event.ctrlKey || event.metaKey) return;
+      const tag = String(event.target?.tagName || '').toLowerCase();
+      if (tag === 'input' || tag === 'textarea') return;
+      const key = String(event.key || '').toLowerCase();
+      const numeric = Number(key);
+      let pick = -1;
+      if (Number.isInteger(numeric) && numeric >= 1 && numeric <= optionCount) pick = numeric - 1;
+      else if (key.length === 1 && key >= 'a' && key <= 'd') pick = key.charCodeAt(0) - 97;
+      if (pick >= 0 && pick < optionCount) {
+        event.preventDefault();
+        handleAnswer(pick);
+        return;
+      }
+      if (key === 'enter' && canConfirm) {
+        event.preventDefault();
+        confirmQuizAnswer();
+      }
+    };
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, [answered, canConfirm, confirmQuizAnswer, handleAnswer, optionCount, quizMenuOpen]);
+
   return (
-    <div className={`screen ${screen === 'quiz' ? 'active' : ''}`}>
-      <div className="pve-quiz-shell">
-        <div className="pve-quiz-topline">
-          <span className="pve-quiz-mode">Modo PVE</span>
-          <span className={`pve-quiz-difficulty pve-quiz-difficulty-${quizState?.difficulty || 'easy'}`}>
-            {DIFFICULTY_LABELS[quizState?.difficulty] || DIFFICULTY_LABELS.easy}
-          </span>
+    <div className={styles.game}>
+      <header className={styles.top}>
+        <IconButton icon={Menu} label="Menu do quiz" variant="surface" onClick={openQuizMenu} />
+        <div className={styles.topInfo}>
+          <span className={styles.eyebrow}>Treino PvE · {selectedLanguageMeta?.name || quizState?.language || 'Trilha'}</span>
+          <span className={styles.topTitle}>{selectedTopicMeta?.emoji ? `${selectedTopicMeta.emoji} ` : ''}{selectedTopicMeta?.name || quizState?.topic || 'Tema'}</span>
         </div>
-        <div className="pve-quiz-meta">
-          <span>{selectedLanguageMeta?.name || quizState?.language || 'Linguagem'}</span>
-          <span className="pve-quiz-dot">·</span>
-          <span>{selectedTopicMeta?.name || quizState?.topic || 'Tema'}</span>
+        <Badge tone={DIFFICULTY_TONES[difficulty] || 'lime'}>{DIFFICULTY_LABELS[difficulty] || DIFFICULTY_LABELS.easy}</Badge>
+        {music ? (
+          <IconButton
+            icon={music.enabled ? Music2 : VolumeX}
+            label={music.enabled ? 'Desligar música' : 'Ligar música'}
+            onClick={() => music.onToggle(!music.enabled)}
+          />
+        ) : null}
+      </header>
+
+      <div className={styles.statusRow}>
+        <span className={styles.counter}>{Math.min(total, index + 1)}/{total || 0}</span>
+        <div className={styles.segments} aria-hidden="true">
+          {Array.from({ length: total }, (_, idx) => (
+            <span key={idx} className={cx(styles.segment, segmentClass(answerLog.find((entry) => Number(entry?.questionIndex) === idx), idx, index))} />
+          ))}
+        </div>
+        <div className={styles.hearts} aria-label={`${lives} vida${lives === 1 ? '' : 's'} restante${lives === 1 ? '' : 's'}`} role="img">
+          {[0, 1, 2].map((idx) => (
+            <Heart key={idx} className={cx(styles.heart, idx >= lives ? styles.heartLost : '')} fill="currentColor" strokeWidth={0} aria-hidden="true" />
+          ))}
         </div>
       </div>
 
-      <div className="quiz-header">
-        <div className="quiz-info pve-quiz-info">
-          <div className="quiz-info-main">
-            <span>{quizState ? `${quizState.index + 1}/${quizState.questions.length}` : '0/0'}</span>
-            <span>{quizState ? `${quizState.score} pts` : '0 pts'}</span>
-            <div className="quiz-lives">
-              {[0, 1, 2].map((idx) => (
-                <span key={idx} className={`heart ${quizState && idx >= quizState.lives ? 'lost' : ''}`}>❤️</span>
-              ))}
-            </div>
-          </div>
-          <button className="btn-quiz-menu" onClick={openQuizMenu} aria-label="Abrir menu do quiz">☰</button>
-        </div>
-        {quizState?.streak ? (
-          <div className="quiz-streak">{quizState.streak} em sequencia</div>
+      <div className={styles.pills}>
+        <StatPill icon={Check} value={quizState?.score || 0} label="pts" tone="lime" size="sm" ariaLabel={`${quizState?.score || 0} pontos`} />
+        {quizState?.streak >= 2 ? (
+          <StatPill icon={Flame} value={`${quizState.streak} seguidas`} tone="orange" size="sm" />
         ) : null}
       </div>
 
-      <div className="quiz-timer">
-        <div
-          className={`timer-bar ${quizTimerClass}`}
-          style={{
-            width: `${quizTimerPct}%`
-          }}
-        />
-      </div>
+      <TimerBar
+        startedAtMs={quizQuestionStartMs}
+        durationMs={Math.max(1, Number(quizRoundSeconds || 0)) * 1000}
+        running={!!quizState && !answered}
+      />
 
-      <div className="quiz-body pve-quiz-body">
-        <div className="question-card">
-          <div
-            ref={quizQuestionScrollRef}
-            className={`question-scroll-wrap ${quizQuestionHasOverflow ? 'has-overflow' : ''}`}
-          >
-            <p className="question-text">{currentQuestion?.q || 'Carregando pergunta...'}</p>
-            {currentQuestion?.code ? (
-              <pre className="question-code">{currentQuestion.code}</pre>
-            ) : null}
-          </div>
-          {quizQuestionHasOverflow ? (
-            <span className="question-scroll-indicator" aria-hidden="true" />
-          ) : null}
-        </div>
-        <div className="options-list">
-          {(currentQuestion?.opts || []).map((option, index) => (
-            <button
-              key={`${quizState?.index || 0}_${index}`}
-              className={`option-btn ${quizState?.selectedIndex === index ? 'selected' : ''} ${quizState?.answered ? 'disabled' : ''}`}
-              disabled={!!quizState?.answered}
-              onClick={() => handleAnswer(index)}
-            >
-              <span className="opt-letter">{String.fromCharCode(65 + index)}</span>
-              <span>{option}</span>
-            </button>
-          ))}
-        </div>
-        <button
-          className="btn btn-primary quiz-confirm-btn"
-          disabled={!quizState || quizState.answered || !Number.isFinite(Number(quizState.selectedIndex)) || Number(quizState.selectedIndex) < 0}
-          onClick={confirmQuizAnswer}
-        >
+      <main className={styles.stage}>
+        <QuestionCard question={currentQuestion} scrollRef={quizQuestionScrollRef} hasOverflow={quizQuestionHasOverflow} />
+        <AnswerOptions
+          options={currentQuestion?.opts || []}
+          selectedIndex={hasSelection ? selected : null}
+          onSelect={handleAnswer}
+          disabled={answered}
+          keyPrefix={`q${index}`}
+        />
+      </main>
+
+      <footer className={styles.actions}>
+        <Button size="xl" variant="success" block disabled={!canConfirm} onClick={confirmQuizAnswer}>
           Confirmar resposta
-        </button>
-      </div>
+        </Button>
+        <span className={styles.hint}>
+          Atalhos: <span className={styles.kbd}>1</span>–<span className={styles.kbd}>4</span> escolhem · <span className={styles.kbd}>Enter</span> confirma
+        </span>
+      </footer>
     </div>
   );
 }

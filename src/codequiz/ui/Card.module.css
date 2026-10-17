@@ -1,0 +1,79 @@
+.card {
+  position: relative;
+  display: block;
+  min-width: 0;
+  border-radius: var(--cq-radius-lg);
+  background: var(--cq-surface-1);
+  background-image: var(--cq-grad-surface);
+  box-shadow: var(--cq-shadow-card), inset 0 0 0 1px var(--cq-border);
+  color: var(--cq-text-1);
+  text-align: left;
+}
+
+.raised {
+  background-color: var(--cq-surface-2);
+}
+
+.inset {
+  background: var(--cq-surface-inset);
+  box-shadow: inset 0 0 0 1px var(--cq-border);
+}
+
+.outline {
+  background: transparent;
+  box-shadow: inset 0 0 0 2px var(--cq-border-strong);
+}
+
+.hero {
+  background: var(--cq-grad-hero);
+  box-shadow: var(--cq-shadow-pop);
+}
+
+.padNone { padding: 0; }
+.padSm { padding: var(--cq-space-3); }
+.padMd { padding: var(--cq-space-4); }
+.padLg { padding: var(--cq-space-6); }
+
+@media (min-width: 768px) {
+  .padMd { padding: var(--cq-space-5); }
+  .padLg { padding: var(--cq-space-8); }
+}
+
+.interactive {
+  width: 100%;
+  border: 0;
+  font: inherit;
+  cursor: pointer;
+  transition:
+    transform var(--cq-dur-base) var(--cq-ease-out),
+    box-shadow var(--cq-dur-base) var(--cq-ease-out),
+    background-color var(--cq-dur-base) var(--cq-ease-out);
+}
+
+.interactive:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: var(--cq-shadow-pop), inset 0 0 0 1px var(--cq-border-strong);
+}
+
+.interactive:active:not(:disabled) {
+  transform: translateY(0) scale(0.99);
+}
+
+.interactive:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.selected {
+  box-shadow: var(--cq-shadow-card), inset 0 0 0 2px var(--cq-violet-light), var(--cq-glow-violet);
+}
+
+/* Faixa de cor no topo (tom) */
+.toned::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto;
+  height: 4px;
+  border-radius: var(--cq-radius-lg) var(--cq-radius-lg) 0 0;
+  background: var(--card-tone, var(--cq-violet));
+}

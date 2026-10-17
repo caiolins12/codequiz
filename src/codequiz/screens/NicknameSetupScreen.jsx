@@ -1,4 +1,13 @@
+import { LogOut, PartyPopper, RefreshCw, Rocket } from 'lucide-react';
 import { AvatarImage, isImageAvatarValue } from '../app/helpers';
+import { Badge, Button, TextField } from '../ui';
+import styles from './NicknameSetupScreen.module.css';
+
+const HINT_STATUS = {
+  error: 'error',
+  success: 'success',
+  checking: 'checking'
+};
 
 export default function NicknameSetupScreen({ vm }) {
   const {
@@ -16,82 +25,109 @@ export default function NicknameSetupScreen({ vm }) {
     profileDraft,
     profileSaving,
     saveProfile,
-    screen,
     setProfileDraft,
     setScreen
   } = vm;
 
-  return (
-    <div className={`screen nickname-setup-screen ${screen === 'nickname-setup' ? 'active' : ''}`}>
-      {!homeAuthUser ? (
-        <div className="profile-content">
-          <div className="challenge-status">Faça login para criar seu apelido.</div>
-          <button className="btn btn-primary" onClick={() => setScreen('login')}>Ir para login</button>
-        </div>
-      ) : (
-        <div className="nickname-setup-shell">
-          <div className="nickname-setup-card">
-            <div className="nickname-setup-kicker">Boas-vindas ao Code Quiz</div>
-            <h2 className="nickname-setup-title">Escolha seu apelido antes de entrar</h2>
-            <p className="nickname-setup-subtitle">
-              Esse nome será exibido para outros jogadores em rankings, partidas e recompensas.
-            </p>
-
-            <div className="nickname-setup-account">
-              <div className="settings-account-avatar" aria-hidden="true">
-                {isImageAvatarValue(googleAccountAvatar) ? (
-                  <AvatarImage src={googleAccountAvatar} fallback={<span>{googleAccountInitial}</span>} />
-                ) : (
-                  <span>{googleAccountInitial}</span>
-                )}
-              </div>
-              <div className="settings-account-meta">
-                <strong className="settings-account-name">{googleAccountName}</strong>
-                <span className="settings-account-email">{googleAccountEmail || 'E-mail Google indisponível.'}</span>
-              </div>
-            </div>
-
-            <div className="settings-personal-form nickname-setup-form">
-              <label className="settings-input-label" htmlFor="nickname-setup-input">Apelido</label>
-              <input
-                id="nickname-setup-input"
-                type="text"
-                className="profile-input settings-input"
-                placeholder="Digite seu apelido"
-                maxLength={12}
-                autoCapitalize="none"
-                autoCorrect="off"
-                spellCheck={false}
-                value={profileDraft.nickname}
-                onChange={(event) =>
-                  setProfileDraft((prev) => ({ ...prev, nickname: event.target.value }))
-                }
-              />
-              <div className={`settings-personal-hint ${nicknameHintClass}`}>{nicknameHintText}</div>
-              <button
-                className="btn btn-primary btn-lg nickname-setup-save"
-                disabled={profileSaving || !nicknameCanSave}
-                onClick={saveProfile}
-              >
-                {profileSaving ? 'Salvando apelido...' : 'Entrar no app'}
-              </button>
-            </div>
-
-            <div className="nickname-setup-actions">
-              <button
-                className="btn btn-secondary"
-                onClick={handleSwitchGoogleAccount}
-                disabled={googleSignInBusy}
-              >
-                Trocar conta Google
-              </button>
-              <button className="btn btn-secondary" onClick={handleSignOut}>
-                Sair
-              </button>
-            </div>
+  if (!homeAuthUser) {
+    return (
+      <div className={styles.screen}>
+        <div className={styles.card}>
+          <div className={styles.empty}>
+            <h1 className={styles.title}>Faça login primeiro</h1>
+            <p className={styles.subtitle}>Entre com sua conta Google para criar seu apelido.</p>
+            <Button size="lg" onClick={() => setScreen('login')}>Ir para o login</Button>
           </div>
         </div>
-      )}
+      </div>
+    );
+  }
+
+  const nickname = String(profileDraft?.nickname || '');
+  const previewName = nickname.trim() || 'Seu apelido';
+
+  return (
+    <div className={styles.screen}>
+      <form
+        className={styles.card}
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (!profileSaving && nicknameCanSave) saveProfile();
+        }}
+      >
+        <div className={styles.head}>
+          <span className={styles.welcomeIcon} aria-hidden="true">
+            <PartyPopper strokeWidth={2.4} />
+          </span>
+          <Badge tone="gold" upper>Boas-vindas ao CodeQuiz</Badge>
+          <h1 className={styles.title}>Escolha seu apelido</h1>
+          <p className={styles.subtitle}>
+            É assim que os outros jogadores vão te ver no ranking, nas partidas e nas recompensas.
+          </p>
+        </div>
+
+        <div className={styles.account}>
+          <span className={styles.accountAvatar} aria-hidden="true">
+            {isImageAvatarValue(googleAccountAvatar) ? (
+              <AvatarImage src={googleAccountAvatar} fallback={<span>{googleAccountInitial}</span>} />
+            ) : (
+              <span>{googleAccountInitial}</span>
+            )}
+          </span>
+          <span className={styles.accountText}>
+            <span className={styles.accountName}>{googleAccountName}</span>
+            <span className={styles.accountEmail}>{googleAccountEmail || 'E-mail Google indisponível'}</span>
+          </span>
+        </div>
+
+        <TextField
+          label="Apelido"
+          placeholder="Ex.: dev_ninja"
+          maxLength={12}
+          showCounter
+          autoCapitalize="none"
+          autoCorrect="off"
+          autoComplete="nickname"
+          spellCheck={false}
+          autoFocus
+          value={nickname}
+          status={HINT_STATUS[nicknameHintClass] || ''}
+          hint={nicknameHintText}
+          onChange={(event) => setProfileDraft((prev) => ({ ...prev, nickname: event.target.value }))}
+        />
+
+        <div className={styles.preview} aria-label="Prévia do seu perfil">
+          <span className={styles.previewMain}>
+            <span className={styles.previewLabel}>Assim você aparece</span>
+            <span className={styles.previewName}>{previewName}</span>
+          </span>
+          <span className={styles.previewChips}>
+            <Badge tone="tier-bronze" variant="solid" size="sm">Bronze</Badge>
+            <Badge tone="blue" variant="solid" size="sm">Nv. 1</Badge>
+          </span>
+        </div>
+
+        <Button
+          type="submit"
+          size="xl"
+          variant="success"
+          icon={Rocket}
+          block
+          loading={profileSaving}
+          disabled={!nicknameCanSave}
+        >
+          Começar a jogar
+        </Button>
+
+        <div className={styles.secondary}>
+          <Button variant="ghost" size="sm" block icon={RefreshCw} onClick={handleSwitchGoogleAccount} disabled={googleSignInBusy}>
+            Trocar conta
+          </Button>
+          <Button variant="ghost" size="sm" block icon={LogOut} onClick={handleSignOut}>
+            Sair
+          </Button>
+        </div>
+      </form>
     </div>
   );
 }

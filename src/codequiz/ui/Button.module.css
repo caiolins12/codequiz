@@ -1,0 +1,147 @@
+.button {
+  --btn-bg: var(--cq-violet);
+  --btn-bg-image: var(--cq-grad-primary);
+  --btn-shade: var(--cq-violet-dark);
+  --btn-text: #fff;
+  --btn-height: 46px;
+  --btn-pad: 18px;
+  --btn-font: var(--cq-text-md);
+  --btn-depth: 4px;
+
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: var(--btn-height);
+  padding: 0 var(--btn-pad);
+  border: 0;
+  border-radius: var(--cq-radius-md);
+  background-color: var(--btn-bg);
+  background-image: var(--btn-bg-image);
+  color: var(--btn-text);
+  font-family: var(--cq-font-display);
+  font-size: var(--btn-font);
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  line-height: 1.1;
+  text-decoration: none;
+  white-space: nowrap;
+  box-shadow: 0 var(--btn-depth) 0 var(--btn-shade);
+  margin-bottom: var(--btn-depth);
+  transform: translateY(0);
+  transition:
+    transform var(--cq-dur-fast) var(--cq-ease-out),
+    box-shadow var(--cq-dur-fast) var(--cq-ease-out),
+    filter var(--cq-dur-fast) var(--cq-ease-out);
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.button:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+.button:active:not(:disabled) {
+  transform: translateY(calc(var(--btn-depth) - 1px));
+  box-shadow: 0 1px 0 var(--btn-shade);
+}
+
+.button:disabled {
+  opacity: 0.5;
+  filter: saturate(0.6);
+}
+
+.button:focus-visible {
+  outline: 3px solid var(--cq-cyan);
+  outline-offset: 3px;
+}
+
+.label {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.icon {
+  flex-shrink: 0;
+  width: 1.2em;
+  height: 1.2em;
+}
+
+/* Tamanhos */
+.sm { --btn-height: 36px; --btn-pad: 14px; --btn-font: var(--cq-text-sm); --btn-depth: 3px; border-radius: var(--cq-radius-sm); }
+.md { --btn-height: 46px; }
+.lg { --btn-height: 54px; --btn-pad: 22px; --btn-font: var(--cq-text-lg); border-radius: var(--cq-radius-lg); }
+.xl { --btn-height: 62px; --btn-pad: 26px; --btn-font: var(--cq-text-xl); --btn-depth: 5px; border-radius: var(--cq-radius-lg); }
+
+.block {
+  display: flex;
+  width: 100%;
+}
+
+/* Variantes */
+.primary { --btn-bg: var(--cq-violet); --btn-bg-image: var(--cq-grad-primary); --btn-shade: var(--cq-violet-dark); }
+.pink { --btn-bg: var(--cq-pink); --btn-bg-image: var(--cq-grad-pink); --btn-shade: var(--cq-pink-dark); }
+.cyan { --btn-bg: var(--cq-cyan); --btn-bg-image: var(--cq-grad-cyan); --btn-shade: var(--cq-cyan-dark); --btn-text: #062033; }
+.success { --btn-bg: var(--cq-lime); --btn-bg-image: var(--cq-grad-lime); --btn-shade: var(--cq-lime-dark); --btn-text: #062a14; }
+.warning { --btn-bg: var(--cq-gold); --btn-bg-image: var(--cq-grad-gold); --btn-shade: var(--cq-gold-dark); --btn-text: #3a2600; }
+.orange { --btn-bg: var(--cq-orange); --btn-bg-image: var(--cq-grad-orange); --btn-shade: var(--cq-orange-dark); }
+.danger { --btn-bg: var(--cq-red); --btn-bg-image: linear-gradient(135deg, #ff7f8c 0%, #e63a50 100%); --btn-shade: var(--cq-red-dark); }
+
+.secondary {
+  --btn-bg: var(--cq-surface-3);
+  --btn-bg-image: none;
+  --btn-shade: #1a1550;
+  --btn-text: var(--cq-text-1);
+  box-shadow: 0 var(--btn-depth) 0 var(--btn-shade), inset 0 0 0 1px var(--cq-border-strong);
+}
+
+.secondary:active:not(:disabled) {
+  box-shadow: 0 1px 0 var(--btn-shade), inset 0 0 0 1px var(--cq-border-strong);
+}
+
+.ghost {
+  --btn-bg: transparent;
+  --btn-bg-image: none;
+  --btn-shade: transparent;
+  --btn-text: var(--cq-text-2);
+  --btn-depth: 0px;
+}
+
+.ghost:hover:not(:disabled) {
+  background-color: rgba(255, 255, 255, 0.06);
+  color: var(--cq-text-1);
+  filter: none;
+}
+
+.outline {
+  --btn-bg: transparent;
+  --btn-bg-image: none;
+  --btn-shade: transparent;
+  --btn-text: var(--cq-text-1);
+  --btn-depth: 0px;
+  box-shadow: inset 0 0 0 2px var(--cq-border-strong);
+}
+
+.outline:hover:not(:disabled) {
+  box-shadow: inset 0 0 0 2px var(--cq-violet-light);
+  filter: none;
+}
+
+.loading .label,
+.loading .icon {
+  visibility: hidden;
+}
+
+.spinner {
+  position: absolute;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 3px solid rgba(255, 255, 255, 0.35);
+  border-top-color: currentColor;
+  animation: cq-spin 0.7s linear infinite;
+}
