@@ -1,8 +1,10 @@
 node_modules/
 .next/
 out/
-.firebase/
-firebase-debug.log
-firebase-debug.*.log
+.wrangler/
+.vercel/
 .claude/
 .tmp_*.json
+
+.vercel
+.env*.local

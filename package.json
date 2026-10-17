@@ -5,16 +5,20 @@
   "scripts": {
     "dev": "node scripts/generate-build-meta.js && next dev",
     "build": "node scripts/generate-build-meta.js && next build",
-    "build:hosting": "node scripts/build-hosting.js",
+    "build:vercel": "node scripts/generate-build-meta.js && next build",
+    "worker:dev": "npm --prefix workers/durable-db run dev",
+    "worker:deploy": "npm --prefix workers/durable-db run deploy",
+    "deploy:vercel": "vercel --prod",
     "recalc:pvp": "node scripts/recalculate-pvp-history.js --apply",
     "recalc:pvp:dry": "node scripts/recalculate-pvp-history.js",
+    "season:reset:s1": "node scripts/reset-season-1.js --apply",
+    "season:reset:s1:dry": "node scripts/reset-season-1.js",
     "start": "next start",
     "lint": "next lint"
   },
   "dependencies": {
     "@tsparticles/react": "^3.0.0",
     "@tsparticles/slim": "^3.9.1",
-    "firebase": "^12.9.0",
     "next": "^15.5.10",
     "react": "^18.2.0",
     "react-dom": "^18.2.0"

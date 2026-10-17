@@ -10,8 +10,8 @@ Este documento evita regressões por lógica duplicada em arquivos diferentes.
 
 ## Backend (runtime ativo)
 
-- Automação de bots e reconciliação de partidas: `functions/index.js`
-- Regras de segurança Realtime Database: `database.rules.json`
+- Banco remoto: `workers/durable-db/`
+- Cliente de acesso ao banco: `src/codequiz/lib/dbClient.js`
 
 ## Estrutura única
 
@@ -20,13 +20,11 @@ Este documento evita regressões por lógica duplicada em arquivos diferentes.
 
 ## Bot automation
 
-- Fonte principal de automação contínua: `functions/index.js` (`exports.botArenaDaemon`).
-- A automação cliente (`runBotArenaAutomationTick`) é apenas fallback de desenvolvimento
-  e fica desativada em produção por padrão.
+- A automação atual fica no cliente/repositório, com a persistência remota atendida pelo Worker.
+- `runBotArenaAutomationTick` continua sendo a rotina central do app para esse fluxo.
 
 ## Classes/força dos bots
 
 - Fonte frontend/repository: `src/codequiz/lib/repository.js` (`SYSTEM_BOT_ROSTER`).
-- Fonte backend/functions: `functions/index.js` (`SYSTEM_BOT_ROSTER`).
-- Sempre manter ambos alinhados para evitar comportamento diferente entre
-  Bot x Bot, Bot x Usuário e Quiz de bots.
+- Não existe mais cópia paralela em Firebase Functions.
+- A fonte de verdade deve permanecer concentrada no frontend/repository.

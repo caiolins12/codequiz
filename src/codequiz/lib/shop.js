@@ -16,7 +16,7 @@ export const SHOP_ITEMS = [
   { id: 'frame_amber', type: 'frame', name: 'Moldura Ambar', price: 45, icon: '🟧', rarity: 'common' },
   { id: 'frame_gold', type: 'frame', name: 'Moldura Dourada', price: 80, icon: '✨', rarity: 'uncommon' },
   { id: 'frame_mint', type: 'frame', name: 'Moldura Menta', price: 80, icon: '🟩', rarity: 'uncommon' },
-  { id: 'frame_sunrise', type: 'frame', name: 'Moldura Aurora', price: 80, icon: '🌅', rarity: 'uncommon' },
+  { id: 'frame_sunrise', type: 'frame', name: 'Moldura Alvorecer', price: 80, icon: '🌅', rarity: 'uncommon' },
   { id: 'frame_ice', type: 'frame', name: 'Moldura Gelo', price: 120, icon: '❄️', rarity: 'rare' },
   { id: 'frame_ruby', type: 'frame', name: 'Moldura Rubi', price: 120, icon: '🟥', rarity: 'rare' },
   { id: 'frame_lime', type: 'frame', name: 'Moldura Lima', price: 120, icon: '🟢', rarity: 'rare' },
@@ -27,7 +27,10 @@ export const SHOP_ITEMS = [
   { id: 'frame_phoenix', type: 'frame', name: 'Moldura Fenix', price: 220, icon: '🪽', rarity: 'legendary' },
   { id: 'frame_void', type: 'frame', name: 'Moldura Vazio', price: 220, icon: '🪐', rarity: 'legendary' },
   { id: 'frame_arcane', type: 'frame', name: 'Moldura Arcano', price: 220, icon: '🔮', rarity: 'legendary' },
-  { id: 'frame_eclipse', type: 'frame', name: 'Moldura Eclipse', price: 220, icon: '🌑', rarity: 'legendary' },
+  { id: 'frame_aurora', type: 'frame', name: 'Moldura Aurora', price: 0, icon: '🌌', rarity: 'legendary', unlockSource: 'evolution_pass', unlockLevel: 5 },
+  { id: 'frame_abissal', type: 'frame', name: 'Moldura Abissal', price: 0, icon: '🕳️', rarity: 'legendary', unlockSource: 'evolution_pass', unlockLevel: 8 },
+  { id: 'frame_eclipse', type: 'frame', name: 'Moldura Eclipse', price: 0, icon: '🌑', rarity: 'legendary', unlockSource: 'evolution_pass', unlockLevel: 12 },
+  { id: 'frame_sangue', type: 'frame', name: 'Moldura Sangue', price: 0, icon: '🩸', rarity: 'legendary', unlockSource: 'evolution_pass', unlockLevel: 15 },
   { id: 'frame_sakura', type: 'frame', name: 'Moldura Cerejeira', price: 220, icon: '🌸', rarity: 'legendary' },
 
   { id: 'bg_default', type: 'background', name: 'Fundo Padrao', price: 0, icon: '🎴', rarity: 'common', isDefault: true },
@@ -52,6 +55,10 @@ export const SHOP_ITEMS = [
   { id: 'bg_graphite_havoc', type: 'background', name: 'Fundo Grafite Havoc', price: 220, icon: '🧨', rarity: 'legendary' },
   { id: 'bg_kanji_reactor', type: 'background', name: 'Fundo Kanji Reactor', price: 220, icon: '🈴', rarity: 'legendary' },
   { id: 'bg_tribal_cipher', type: 'background', name: 'Fundo Tribal Cipher', price: 220, icon: '🛡️', rarity: 'legendary' },
+  { id: 'bg_aurora_prismatica', type: 'background', name: 'Fundo Aurora Prismatica', price: 0, icon: '🌌', rarity: 'legendary', unlockSource: 'evolution_pass', unlockLevel: 6 },
+  { id: 'bg_abissal_vortex', type: 'background', name: 'Fundo Abissal Vortex', price: 0, icon: '🕳️', rarity: 'legendary', unlockSource: 'evolution_pass', unlockLevel: 9 },
+  { id: 'bg_eclipse_total', type: 'background', name: 'Fundo Eclipse Total', price: 0, icon: '🌑', rarity: 'legendary', unlockSource: 'evolution_pass', unlockLevel: 13 },
+  { id: 'bg_sangue_arcano', type: 'background', name: 'Fundo Sangue Arcano', price: 0, icon: '🩸', rarity: 'legendary', unlockSource: 'evolution_pass', unlockLevel: 16 },
 
   { id: 'emoji_profile', type: 'emoji', name: 'Sorriso Inicial', price: 0, icon: '🙂', rarity: 'common', isDefault: true },
   { id: 'emoji_common_smile', type: 'emoji', name: 'Sorriso Aberto', price: 20, icon: '😄', rarity: 'common' },
@@ -262,6 +269,120 @@ const TRIBAL_CIPHER_TEXT_SVG = `data:image/svg+xml;utf8,${encodeURIComponent(
   </svg>`
 )}`;
 
+const AURORA_PRISMATICA_SVG = `data:image/svg+xml;utf8,${encodeURIComponent(
+  `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 1000">
+    <defs>
+      <linearGradient id="aurA" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stop-color="#8bffe2"/>
+        <stop offset="50%" stop-color="#66d9ff"/>
+        <stop offset="100%" stop-color="#9e84ff"/>
+      </linearGradient>
+      <linearGradient id="aurB" x1="0%" y1="100%" x2="100%" y2="0%">
+        <stop offset="0%" stop-color="#a6ffef"/>
+        <stop offset="45%" stop-color="#7ec4ff"/>
+        <stop offset="100%" stop-color="#d0a8ff"/>
+      </linearGradient>
+      <filter id="aurGlow" x="-40%" y="-40%" width="180%" height="180%">
+        <feGaussianBlur stdDeviation="8" result="b"/>
+        <feMerge>
+          <feMergeNode in="b"/>
+          <feMergeNode in="SourceGraphic"/>
+        </feMerge>
+      </filter>
+    </defs>
+    <path d="M40 650 C180 520, 350 730, 520 610 C690 490, 840 700, 960 560" fill="none" stroke="url(#aurA)" stroke-width="46" stroke-linecap="round" opacity="0.86" filter="url(#aurGlow)"/>
+    <path d="M20 520 C160 410, 330 590, 500 490 C670 390, 840 560, 980 440" fill="none" stroke="url(#aurB)" stroke-width="34" stroke-linecap="round" opacity="0.78" filter="url(#aurGlow)"/>
+    <circle cx="170" cy="230" r="5" fill="#e8ffff" opacity="0.9"/>
+    <circle cx="320" cy="170" r="4" fill="#c8f6ff" opacity="0.85"/>
+    <circle cx="560" cy="240" r="4.2" fill="#d5c8ff" opacity="0.86"/>
+    <circle cx="740" cy="170" r="3.8" fill="#e6ffff" opacity="0.8"/>
+    <circle cx="860" cy="280" r="3.4" fill="#c8f2ff" opacity="0.78"/>
+  </svg>`
+)}`;
+
+const ABISSAL_VORTEX_SVG = `data:image/svg+xml;utf8,${encodeURIComponent(
+  `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 1000">
+    <defs>
+      <radialGradient id="abyCore" cx="50%" cy="50%" r="50%">
+        <stop offset="0%" stop-color="#050916"/>
+        <stop offset="45%" stop-color="#0d1d46"/>
+        <stop offset="100%" stop-color="#1f4fff"/>
+      </radialGradient>
+      <linearGradient id="abyLine" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stop-color="#9ec4ff"/>
+        <stop offset="50%" stop-color="#4d8cff"/>
+        <stop offset="100%" stop-color="#6af0ff"/>
+      </linearGradient>
+      <filter id="abyGlow" x="-40%" y="-40%" width="180%" height="180%">
+        <feGaussianBlur stdDeviation="7" result="b"/>
+        <feMerge>
+          <feMergeNode in="b"/>
+          <feMergeNode in="SourceGraphic"/>
+        </feMerge>
+      </filter>
+    </defs>
+    <circle cx="500" cy="500" r="250" fill="url(#abyCore)" opacity="0.9"/>
+    <circle cx="500" cy="500" r="208" fill="none" stroke="url(#abyLine)" stroke-width="16" opacity="0.52" filter="url(#abyGlow)"/>
+    <circle cx="500" cy="500" r="156" fill="none" stroke="url(#abyLine)" stroke-width="12" opacity="0.46" filter="url(#abyGlow)"/>
+    <path d="M230 470 C320 350, 470 325, 595 390 C702 446, 760 575, 718 676" fill="none" stroke="url(#abyLine)" stroke-width="11" stroke-linecap="round" opacity="0.66" filter="url(#abyGlow)"/>
+    <path d="M278 610 C370 700, 520 726, 642 664 C745 610, 790 484, 748 378" fill="none" stroke="url(#abyLine)" stroke-width="9" stroke-linecap="round" opacity="0.58" filter="url(#abyGlow)"/>
+  </svg>`
+)}`;
+
+const ECLIPSE_TOTAL_SVG = `data:image/svg+xml;utf8,${encodeURIComponent(
+  `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 1000">
+    <defs>
+      <radialGradient id="eclCorona" cx="50%" cy="50%" r="50%">
+        <stop offset="0%" stop-color="#fef3c7"/>
+        <stop offset="55%" stop-color="#fbbf24"/>
+        <stop offset="100%" stop-color="#f97316"/>
+      </radialGradient>
+      <filter id="eclGlow" x="-50%" y="-50%" width="200%" height="200%">
+        <feGaussianBlur stdDeviation="8.2" result="b"/>
+        <feMerge>
+          <feMergeNode in="b"/>
+          <feMergeNode in="SourceGraphic"/>
+        </feMerge>
+      </filter>
+    </defs>
+    <circle cx="500" cy="500" r="228" fill="url(#eclCorona)" opacity="0.82" filter="url(#eclGlow)"/>
+    <circle cx="500" cy="500" r="152" fill="#070606" opacity="0.97"/>
+    <line x1="500" y1="130" x2="500" y2="228" stroke="#fcd34d" stroke-width="8" opacity="0.75"/>
+    <line x1="500" y1="772" x2="500" y2="870" stroke="#f59e0b" stroke-width="8" opacity="0.74"/>
+    <line x1="130" y1="500" x2="228" y2="500" stroke="#fcd34d" stroke-width="8" opacity="0.74"/>
+    <line x1="772" y1="500" x2="870" y2="500" stroke="#f59e0b" stroke-width="8" opacity="0.74"/>
+    <line x1="242" y1="242" x2="312" y2="312" stroke="#fbbf24" stroke-width="7" opacity="0.7"/>
+    <line x1="688" y1="688" x2="758" y2="758" stroke="#f59e0b" stroke-width="7" opacity="0.68"/>
+    <line x1="242" y1="758" x2="312" y2="688" stroke="#fbbf24" stroke-width="7" opacity="0.7"/>
+    <line x1="688" y1="312" x2="758" y2="242" stroke="#f59e0b" stroke-width="7" opacity="0.68"/>
+  </svg>`
+)}`;
+
+const SANGUE_ARCANO_SVG = `data:image/svg+xml;utf8,${encodeURIComponent(
+  `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 1000">
+    <defs>
+      <linearGradient id="bloodRune" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stop-color="#ff9aa5"/>
+        <stop offset="50%" stop-color="#ef4444"/>
+        <stop offset="100%" stop-color="#991b1b"/>
+      </linearGradient>
+      <filter id="bloodGlow" x="-40%" y="-40%" width="180%" height="180%">
+        <feGaussianBlur stdDeviation="7.5" result="b"/>
+        <feMerge>
+          <feMergeNode in="b"/>
+          <feMergeNode in="SourceGraphic"/>
+        </feMerge>
+      </filter>
+    </defs>
+    <circle cx="500" cy="500" r="248" fill="none" stroke="url(#bloodRune)" stroke-width="14" opacity="0.58" filter="url(#bloodGlow)"/>
+    <circle cx="500" cy="500" r="174" fill="none" stroke="url(#bloodRune)" stroke-width="10" opacity="0.5" filter="url(#bloodGlow)"/>
+    <path d="M280 360 L382 468 L300 572" fill="none" stroke="url(#bloodRune)" stroke-width="16" stroke-linecap="round" stroke-linejoin="round" opacity="0.76" filter="url(#bloodGlow)"/>
+    <path d="M720 360 L618 468 L700 572" fill="none" stroke="url(#bloodRune)" stroke-width="16" stroke-linecap="round" stroke-linejoin="round" opacity="0.76" filter="url(#bloodGlow)"/>
+    <path d="M470 280 L530 280 L560 342 L500 430 L440 342 Z" fill="none" stroke="url(#bloodRune)" stroke-width="12" stroke-linejoin="round" opacity="0.72" filter="url(#bloodGlow)"/>
+    <path d="M500 620 C520 668, 550 704, 500 758 C450 704, 480 668, 500 620 Z" fill="url(#bloodRune)" opacity="0.75" filter="url(#bloodGlow)"/>
+  </svg>`
+)}`;
+
 function normalizeRarity(value) {
   const safe = String(value || '').trim().toLowerCase();
   if (SHOP_RARITY_ORDER.includes(safe)) return safe;
@@ -406,6 +527,9 @@ export function mergeShopData(localRaw, remoteRaw) {
 export function canPurchaseItem(shopData, itemId, coins) {
   const item = getShopItem(itemId);
   if (!item) return { ok: false, reason: 'item_not_found' };
+  if (String(item.unlockSource || '').trim().toLowerCase() === 'evolution_pass') {
+    return { ok: false, reason: 'pass_reward_only' };
+  }
 
   const shop = normalizeShopData(shopData);
   const ownedSet = new Set(shop.owned);
@@ -421,6 +545,7 @@ export function purchaseItem(shopData, itemId) {
   const item = getShopItem(itemId);
   const shop = normalizeShopData(shopData);
   if (!item) return shop;
+  if (String(item.unlockSource || '').trim().toLowerCase() === 'evolution_pass') return shop;
   if (shop.owned.includes(item.id)) return shop;
 
   return normalizeShopData({
@@ -442,6 +567,21 @@ export function equipItem(shopData, itemId) {
       ...shop.equipped,
       [item.type]: item.id
     },
+    updatedAt: Date.now()
+  });
+}
+
+export function grantShopItems(shopData, itemIds = []) {
+  const shop = normalizeShopData(shopData);
+  const validIds = [...new Set(
+    (Array.isArray(itemIds) ? itemIds : [])
+      .map((id) => String(id || '').trim())
+      .filter((id) => id && ITEM_BY_ID.has(id))
+  )];
+  if (!validIds.length) return shop;
+  return normalizeShopData({
+    ...shop,
+    owned: [...shop.owned, ...validIds],
     updatedAt: Date.now()
   });
 }
@@ -498,7 +638,13 @@ export function getHeroBackgroundStyle(shopData) {
     // New legendary generation based on graffiti, kanji and tribal with unique art direction
     bg_graphite_havoc: `url("${GRAPHITE_HAVOC_TEXT_SVG}") center / 82% 82% no-repeat, radial-gradient(circle at 80% 18%, rgba(255, 124, 222, 0.22) 0 26%, transparent 56%) center / 100% 100% no-repeat, linear-gradient(138deg, #09051a 0%, #1f1448 44%, #3c1956 100%) center / 100% 100% no-repeat`,
     bg_kanji_reactor: `url("${KANJI_REACTOR_TEXT_SVG}") center / 82% 82% no-repeat, radial-gradient(circle at 80% 18%, rgba(118, 255, 219, 0.24) 0 28%, transparent 60%) center / 100% 100% no-repeat, linear-gradient(138deg, #081019 0%, #12394a 46%, #203e6f 100%) center / 100% 100% no-repeat`,
-    bg_tribal_cipher: `url("${TRIBAL_CIPHER_TEXT_SVG}") center / 82% 82% no-repeat, radial-gradient(circle at 18% 80%, rgba(116, 235, 255, 0.24) 0 28%, transparent 60%) center / 100% 100% no-repeat, linear-gradient(138deg, #08161e 0%, #0f3142 44%, #233f7e 100%) center / 100% 100% no-repeat`
+    bg_tribal_cipher: `url("${TRIBAL_CIPHER_TEXT_SVG}") center / 82% 82% no-repeat, radial-gradient(circle at 18% 80%, rgba(116, 235, 255, 0.24) 0 28%, transparent 60%) center / 100% 100% no-repeat, linear-gradient(138deg, #08161e 0%, #0f3142 44%, #233f7e 100%) center / 100% 100% no-repeat`,
+
+    // New legendary thematic backgrounds for pass frames + eclipse frame
+    bg_aurora_prismatica: `url("${AURORA_PRISMATICA_SVG}") center / 86% 86% no-repeat, radial-gradient(circle at 18% 20%, rgba(164, 255, 231, 0.26) 0 22%, transparent 52%) center / 100% 100% no-repeat, linear-gradient(138deg, #071729 0%, #0f3352 42%, #193063 72%, #311f58 100%) center / 100% 100% no-repeat`,
+    bg_abissal_vortex: `url("${ABISSAL_VORTEX_SVG}") center / 86% 86% no-repeat, radial-gradient(circle at 78% 18%, rgba(109, 169, 255, 0.24) 0 20%, transparent 50%) center / 100% 100% no-repeat, linear-gradient(138deg, #040a16 0%, #0b193b 44%, #12306e 74%, #08142d 100%) center / 100% 100% no-repeat`,
+    bg_eclipse_total: `url("${ECLIPSE_TOTAL_SVG}") center / 84% 84% no-repeat, radial-gradient(circle at 50% 20%, rgba(255, 214, 122, 0.24) 0 20%, transparent 50%) center / 100% 100% no-repeat, linear-gradient(138deg, #0c0a08 0%, #1c130c 40%, #3a250f 70%, #17100a 100%) center / 100% 100% no-repeat`,
+    bg_sangue_arcano: `url("${SANGUE_ARCANO_SVG}") center / 86% 86% no-repeat, radial-gradient(circle at 20% 82%, rgba(255, 127, 152, 0.2) 0 22%, transparent 52%) center / 100% 100% no-repeat, linear-gradient(138deg, #18070b 0%, #3b0f19 42%, #5d0f18 74%, #23080e 100%) center / 100% 100% no-repeat`
   };
   return map[bg?.id || 'bg_default'] || map.bg_default;
 }
@@ -600,10 +746,25 @@ export function getAvatarFrameStyle(shopData) {
       'linear-gradient(132deg, #a855f7, #6366f1, #06b6d4, #a78bfa)',
       '0 0 0 1px rgba(168, 85, 247, 0.5), 0 0 24px rgba(99, 102, 241, 0.62), inset 0 0 14px rgba(167, 139, 250, 0.3)'
     ),
+    frame_aurora: legendaryFrame(
+      'linear-gradient(145deg, rgba(10, 30, 44, 0.99), rgba(14, 48, 60, 0.95), rgba(8, 24, 36, 0.94))',
+      'linear-gradient(132deg, #8bf8d9, #4fd1ff, #8f7bff, #7bffd5)',
+      '0 0 0 1px rgba(139, 248, 217, 0.54), 0 0 24px rgba(79, 209, 255, 0.66), inset 0 0 14px rgba(143, 123, 255, 0.32)'
+    ),
+    frame_abissal: legendaryFrame(
+      'linear-gradient(145deg, rgba(6, 10, 24, 0.99), rgba(8, 14, 34, 0.96), rgba(5, 8, 20, 0.95))',
+      'linear-gradient(132deg, #1e3a8a, #2563eb, #0ea5e9, #0f172a)',
+      '0 0 0 1px rgba(56, 99, 255, 0.54), 0 0 24px rgba(37, 99, 235, 0.66), inset 0 0 14px rgba(14, 165, 233, 0.28)'
+    ),
     frame_eclipse: legendaryFrame(
       'linear-gradient(145deg, rgba(8, 7, 6, 0.99), rgba(20, 14, 10, 0.95), rgba(7, 6, 5, 0.94))',
       'linear-gradient(132deg, #fbbf24, #f59e0b, #ff8c42, #fcd34d)',
       '0 0 0 1px rgba(251, 191, 36, 0.5), 0 0 24px rgba(245, 158, 11, 0.62), inset 0 0 14px rgba(252, 211, 77, 0.3)'
+    ),
+    frame_sangue: legendaryFrame(
+      'linear-gradient(145deg, rgba(42, 8, 14, 0.99), rgba(64, 10, 20, 0.96), rgba(32, 6, 12, 0.95))',
+      'linear-gradient(132deg, #ef4444, #dc2626, #b91c1c, #fb7185)',
+      '0 0 0 1px rgba(239, 68, 68, 0.56), 0 0 24px rgba(220, 38, 38, 0.68), inset 0 0 14px rgba(251, 113, 133, 0.32)'
     ),
     frame_sakura: legendaryFrame(
       'linear-gradient(145deg, rgba(48, 20, 36, 0.98), rgba(62, 28, 48, 0.94), rgba(40, 16, 30, 0.92))',

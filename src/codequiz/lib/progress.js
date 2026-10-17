@@ -4,7 +4,7 @@ import {
   PVE_COMPLETION_XP_BONUS,
   XP_PER_CORRECT
 } from './constants';
-import { evaluateAchievements } from './achievements';
+import { buildEvolutionPassSnapshot, evaluateAchievements } from './achievements';
 import {
   calculateStars,
   formatPercent,
@@ -89,17 +89,70 @@ export function normalizeProgress(progress) {
   };
 }
 
-export function applyEvolutionPassRewards(currentProgress) {
+export function applyEvolutionPassRewards(currentProgress, stageIds = []) {
   const next = normalizeProgress(currentProgress);
   const achievementResult = evaluateAchievements(next);
-  const rewardXp = achievementResult.unlocked.reduce((acc, item) => (
+  const claimableById = new Map(
+    (Array.isArray(achievementResult.unlocked) ? achievementResult.unlocked : [])
+      .map((row) => [String(row?.id || '').trim(), row])
+      .filter(([id]) => Boolean(id))
+  );
+  const passSnapshot = buildEvolutionPassSnapshot(next);
+  const snapshotById = new Map(
+    (Array.isArray(passSnapshot?.stages) ? passSnapshot.stages : [])
+      .map((stage) => [String(stage?.id || '').trim(), stage])
+      .filter(([id]) => Boolean(id))
+  );
+  const requestedStageIds = [...new Set(
+    (Array.isArray(stageIds) ? stageIds : [])
+      .map((id) => String(id || '').trim())
+      .filter(Boolean)
+  )];
+  const claimedAchievements = requestedStageIds
+    .map((id) => {
+      const fromUnlocked = claimableById.get(id);
+      if (fromUnlocked) return fromUnlocked;
+
+      // Fallback for legacy/inconsistent order states:
+      // if stage is visibly completed and not yet claimed, allow claim.
+      const stage = snapshotById.get(id);
+      if (!stage || stage.claimed || !stage.completed) return null;
+      return {
+        id: String(stage.id || '').trim(),
+        name: String(stage.name || '').trim(),
+        desc: String(stage.desc || '').trim(),
+        icon: String(stage.icon || '').trim() || '🏆',
+        rewardXp: Math.max(0, Math.floor(Number(stage?.reward?.xp || 0))),
+        rewardCoins: Math.max(0, Math.floor(Number(stage?.reward?.coins || 0))),
+        rewardShopItems: Array.isArray(stage?.reward?.shopItems)
+          ? stage.reward.shopItems.map((itemId) => String(itemId || '').trim()).filter(Boolean)
+          : [],
+        level: Math.max(1, Math.floor(Number(stage?.level || 1))),
+        type: 'evolution_pass_stage'
+      };
+    })
+    .filter(Boolean);
+
+  const rewardXp = claimedAchievements.reduce((acc, item) => (
     acc + Math.max(0, Math.floor(Number(item?.rewardXp || 0)))
   ), 0);
-  const rewardCoins = achievementResult.unlocked.reduce((acc, item) => (
+  const rewardCoins = claimedAchievements.reduce((acc, item) => (
     acc + Math.max(0, Math.floor(Number(item?.rewardCoins || 0)))
   ), 0);
+  const rewardShopItems = [...new Set(
+    claimedAchievements.flatMap((item) => (
+      Array.isArray(item?.rewardShopItems)
+        ? item.rewardShopItems
+        : []
+    ))
+      .map((itemId) => String(itemId || '').trim())
+      .filter(Boolean)
+  )];
 
-  next.achievements = achievementResult.achievementIds;
+  next.achievements = [...new Set([
+    ...(Array.isArray(achievementResult.achievementIds) ? achievementResult.achievementIds : []),
+    ...claimedAchievements.map((item) => String(item?.id || '').trim()).filter(Boolean)
+  ])];
   next.coins = Math.max(0, Number(next.coins || 0)) + rewardCoins;
   next.xp = Math.max(0, Number(next.xp || 0)) + rewardXp;
 
@@ -110,13 +163,17 @@ export function applyEvolutionPassRewards(currentProgress) {
     leveledUp = true;
   }
 
-  next.updatedAt = Date.now();
+  if (claimedAchievements.length > 0) {
+    next.updatedAt = Date.now();
+  }
 
   return {
     progress: normalizeProgress(next),
     unlockedAchievements: achievementResult.unlocked,
+    claimedAchievements,
     rewardXp,
     rewardCoins,
+    rewardShopItems,
     leveledUp,
     newLevel: next.level
   };
@@ -233,10 +290,16 @@ export function mergeProgressWithRemoteStats(localProgress, remoteStats) {
     achievements: mergedAchievements,
     updatedAt: Date.now()
   });
-  return applyEvolutionPassRewards(merged).progress;
+  return normalizeProgress(merged);
 }
 
 export function applyQuizOutcome(currentProgress, payload) {
+  const prevPassState = applyEvolutionPassRewards(currentProgress, []);
+  const prevClaimableSet = new Set(
+    (Array.isArray(prevPassState.unlockedAchievements) ? prevPassState.unlockedAchievements : [])
+      .map((item) => String(item?.id || '').trim())
+      .filter(Boolean)
+  );
   const next = normalizeProgress(currentProgress);
   const language = String(payload?.language || '').trim();
   const topic = String(payload?.topic || '').trim();
@@ -296,12 +359,15 @@ export function applyQuizOutcome(currentProgress, payload) {
     next.level += 1;
     leveledUp = true;
   }
+  next.updatedAt = Date.now();
 
-  const passResult = applyEvolutionPassRewards(next);
+  const passResult = applyEvolutionPassRewards(next, []);
   const withPassProgress = passResult.progress;
-  const totalRewardXp = awardedXp + completionBonusXp + passResult.rewardXp;
-  const totalRewardCoins = awardedCoins + completionBonusCoins + passResult.rewardCoins;
-  const leveledUpWithPass = leveledUp || passResult.leveledUp;
+  const newlyCompletedStages = (Array.isArray(passResult.unlockedAchievements) ? passResult.unlockedAchievements : [])
+    .filter((item) => !prevClaimableSet.has(String(item?.id || '').trim()));
+  const totalRewardXp = awardedXp + completionBonusXp;
+  const totalRewardCoins = awardedCoins + completionBonusCoins;
+  const leveledUpWithPass = leveledUp;
 
   return {
     progress: withPassProgress,
@@ -314,12 +380,12 @@ export function applyQuizOutcome(currentProgress, payload) {
       completionBonusXp,
       completionBonusCoins,
       rankingGain,
-      passRewardXp: passResult.rewardXp,
-      passRewardCoins: passResult.rewardCoins,
+      passRewardXp: 0,
+      passRewardCoins: 0,
       leveledUp: leveledUpWithPass,
       newLevel: withPassProgress.level,
       quizKey
     },
-    unlockedAchievements: passResult.unlockedAchievements
+    unlockedAchievements: newlyCompletedStages
   };
 }

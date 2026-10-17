@@ -189,6 +189,15 @@ function isNearDuplicateQuestion(signature, existingSignatures) {
   });
 }
 
+export function areQuestionsSemanticallyEquivalent(questionA, questionB) {
+  const signatureA = buildSemanticSignature(questionA);
+  const signatureB = buildSemanticSignature(questionB);
+  return (
+    isNearDuplicateQuestion(signatureA, [signatureB])
+    || isNearDuplicateQuestion(signatureB, [signatureA])
+  );
+}
+
 function buildPreferredAnswerSlots(total, maxOptions) {
   const totalQuestions = Math.max(0, Number(total || 0));
   const optionCount = Math.max(2, Number(maxOptions || 2));

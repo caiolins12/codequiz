@@ -1,4 +1,5 @@
 export const QUESTIONS_PER_ROUND = 8;
+export const PVE_QUESTIONS_PER_ROUND = 10;
 
 export const TIMER_SECONDS = {
   easy: 30,
@@ -50,6 +51,6 @@ export const DEFAULT_AVATARS = [
 
 export const DIFFICULTY_LABELS = {
   easy: 'Iniciante',
-  medium: 'Intermediario',
-  hard: 'Avancado'
+  medium: 'Intermediário',
+  hard: 'Avançado'
 };

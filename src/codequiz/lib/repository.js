@@ -1,5 +1,4 @@
-import { get, onValue, ref, runTransaction, set, update } from 'firebase/database';
-import { firebaseDb } from './firebaseClient';
+import { firebaseDb, get, onValue, ref, runTransaction, set, update } from './dbClient';
 import {
   COINS_PER_CORRECT,
   PVE_COMPLETION_COINS_BONUS,
@@ -9,7 +8,7 @@ import {
   QUESTIONS_PER_ROUND,
   XP_PER_CORRECT
 } from './constants';
-import { QUESTIONS } from '../data/questions-data';
+import { LANGUAGES, QUESTIONS } from '../data/questions-data';
 import { buildMatchId, getPvpPointsDeltaAdvanced, PVP_ROUNDS_PER_MATCH } from './pvp';
 import { getRoundQuestionCapacity } from './quizEngine';
 import { getItemsByType } from './shop';
@@ -46,8 +45,8 @@ const SYSTEM_BOT_ROSTER = [
     full_name: 'Zefira',
     avatar: '🤔',
     gender: 'female',
-    default_personality: 'estrategista',
-    default_strength: 'medio'
+    default_personality: 'analitico',
+    default_strength: 'forte'
   },
   {
     id: 'bot_sys_codequiz_sopro',
@@ -56,7 +55,7 @@ const SYSTEM_BOT_ROSTER = [
     avatar: '🙂',
     gender: 'female',
     default_personality: 'calmo',
-    default_strength: 'medio'
+    default_strength: 'forte'
   },
   {
     id: 'bot_sys_codequiz_lua9',
@@ -64,8 +63,8 @@ const SYSTEM_BOT_ROSTER = [
     full_name: 'Lua9',
     avatar: '🥳',
     gender: 'female',
-    default_personality: 'caotico',
-    default_strength: 'medio'
+    default_personality: 'calmo',
+    default_strength: 'forte'
   },
   {
     id: 'bot_sys_codequiz_thiagoara',
@@ -73,8 +72,8 @@ const SYSTEM_BOT_ROSTER = [
     full_name: 'Thiago Ara',
     avatar: '😎',
     gender: 'male',
-    default_personality: 'competitivo',
-    default_strength: 'medio'
+    default_personality: 'provocador',
+    default_strength: 'forte'
   },
   {
     id: 'bot_sys_codequiz_bdevonly',
@@ -82,8 +81,8 @@ const SYSTEM_BOT_ROSTER = [
     full_name: 'bDevOnly',
     avatar: '🤔',
     gender: 'neutral',
-    default_personality: 'estrategista',
-    default_strength: 'medio'
+    default_personality: 'analitico',
+    default_strength: 'forte'
   },
   {
     id: 'bot_sys_codequiz_flakael',
@@ -91,7 +90,7 @@ const SYSTEM_BOT_ROSTER = [
     full_name: 'Flakael',
     avatar: '😉',
     gender: 'male',
-    default_personality: 'sarcastico',
+    default_personality: 'provocador',
     default_strength: 'forte'
   },
   {
@@ -100,35 +99,8 @@ const SYSTEM_BOT_ROSTER = [
     full_name: 'z3n',
     avatar: '😉',
     gender: 'neutral',
-    default_personality: 'sarcastico',
-    default_strength: 'medio'
-  },
-  {
-    id: 'bot_sys_codequiz_sandman',
-    nickname: 'Sandman',
-    full_name: 'Sandman',
-    avatar: '😴',
-    gender: 'male',
-    default_personality: 'enigmatico',
-    default_strength: 'medio'
-  },
-  {
-    id: 'bot_sys_codequiz_eliztwa',
-    nickname: 'ElizTWA',
-    full_name: 'ElizTWA',
-    avatar: '🧠',
-    gender: 'female',
-    default_personality: 'visionario',
-    default_strength: 'medio'
-  },
-  {
-    id: 'bot_sys_codequiz_oharaxx',
-    nickname: 'oharaXx',
-    full_name: 'oharaXx',
-    avatar: '⚡',
-    gender: 'neutral',
-    default_personality: 'impulsivo',
-    default_strength: 'medio'
+    default_personality: 'calmo',
+    default_strength: 'forte'
   }
 ];
 
@@ -137,19 +109,8 @@ export const SYSTEM_BOT_NICKNAME = SYSTEM_BOT_ROSTER[0].nickname;
 export const SYSTEM_BOT_IDS = SYSTEM_BOT_ROSTER.map((bot) => bot.id);
 const SYSTEM_BOT_ID_SET = new Set(SYSTEM_BOT_IDS);
 const SYSTEM_BOT_DEFAULT_AVATAR = '🤖';
-const SYSTEM_BOT_STRENGTH_DEFAULT = 'medio';
-const BOT_PERSONALITY_OPTIONS = new Set([
-  'provocador',
-  'analitico',
-  'calmo',
-  'estrategista',
-  'caotico',
-  'sarcastico',
-  'competitivo',
-  'enigmatico',
-  'visionario',
-  'impulsivo'
-]);
+const SYSTEM_BOT_STRENGTH_DEFAULT = 'forte';
+const BOT_PERSONALITY_OPTIONS = new Set(['provocador', 'analitico', 'calmo']);
 const BOT_STRENGTH_OPTIONS = new Set(['fraco', 'medio', 'forte']);
 export const SYSTEM_BOT_DEFAULT_STRENGTH_BY_ID = Object.freeze(
   SYSTEM_BOT_ROSTER.reduce((acc, bot) => {
@@ -190,43 +151,45 @@ const BOT_STRENGTH_RANK = {
 const BOT_PROFILE_EMOJI_BY_PERSONALITY = {
   provocador: 'emoji_common_smart',
   analitico: 'emoji_common_focus',
-  calmo: 'emoji_common_happy',
-  estrategista: 'emoji_common_think',
-  caotico: 'emoji_common_party',
-  sarcastico: 'emoji_common_wink',
-  competitivo: 'emoji_common_cool',
-  enigmatico: 'emoji_figurative_ghost',
-  visionario: 'emoji_object_crystal',
-  impulsivo: 'emoji_object_bomb'
+  calmo: 'emoji_common_happy'
 };
 const BOT_DEFAULT_FRAME_ID = 'frame_default';
 const BOT_DEFAULT_BACKGROUND_ID = 'bg_default';
 const BOT_DEFAULT_EMOJI_ID = 'emoji_profile';
-const BOT_RANDOM_FRAME_IDS = getItemsByType('frame')
+const BOT_INITIAL_SHOP_BUDGET_COINS = 600;
+const BOT_FRAME_ITEMS = getItemsByType('frame');
+const BOT_BACKGROUND_ITEMS = getItemsByType('background');
+const BOT_EMOJI_ITEMS = getItemsByType('emoji');
+const BOT_ITEM_META_BY_ID = new Map(
+  [...BOT_FRAME_ITEMS, ...BOT_BACKGROUND_ITEMS, ...BOT_EMOJI_ITEMS]
+    .map((item) => [String(item?.id || '').trim(), item])
+    .filter(([itemId]) => !!itemId)
+);
+const BOT_RANDOM_FRAME_IDS = BOT_FRAME_ITEMS
   .map((item) => String(item?.id || '').trim())
   .filter((itemId) => itemId && itemId !== BOT_DEFAULT_FRAME_ID);
-const BOT_RANDOM_BACKGROUND_IDS = getItemsByType('background')
+const BOT_RANDOM_BACKGROUND_IDS = BOT_BACKGROUND_ITEMS
   .map((item) => String(item?.id || '').trim())
   .filter((itemId) => itemId && itemId !== BOT_DEFAULT_BACKGROUND_ID);
-const BOT_RANDOM_EMOJI_IDS = getItemsByType('emoji')
+const BOT_RANDOM_EMOJI_IDS = BOT_EMOJI_ITEMS
   .map((item) => String(item?.id || '').trim())
   .filter((itemId) => itemId && itemId !== BOT_DEFAULT_EMOJI_ID);
-const BOT_RANDOM_AVATAR_ICONS = getItemsByType('emoji')
+const BOT_RANDOM_AVATAR_ICONS = BOT_EMOJI_ITEMS
   .map((item) => String(item?.icon || '').trim())
   .filter((icon) => !!icon);
-const BOT_LEGENDARY_FRAME_IDS = getItemsByType('frame')
+const BOT_LEGENDARY_FRAME_IDS = BOT_FRAME_ITEMS
   .filter((item) => String(item?.rarity || '').trim().toLowerCase() === 'legendary')
   .map((item) => String(item?.id || '').trim())
   .filter((itemId) => itemId && itemId !== BOT_DEFAULT_FRAME_ID);
-const BOT_LEGENDARY_BACKGROUND_IDS = getItemsByType('background')
+const BOT_LEGENDARY_BACKGROUND_IDS = BOT_BACKGROUND_ITEMS
   .filter((item) => String(item?.rarity || '').trim().toLowerCase() === 'legendary')
   .map((item) => String(item?.id || '').trim())
   .filter((itemId) => itemId && itemId !== BOT_DEFAULT_BACKGROUND_ID);
-const BOT_LEGENDARY_EMOJI_IDS = getItemsByType('emoji')
+const BOT_LEGENDARY_EMOJI_IDS = BOT_EMOJI_ITEMS
   .filter((item) => String(item?.rarity || '').trim().toLowerCase() === 'legendary')
   .map((item) => String(item?.id || '').trim())
   .filter((itemId) => itemId && itemId !== BOT_DEFAULT_EMOJI_ID);
-const BOT_LEGENDARY_AVATAR_ICONS = getItemsByType('emoji')
+const BOT_LEGENDARY_AVATAR_ICONS = BOT_EMOJI_ITEMS
   .filter((item) => String(item?.rarity || '').trim().toLowerCase() === 'legendary')
   .map((item) => String(item?.icon || '').trim())
   .filter((icon) => !!icon);
@@ -264,12 +227,27 @@ const BOT_QUIZ_BATCH_SIZE = 1;
 const BOT_QUIZ_DURATION_MS_MIN = 24000;
 const BOT_QUIZ_DURATION_MS_MAX = 36000;
 const BOT_QUIZ_BUSY_SOURCE = 'arena_quiz';
-const ENSURE_SYSTEM_BOTS_MIN_INTERVAL_MS = 120000;
+const ENSURE_SYSTEM_BOTS_MIN_INTERVAL_MS = 900000;
 const PVP_MATCH_ROWS_CACHE_TTL_MS = 1200;
 const BOT_LOCAL_CACHE_STORAGE_KEY = 'codequiz_bot_local_cache_v1';
+const BOT_LOCAL_CACHE_GLOBAL_PURGE_MARKER_KEY = 'codequiz_bot_local_cache_global_purge_v1';
 const BOT_LOCAL_CACHE_MAX_AGE_MS = 1000 * 60 * 60 * 24;
 const BOT_LOCAL_QUEUE_MAX_AGE_MS = 1000 * 60 * 60 * 24;
 const ENSURE_BOT_QUEUES_MIN_INTERVAL_MS = 7000;
+const BOT_QUEUE_READONLY_REFRESH_MIN_INTERVAL_MS = 25000;
+const BOT_GLOBAL_SYNC_ONLY = (
+  String(process.env.NEXT_PUBLIC_BOT_GLOBAL_SYNC_ONLY || '1').trim() !== '0'
+);
+const BOT_GLOBAL_FALLBACK_ISO = '2026-01-01T00:00:00.000Z';
+const ENABLE_CLIENT_BOT_BOOTSTRAP_WRITES = (
+  process.env.NODE_ENV !== 'production'
+  || String(process.env.NEXT_PUBLIC_ENABLE_CLIENT_BOT_BOOTSTRAP_WRITES || '').trim() === '1'
+);
+const VISIBLE_LANGUAGE_IDS = new Set(
+  (Array.isArray(LANGUAGES) ? LANGUAGES : [])
+    .map((entry) => String(entry?.id || '').trim())
+    .filter(Boolean)
+);
 
 export function getSystemBotDefaultStrength(botId = '') {
   const safeBotId = String(botId || '').trim();
@@ -288,6 +266,7 @@ function buildBotQuizCatalogByDifficulty(questionsMap = {}) {
   };
 
   Object.keys(safeQuestions).sort().forEach((languageId) => {
+    if (!VISIBLE_LANGUAGE_IDS.has(String(languageId || '').trim())) return;
     const languagePack = safeQuestions[languageId];
     if (!languagePack || typeof languagePack !== 'object') return;
     Object.keys(languagePack).sort().forEach((topicId) => {
@@ -333,6 +312,8 @@ let botLocalCacheLoaded = false;
 let botLocalCacheState = null;
 let ensureBotQueuesCached = null;
 let ensureBotQueuesCachedAtMs = 0;
+let botQueueReadOnlyRefreshPromise = null;
+let botQueueReadOnlyRefreshAtMs = 0;
 let botQuizHistoryPurgeAttemptAtMs = 0;
 let botQuizHistoryPurgeCompleted = false;
 
@@ -452,6 +433,20 @@ function hashBotSeed(value = '') {
   return normalized + 1;
 }
 
+function shuffleBotIdsDeterministic(ids = [], seedKey = '') {
+  const list = Array.isArray(ids) ? ids.map((value) => String(value || '').trim()).filter(Boolean) : [];
+  if (list.length <= 1) return list;
+  const random = buildSeededRandom(hashBotSeed(`shuffle:${seedKey}`));
+  const next = [...list];
+  for (let index = next.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.floor(random() * (index + 1));
+    const temp = next[index];
+    next[index] = next[swapIndex];
+    next[swapIndex] = temp;
+  }
+  return next;
+}
+
 function resolveDeterministicBotRun(seedKey, targetAccuracy, totalSteps, targetStep = totalSteps) {
   const safeSteps = Math.max(1, Math.trunc(Number(totalSteps || 1)));
   const safeTargetStep = Math.max(1, Math.min(safeSteps, Math.trunc(Number(targetStep || safeSteps))));
@@ -502,7 +497,7 @@ function normalizeBotQueueOrder(rawOrder) {
   const seen = new Set();
   source.forEach((id) => {
     const safe = String(id || '').trim();
-    if (!isSystemBotUserId(safe)) return;
+    if (!SYSTEM_BOT_ID_SET.has(safe)) return;
     if (seen.has(safe)) return;
     seen.add(safe);
     picked.push(safe);
@@ -533,7 +528,7 @@ function buildSeedBotSnapshot(botId = SYSTEM_BOT_ID, nowIso = new Date().toISOSt
     pvp_points: getDefaultBotPvpPointsByStrength(config.strength),
     level: config.strength === 'forte' ? 20 : (config.strength === 'medio' ? 12 : 8)
   }, nowIso);
-  const profile = buildSystemBotUserPayload(botDef, {}, nowIso, config.personality, config.strength);
+  const profile = buildSystemBotUserPayload(botDef, {}, nowIso, config.personality, config.strength, stats);
   return {
     bot_id: botDef.id,
     profile,
@@ -544,6 +539,10 @@ function buildSeedBotSnapshot(botId = SYSTEM_BOT_ID, nowIso = new Date().toISOSt
     config_is_fallback: false,
     snapshot_source: 'local_seed'
   };
+}
+
+function buildGlobalFallbackBotSnapshot(botId = SYSTEM_BOT_ID) {
+  return buildSeedBotSnapshot(botId, BOT_GLOBAL_FALLBACK_ISO);
 }
 
 function normalizeBotLocalCacheState(raw) {
@@ -614,19 +613,21 @@ function getBotLocalCacheState() {
     ...(normalized.snapshots && typeof normalized.snapshots === 'object' ? normalized.snapshots : {})
   };
   let changed = false;
-  SYSTEM_BOT_IDS.forEach((botId) => {
-    if (snapshots[botId] && typeof snapshots[botId] === 'object') return;
-    const seeded = buildSeedBotSnapshot(botId, nowIso);
-    snapshots[botId] = {
-      bot_id: botId,
-      profile: seeded.profile,
-      stats: seeded.stats,
-      config: seeded.config,
-      cached_at_ms: nowMs,
-      source: 'local_seed'
-    };
-    changed = true;
-  });
+  if (!BOT_GLOBAL_SYNC_ONLY) {
+    SYSTEM_BOT_IDS.forEach((botId) => {
+      if (snapshots[botId] && typeof snapshots[botId] === 'object') return;
+      const seeded = buildSeedBotSnapshot(botId, nowIso);
+      snapshots[botId] = {
+        bot_id: botId,
+        profile: seeded.profile,
+        stats: seeded.stats,
+        config: seeded.config,
+        cached_at_ms: nowMs,
+        source: 'local_seed'
+      };
+      changed = true;
+    });
+  }
 
   const queueOrder = normalizeBotQueueOrder(normalized.queue_order);
   const safeQueueOrder = queueOrder.length ? queueOrder : normalizeBotQueueOrder(SYSTEM_BOT_IDS);
@@ -650,6 +651,8 @@ function getCachedBotSnapshot(botId = SYSTEM_BOT_ID, maxAgeMs = BOT_LOCAL_CACHE_
   const state = getBotLocalCacheState();
   const row = state?.snapshots?.[safeBotId];
   if (!row || typeof row !== 'object') return null;
+  const source = String(row.source || 'local_cache').trim() || 'local_cache';
+  if (BOT_GLOBAL_SYNC_ONLY && source !== 'remote' && source !== 'global_fallback') return null;
   const safeMaxAgeMs = Math.max(1000, Number(maxAgeMs || BOT_LOCAL_CACHE_MAX_AGE_MS));
   const cachedAtMs = Math.max(0, Number(row.cached_at_ms || 0));
   if (cachedAtMs > 0 && (Date.now() - cachedAtMs) > safeMaxAgeMs) return null;
@@ -661,7 +664,7 @@ function getCachedBotSnapshot(botId = SYSTEM_BOT_ID, maxAgeMs = BOT_LOCAL_CACHE_
     profile_is_fallback: false,
     stats_is_fallback: false,
     config_is_fallback: false,
-    snapshot_source: String(row.source || 'local_cache')
+    snapshot_source: source
   };
 }
 
@@ -683,6 +686,8 @@ function setCachedBotSnapshot(snapshot, source = 'remote') {
     ? safeSnapshot.config
     : null;
   if (!profile || !stats || !config) return null;
+  const safeSource = String(source || 'remote').trim() || 'remote';
+  if (BOT_GLOBAL_SYNC_ONLY && safeSource === 'local_seed') return null;
   const state = getBotLocalCacheState();
   state.snapshots[safeBotId] = {
     bot_id: safeBotId,
@@ -690,7 +695,7 @@ function setCachedBotSnapshot(snapshot, source = 'remote') {
     stats,
     config,
     cached_at_ms: Date.now(),
-    source: String(source || 'remote').trim() || 'remote'
+    source: safeSource
   };
   persistBotLocalCacheState();
   return {
@@ -726,6 +731,49 @@ function setCachedBotQueueOrder(order) {
   return safeOrder;
 }
 
+export async function purgeBotLocalCacheForGlobalSync(actorUserId = '') {
+  if (!BOT_GLOBAL_SYNC_ONLY) return false;
+  if (!canUseBrowserLocalStorage()) {
+    botLocalCacheLoaded = false;
+    botLocalCacheState = null;
+    ensureBotQueuesCached = null;
+    ensureBotQueuesCachedAtMs = 0;
+    ensureSystemBotsCachedSnapshots = null;
+    ensureSystemBotsLastSuccessAtMs = 0;
+    return false;
+  }
+
+  const safeActorUserId = String(actorUserId || '').trim();
+  const markerValue = safeActorUserId
+    ? `${safeActorUserId}:${Date.now()}`
+    : String(Date.now());
+  let alreadyPurged = false;
+  try {
+    alreadyPurged = String(window.localStorage.getItem(BOT_LOCAL_CACHE_GLOBAL_PURGE_MARKER_KEY) || '').trim() !== '';
+  } catch {
+    alreadyPurged = false;
+  }
+
+  if (!alreadyPurged) {
+    try {
+      window.localStorage.removeItem(BOT_LOCAL_CACHE_STORAGE_KEY);
+      window.localStorage.setItem(BOT_LOCAL_CACHE_GLOBAL_PURGE_MARKER_KEY, markerValue);
+    } catch {
+      // Ignore localStorage write/remove failures.
+    }
+  }
+
+  botLocalCacheLoaded = false;
+  botLocalCacheState = null;
+  ensureBotQueuesCached = null;
+  ensureBotQueuesCachedAtMs = 0;
+  botQueueReadOnlyRefreshPromise = null;
+  botQueueReadOnlyRefreshAtMs = 0;
+  ensureSystemBotsCachedSnapshots = null;
+  ensureSystemBotsLastSuccessAtMs = 0;
+  return !alreadyPurged;
+}
+
 function rotateBotQueueOrder(order, botId) {
   const safeOrder = normalizeBotQueueOrder(order);
   const safeBotId = String(botId || '').trim();
@@ -756,6 +804,38 @@ function normalizeArenaQueueState(raw) {
     updated_at: String(safe.updated_at || ''),
     updated_at_ms: Math.max(0, Number(safe.updated_at_ms || 0))
   };
+}
+
+function queueOrderEquals(a, b) {
+  const first = normalizeBotQueueOrder(a);
+  const second = normalizeBotQueueOrder(b);
+  if (first.length !== second.length) return false;
+  for (let index = 0; index < first.length; index += 1) {
+    if (first[index] !== second[index]) return false;
+  }
+  return true;
+}
+
+function cyclePlayedEquals(a, b) {
+  const first = normalizeArenaCyclePlayed(a);
+  const second = normalizeArenaCyclePlayed(b);
+  const firstKeys = Object.keys(first);
+  const secondKeys = Object.keys(second);
+  if (firstKeys.length !== secondKeys.length) return false;
+  return firstKeys.every((key) => second[key] === true);
+}
+
+function botConfigCoreEquals(current, next) {
+  const prev = current && typeof current === 'object' ? current : null;
+  const expected = next && typeof next === 'object' ? next : {};
+  if (!prev) return false;
+  return (
+    String(prev.bot_id || '').trim() === String(expected.bot_id || '').trim()
+    && String(prev.nickname || '').trim() === String(expected.nickname || '').trim()
+    && normalizeSystemBotPersonality(prev.personality, expected.personality) === normalizeSystemBotPersonality(expected.personality, expected.personality)
+    && normalizeSystemBotStrength(prev.strength) === normalizeSystemBotStrength(expected.strength)
+    && String(prev.gender || '').trim() === String(expected.gender || '').trim()
+  );
 }
 
 function buildSeededRandom(seedValue) {
@@ -1122,15 +1202,207 @@ function pickDeterministicBotCosmeticId(candidates, seedKey, fallbackId) {
   return String(pool[index] || fallbackId || '');
 }
 
-function getDefaultSystemBotCosmetics(botId, personality = 'provocador', strength = SYSTEM_BOT_STRENGTH_DEFAULT) {
+function getBotEvolutionPassLevel(statsRow = null) {
+  const safeStats = statsRow && typeof statsRow === 'object' ? statsRow : {};
+  const achievementIds = normalizeAchievementIds(
+    safeStats.achievement_ids || safeStats.achievements
+  );
+  let level = 0;
+  achievementIds.forEach((achievementId) => {
+    const match = /^pass_lvl_(\d{1,2})$/i.exec(String(achievementId || '').trim());
+    if (!match) return;
+    const currentLevel = Math.max(0, Number(match[1] || 0));
+    if (currentLevel > level) level = currentLevel;
+  });
+  return level;
+}
+
+function getEvolutionPassUnlockLevelForItem(itemId = '') {
+  const safeItemId = String(itemId || '').trim();
+  if (!safeItemId) return 0;
+  const item = BOT_ITEM_META_BY_ID.get(safeItemId);
+  if (!item || typeof item !== 'object') return 0;
+  const unlockSource = String(item.unlockSource || '').trim().toLowerCase();
+  if (unlockSource !== 'evolution_pass') return 0;
+  return Math.max(1, Math.floor(Number(item.unlockLevel || 0)));
+}
+
+function isBotCosmeticUnlockedForPassLevel(itemId = '', passLevel = 0) {
+  const unlockLevel = getEvolutionPassUnlockLevelForItem(itemId);
+  if (unlockLevel <= 0) return true;
+  const safePassLevel = Math.max(0, Math.floor(Number(passLevel || 0)));
+  return safePassLevel >= unlockLevel;
+}
+
+function filterBotCosmeticIdsByPassLevel(itemIds = [], passLevel = 0) {
+  const source = Array.isArray(itemIds) ? itemIds : [];
+  const safePassLevel = Math.max(0, Math.floor(Number(passLevel || 0)));
+  return source.filter((itemId) => isBotCosmeticUnlockedForPassLevel(itemId, safePassLevel));
+}
+
+function getBotShopItemPrice(itemId = '') {
+  const safeItemId = String(itemId || '').trim();
+  if (!safeItemId) return 0;
+  const item = BOT_ITEM_META_BY_ID.get(safeItemId);
+  return Math.max(0, Math.floor(Number(item?.price || 0)));
+}
+
+function pickBotEquippedCosmeticByType(
+  purchasedIds = [],
+  type = 'frame',
+  seedKey = '',
+  fallbackId = ''
+) {
+  const source = Array.isArray(purchasedIds)
+    ? purchasedIds.map((itemId) => String(itemId || '').trim()).filter(Boolean)
+    : [];
+  if (!source.length) return String(fallbackId || '');
+
+  const sorted = [...source].sort((itemA, itemB) => {
+    const priceDiff = getBotShopItemPrice(itemB) - getBotShopItemPrice(itemA);
+    if (priceDiff !== 0) return priceDiff;
+    return String(itemA).localeCompare(String(itemB));
+  });
+  const topPrice = getBotShopItemPrice(sorted[0]);
+  const bestTier = sorted.filter((itemId) => getBotShopItemPrice(itemId) === topPrice);
+  const picked = pickDeterministicBotCosmeticId(
+    bestTier,
+    `bot_shop:equip:${type}:${seedKey}`,
+    fallbackId
+  );
+  return String(picked || fallbackId || '');
+}
+
+function canBotBuyCosmeticWithCoins(itemId = '', passLevel = 0) {
+  const safeItemId = String(itemId || '').trim();
+  if (!safeItemId) return false;
+  const item = BOT_ITEM_META_BY_ID.get(safeItemId);
+  if (!item || typeof item !== 'object') return false;
+  const unlockSource = String(item.unlockSource || '').trim().toLowerCase();
+  if (unlockSource === 'evolution_pass') return false;
+  if (!isBotCosmeticUnlockedForPassLevel(safeItemId, passLevel)) return false;
+  return getBotShopItemPrice(safeItemId) > 0;
+}
+
+function getRandomSystemBotShopCosmetics(
+  botId = SYSTEM_BOT_ID,
+  personality = 'provocador',
+  options = {}
+) {
+  const safeBotId = String(botId || SYSTEM_BOT_ID).trim() || SYSTEM_BOT_ID;
+  const safePersonality = normalizeBotPersonality(personality);
+  const passLevel = Math.max(0, Math.floor(Number(options?.passLevel || 0)));
+  const budgetCoins = Math.max(0, Math.floor(Number(options?.budgetCoins ?? BOT_INITIAL_SHOP_BUDGET_COINS)));
+
+  const poolsByType = {
+    frame: shuffleBotIdsDeterministic(
+      BOT_RANDOM_FRAME_IDS.filter((itemId) => canBotBuyCosmeticWithCoins(itemId, passLevel)),
+      `bot_shop:${safeBotId}:frame`
+    ),
+    background: shuffleBotIdsDeterministic(
+      BOT_RANDOM_BACKGROUND_IDS.filter((itemId) => canBotBuyCosmeticWithCoins(itemId, passLevel)),
+      `bot_shop:${safeBotId}:background`
+    ),
+    emoji: shuffleBotIdsDeterministic(
+      BOT_RANDOM_EMOJI_IDS.filter((itemId) => canBotBuyCosmeticWithCoins(itemId, passLevel)),
+      `bot_shop:${safeBotId}:emoji:${safePersonality}`
+    )
+  };
+
+  const purchasedByType = {
+    frame: [],
+    background: [],
+    emoji: []
+  };
+  let remainingCoins = budgetCoins;
+  const typeOrder = shuffleBotIdsDeterministic(
+    ['frame', 'background', 'emoji'],
+    `bot_shop:${safeBotId}:type_order`
+  );
+
+  let boughtAtLeastOne = true;
+  while (boughtAtLeastOne && remainingCoins > 0) {
+    boughtAtLeastOne = false;
+    typeOrder.forEach((type) => {
+      const pool = Array.isArray(poolsByType[type]) ? poolsByType[type] : [];
+      if (!pool.length) return;
+      const pickIndex = pool.findIndex((itemId) => getBotShopItemPrice(itemId) <= remainingCoins);
+      if (pickIndex < 0) return;
+      const [pickedItemId] = pool.splice(pickIndex, 1);
+      if (!pickedItemId) return;
+      purchasedByType[type].push(pickedItemId);
+      remainingCoins = Math.max(0, remainingCoins - getBotShopItemPrice(pickedItemId));
+      boughtAtLeastOne = true;
+    });
+  }
+
+  const defaults = [BOT_DEFAULT_FRAME_ID, BOT_DEFAULT_BACKGROUND_ID, BOT_DEFAULT_EMOJI_ID];
+  const owned = normalizeShopOwnedIds([
+    ...defaults,
+    ...purchasedByType.frame,
+    ...purchasedByType.background,
+    ...purchasedByType.emoji
+  ]);
+  const ownedSet = new Set(owned);
+  const fallbackEmoji = getBotProfileEmojiByPersonality(safePersonality);
+  const equippedFrame = pickBotEquippedCosmeticByType(
+    purchasedByType.frame,
+    'frame',
+    safeBotId,
+    BOT_DEFAULT_FRAME_ID
+  );
+  const equippedBackground = pickBotEquippedCosmeticByType(
+    purchasedByType.background,
+    'background',
+    safeBotId,
+    BOT_DEFAULT_BACKGROUND_ID
+  );
+  const equippedEmojiCandidate = pickBotEquippedCosmeticByType(
+    purchasedByType.emoji,
+    'emoji',
+    `${safeBotId}:${safePersonality}`,
+    BOT_DEFAULT_EMOJI_ID
+  );
+  const equippedEmoji = ownedSet.has(equippedEmojiCandidate)
+    ? equippedEmojiCandidate
+    : (ownedSet.has(fallbackEmoji) ? fallbackEmoji : BOT_DEFAULT_EMOJI_ID);
+
+  return {
+    owned,
+    equipped: {
+      frame: ownedSet.has(equippedFrame) ? equippedFrame : BOT_DEFAULT_FRAME_ID,
+      background: ownedSet.has(equippedBackground) ? equippedBackground : BOT_DEFAULT_BACKGROUND_ID,
+      emoji: equippedEmoji
+    },
+    spentCoins: Math.max(0, budgetCoins - remainingCoins),
+    budgetCoins
+  };
+}
+
+function getDefaultSystemBotCosmetics(
+  botId,
+  personality = 'provocador',
+  strength = SYSTEM_BOT_STRENGTH_DEFAULT,
+  options = {}
+) {
   const safeBotId = String(botId || SYSTEM_BOT_ID).trim() || SYSTEM_BOT_ID;
   const safePersonality = normalizeBotPersonality(personality);
   const safeStrength = normalizeSystemBotStrength(strength);
+  const passLevel = Math.max(0, Math.floor(Number(options?.passLevel || 0)));
   const personalityEmoji = getBotProfileEmojiByPersonality(safePersonality);
   const preferLegendary = safeStrength === 'forte';
-  const framePool = preferLegendary && BOT_LEGENDARY_FRAME_IDS.length ? BOT_LEGENDARY_FRAME_IDS : BOT_RANDOM_FRAME_IDS;
-  const backgroundPool = preferLegendary && BOT_LEGENDARY_BACKGROUND_IDS.length ? BOT_LEGENDARY_BACKGROUND_IDS : BOT_RANDOM_BACKGROUND_IDS;
-  const emojiPool = preferLegendary && BOT_LEGENDARY_EMOJI_IDS.length ? BOT_LEGENDARY_EMOJI_IDS : BOT_RANDOM_EMOJI_IDS;
+  const framePoolBase = preferLegendary && BOT_LEGENDARY_FRAME_IDS.length
+    ? BOT_LEGENDARY_FRAME_IDS
+    : BOT_RANDOM_FRAME_IDS;
+  const backgroundPoolBase = preferLegendary && BOT_LEGENDARY_BACKGROUND_IDS.length
+    ? BOT_LEGENDARY_BACKGROUND_IDS
+    : BOT_RANDOM_BACKGROUND_IDS;
+  const emojiPoolBase = preferLegendary && BOT_LEGENDARY_EMOJI_IDS.length
+    ? BOT_LEGENDARY_EMOJI_IDS
+    : BOT_RANDOM_EMOJI_IDS;
+  const framePool = filterBotCosmeticIdsByPassLevel(framePoolBase, passLevel);
+  const backgroundPool = filterBotCosmeticIdsByPassLevel(backgroundPoolBase, passLevel);
+  const emojiPool = filterBotCosmeticIdsByPassLevel(emojiPoolBase, passLevel);
   return {
     frame: pickDeterministicBotCosmeticId(
       framePool,
@@ -1182,7 +1454,9 @@ export function isSystemBotUserId(userId) {
 }
 
 function normalizeSystemBotPersonality(value, fallback = 'provocador') {
-  return normalizeBotPersonality(value || fallback);
+  const raw = String(value || '').trim().toLowerCase();
+  if (BOT_PERSONALITY_OPTIONS.has(raw)) return raw;
+  return normalizeBotPersonality(fallback);
 }
 
 function normalizeNicknameChars(value) {
@@ -1217,7 +1491,7 @@ function isReservedBotNickname(value) {
 }
 
 export function validateNicknameInput(value) {
-  const raw = normalizeNicknameChars(value);
+  const raw = String(value || '').trim();
   if (!raw) {
     return {
       ok: false,
@@ -1231,7 +1505,7 @@ export function validateNicknameInput(value) {
       ok: false,
       nickname: '',
       errorCode: 'nickname/too-short',
-      errorMessage: `Apelido deve ter no minimo ${NICKNAME_MIN_LENGTH} caracteres.`
+      errorMessage: `Apelido deve ter no mínimo ${NICKNAME_MIN_LENGTH} caracteres.`
     };
   }
   if (raw.length > NICKNAME_MAX_LENGTH) {
@@ -1239,15 +1513,15 @@ export function validateNicknameInput(value) {
       ok: false,
       nickname: '',
       errorCode: 'nickname/too-long',
-      errorMessage: `Apelido deve ter no maximo ${NICKNAME_MAX_LENGTH} caracteres.`
+      errorMessage: `Apelido deve ter no máximo ${NICKNAME_MAX_LENGTH} caracteres.`
     };
   }
-  if (!/^[A-Za-z0-9]+$/.test(raw)) {
+  if (!/^[\p{L}0-9\s._-]+$/u.test(raw)) {
     return {
       ok: false,
       nickname: '',
       errorCode: 'nickname/invalid-format',
-      errorMessage: 'Use apenas letras e numeros, sem espacos ou simbolos.'
+      errorMessage: 'Use apenas letras, números, espaços, . _ ou -'
     };
   }
   if (isReservedBotNickname(raw)) {
@@ -1255,7 +1529,7 @@ export function validateNicknameInput(value) {
       ok: false,
       nickname: '',
       errorCode: 'nickname/reserved',
-      errorMessage: 'Este apelido e reservado pelo sistema.'
+      errorMessage: 'Este apelido é reservado pelo sistema.'
     };
   }
   return {
@@ -1290,7 +1564,7 @@ export function validateFullNameInput(value, options = {}) {
       ok: false,
       full_name: '',
       errorCode: 'full_name/too-short',
-      errorMessage: `Nome deve ter no minimo ${FULL_NAME_MIN_LENGTH} caracteres.`
+      errorMessage: `Nome deve ter no mínimo ${FULL_NAME_MIN_LENGTH} caracteres.`
     };
   }
   if (raw.length > FULL_NAME_MAX_LENGTH) {
@@ -1298,15 +1572,15 @@ export function validateFullNameInput(value, options = {}) {
       ok: false,
       full_name: '',
       errorCode: 'full_name/too-long',
-      errorMessage: `Nome deve ter no maximo ${FULL_NAME_MAX_LENGTH} caracteres.`
+      errorMessage: `Nome deve ter no máximo ${FULL_NAME_MAX_LENGTH} caracteres.`
     };
   }
-  if (!/^[\p{L}][\p{L}\s.'-]*$/u.test(raw)) {
+  if (!/^[\p{L}][\p{L}\s.'\-’"´`]*$/u.test(raw)) {
     return {
       ok: false,
       full_name: '',
       errorCode: 'full_name/invalid-format',
-      errorMessage: 'Use apenas letras e espacos no nome.'
+      errorMessage: 'Use apenas letras e espaços no nome.'
     };
   }
   return {
@@ -1317,30 +1591,74 @@ export function validateFullNameInput(value, options = {}) {
   };
 }
 
-function buildSystemBotUserPayload(botDef, current, nowIso, personality = 'provocador', strength = SYSTEM_BOT_STRENGTH_DEFAULT) {
+function buildSystemBotUserPayload(
+  botDef,
+  current,
+  nowIso,
+  personality = 'provocador',
+  strength = SYSTEM_BOT_STRENGTH_DEFAULT,
+  botStats = null
+) {
   const base = current && typeof current === 'object' ? current : {};
   const def = botDef && typeof botDef === 'object' ? botDef : getSystemBotDefinition();
   const safePersonality = normalizeSystemBotPersonality(personality, def.default_personality || 'provocador');
   const safeStrength = normalizeSystemBotStrength(strength ?? def.default_strength ?? base.bot_strength);
-  const fallbackCosmetics = getDefaultSystemBotCosmetics(def.id, safePersonality, safeStrength);
+  const safePassLevel = getBotEvolutionPassLevel(botStats);
+  const shopSeed = getRandomSystemBotShopCosmetics(
+    def.id,
+    safePersonality,
+    {
+      passLevel: safePassLevel,
+      budgetCoins: BOT_INITIAL_SHOP_BUDGET_COINS
+    }
+  );
+  const fallbackCosmetics = getDefaultSystemBotCosmetics(
+    def.id,
+    safePersonality,
+    safeStrength,
+    { passLevel: safePassLevel }
+  );
   const fallbackAvatar = getDefaultSystemBotAvatar(
     def.id,
     safePersonality,
     safeStrength,
     String(def.avatar || SYSTEM_BOT_DEFAULT_AVATAR)
   );
-  const seededFrame = String(fallbackCosmetics.frame || BOT_DEFAULT_FRAME_ID);
-  const seededBackground = String(fallbackCosmetics.background || BOT_DEFAULT_BACKGROUND_ID);
-  const seededEmoji = String(fallbackCosmetics.emoji || getBotProfileEmojiByPersonality(safePersonality));
-  const equippedFrame = BOT_VALID_FRAME_ID_SET.has(seededFrame) ? seededFrame : BOT_DEFAULT_FRAME_ID;
-  const equippedBackground = BOT_VALID_BACKGROUND_ID_SET.has(seededBackground) ? seededBackground : BOT_DEFAULT_BACKGROUND_ID;
-  const equippedEmoji = BOT_VALID_EMOJI_ID_SET.has(seededEmoji) ? seededEmoji : BOT_DEFAULT_EMOJI_ID;
+  const seededFrame = String(
+    shopSeed?.equipped?.frame
+    || fallbackCosmetics.frame
+    || BOT_DEFAULT_FRAME_ID
+  );
+  const seededBackground = String(
+    shopSeed?.equipped?.background
+    || fallbackCosmetics.background
+    || BOT_DEFAULT_BACKGROUND_ID
+  );
+  const seededEmoji = String(
+    shopSeed?.equipped?.emoji
+    || fallbackCosmetics.emoji
+    || getBotProfileEmojiByPersonality(safePersonality)
+  );
+  const equippedFrame = (
+    BOT_VALID_FRAME_ID_SET.has(seededFrame)
+    && isBotCosmeticUnlockedForPassLevel(seededFrame, safePassLevel)
+  ) ? seededFrame : BOT_DEFAULT_FRAME_ID;
+  const equippedBackground = (
+    BOT_VALID_BACKGROUND_ID_SET.has(seededBackground)
+    && isBotCosmeticUnlockedForPassLevel(seededBackground, safePassLevel)
+  ) ? seededBackground : BOT_DEFAULT_BACKGROUND_ID;
+  const equippedEmoji = (
+    BOT_VALID_EMOJI_ID_SET.has(seededEmoji)
+    && isBotCosmeticUnlockedForPassLevel(seededEmoji, safePassLevel)
+  ) ? seededEmoji : BOT_DEFAULT_EMOJI_ID;
+  const equippedEmojiItem = BOT_ITEM_META_BY_ID.get(equippedEmoji);
+  const avatarByEquippedEmoji = String(equippedEmojiItem?.icon || '').trim();
   return {
     id: def.id,
     auth_id: def.id,
     full_name: String(def.full_name || def.nickname || 'CodeQuiz Bot'),
     nickname: String(def.nickname || 'CodeQuizBot'),
-    avatar: String(fallbackAvatar || SYSTEM_BOT_DEFAULT_AVATAR),
+    avatar: String(avatarByEquippedEmoji || fallbackAvatar || SYSTEM_BOT_DEFAULT_AVATAR),
     equipped_frame: equippedFrame,
     equipped_background: equippedBackground,
     equipped_emoji: String(equippedEmoji),
@@ -1381,6 +1699,33 @@ function normalizeQuizRewardedMap(value) {
   return next;
 }
 
+function normalizeSeasonClaimRow(value, fallbackSeasonId = '') {
+  const safe = value && typeof value === 'object' ? value : {};
+  const seasonId = String(safe.season_id || fallbackSeasonId || '').trim();
+  if (!seasonId) return null;
+  const claimedAt = String(safe.claimed_at || '').trim();
+  return {
+    season_id: seasonId,
+    claimed_at: claimedAt || null,
+    reward_coins: Math.max(0, Math.trunc(Number(safe.reward_coins || 0))),
+    season_start_at_ms: Math.max(0, Math.trunc(Number(safe.season_start_at_ms || 0))),
+    season_end_at_ms: Math.max(0, Math.trunc(Number(safe.season_end_at_ms || 0)))
+  };
+}
+
+function normalizeSeasonClaimsMap(value) {
+  if (!value || typeof value !== 'object') return {};
+  const next = {};
+  Object.entries(value).forEach(([seasonId, rawRow]) => {
+    const safeSeasonId = String(seasonId || '').trim();
+    if (!safeSeasonId || !rawRow || typeof rawRow !== 'object') return;
+    const normalized = normalizeSeasonClaimRow(rawRow, safeSeasonId);
+    if (!normalized) return;
+    next[safeSeasonId] = normalized;
+  });
+  return next;
+}
+
 function buildSystemBotStatsPayload(botDef, current, nowIso) {
   const base = current && typeof current === 'object' ? current : {};
   const def = botDef && typeof botDef === 'object' ? botDef : getSystemBotDefinition();
@@ -1398,7 +1743,7 @@ function buildSystemBotStatsPayload(botDef, current, nowIso) {
     pvp_points: hasPersistedRow
       ? preservedPvpPoints
       : seededPvpPoints,
-    coins: Math.max(0, Number(base.coins || 20)),
+    coins: Math.max(0, Number(base.coins || BOT_INITIAL_SHOP_BUDGET_COINS)),
     pvp_battles: Math.max(0, Number(base.pvp_battles || 0)),
     pvp_wins: Math.max(0, Number(base.pvp_wins || 0)),
     pvp_losses: Math.max(0, Number(base.pvp_losses || 0)),
@@ -1457,11 +1802,53 @@ export async function ensureSystemBots(options = {}) {
   }
   if (ensureSystemBotsPromise) return ensureSystemBotsPromise;
 
+  if (!ENABLE_CLIENT_BOT_BOOTSTRAP_WRITES) {
+    const nowIso = new Date().toISOString();
+    const snapshots = await Promise.all(
+      SYSTEM_BOT_ROSTER.map(async (botDef) => {
+        const botId = String(botDef?.id || '').trim();
+        const configPath = botId === SYSTEM_BOT_ID
+          ? 'pvp_bots_state/config'
+          : `pvp_bots_state/configs/${botId}`;
+        const [profile, stats, rawConfig] = await Promise.all([
+          getUserProfile(botId).catch(() => null),
+          getUserStats(botId).catch(() => null),
+          getNode(configPath).catch(() => null)
+        ]);
+        const hasRemoteProfile = profile && typeof profile === 'object';
+        const hasRemoteStats = stats && typeof stats === 'object';
+        const hasRemoteConfig = rawConfig && typeof rawConfig === 'object';
+        const seedSnapshot = buildGlobalFallbackBotSnapshot(botId);
+        const normalizedConfig = hasRemoteConfig
+          ? buildSystemBotConfigPayload(botDef, rawConfig, nowIso)
+          : (seedSnapshot?.config || buildSystemBotConfigPayload(botDef, {}, nowIso));
+        const row = {
+          bot_id: botId,
+          profile: hasRemoteProfile ? profile : seedSnapshot.profile,
+          stats: hasRemoteStats ? stats : seedSnapshot.stats,
+          config: normalizedConfig,
+          profile_is_fallback: !hasRemoteProfile,
+          stats_is_fallback: !hasRemoteStats,
+          config_is_fallback: !hasRemoteConfig,
+          snapshot_source: hasRemoteProfile && hasRemoteStats ? 'remote' : 'global_fallback'
+        };
+        setCachedBotSnapshot(
+          row,
+          row.snapshot_source === 'remote' ? 'remote' : 'global_fallback'
+        );
+        return row;
+      })
+    );
+    ensureSystemBotsCachedSnapshots = snapshots;
+    ensureSystemBotsLastSuccessAtMs = Date.now();
+    return snapshots;
+  }
+
   ensureSystemBotsPromise = (async () => {
     const nowIso = new Date().toISOString();
     const configsByBotId = {};
 
-    // Process bots sequentially to avoid overwhelming the Firebase WebSocket connection
+    // Process bots sequentially to avoid overwhelming the remote database sync flow
     // with too many simultaneous transactions during startup.
     for (const botDef of SYSTEM_BOT_ROSTER) {
       await runTransaction(ref(firebaseDb, `pvp_bots_state/configs/${botDef.id}`), (current) => {
@@ -1476,18 +1863,47 @@ export async function ensureSystemBots(options = {}) {
 
     for (const botDef of SYSTEM_BOT_ROSTER) {
       const botConfig = configsByBotId[botDef.id] || buildSystemBotConfigPayload(botDef, {}, nowIso);
-      const userTx = await runTransaction(ref(firebaseDb, `users/${botDef.id}`), (current) => (
-        buildSystemBotUserPayload(botDef, current, nowIso, botConfig.personality, botConfig.strength)
-      )).catch(() => null);
-      await runTransaction(ref(firebaseDb, `user_stats/${botDef.id}`), (current) => (
+      const statsTx = await runTransaction(ref(firebaseDb, `user_stats/${botDef.id}`), (current) => (
         buildSystemBotStatsPayload(botDef, current, nowIso)
       )).catch(() => null);
+      const statsRow = statsTx?.snapshot?.val();
+      const userTx = await runTransaction(ref(firebaseDb, `users/${botDef.id}`), (current) => (
+        buildSystemBotUserPayload(
+          botDef,
+          current,
+          nowIso,
+          botConfig.personality,
+          botConfig.strength,
+          statsRow
+        )
+      )).catch(() => null);
       const userRow = userTx?.snapshot?.val();
-      const equippedFrame = String(userRow?.equipped_frame || BOT_DEFAULT_FRAME_ID);
-      const equippedBackground = String(userRow?.equipped_background || BOT_DEFAULT_BACKGROUND_ID);
-      const equippedEmoji = String(userRow?.equipped_emoji || BOT_DEFAULT_EMOJI_ID);
+      const shopSeed = getRandomSystemBotShopCosmetics(
+        botDef.id,
+        botConfig.personality,
+        {
+          passLevel: getBotEvolutionPassLevel(statsRow),
+          budgetCoins: BOT_INITIAL_SHOP_BUDGET_COINS
+        }
+      );
+      const equippedFrame = String(
+        userRow?.equipped_frame
+        || shopSeed?.equipped?.frame
+        || BOT_DEFAULT_FRAME_ID
+      );
+      const equippedBackground = String(
+        userRow?.equipped_background
+        || shopSeed?.equipped?.background
+        || BOT_DEFAULT_BACKGROUND_ID
+      );
+      const equippedEmoji = String(
+        userRow?.equipped_emoji
+        || shopSeed?.equipped?.emoji
+        || BOT_DEFAULT_EMOJI_ID
+      );
       await saveUserShop(botDef.id, {
         owned: [
+          ...(Array.isArray(shopSeed?.owned) ? shopSeed.owned : []),
           BOT_DEFAULT_FRAME_ID,
           BOT_DEFAULT_BACKGROUND_ID,
           BOT_DEFAULT_EMOJI_ID,
@@ -1552,7 +1968,7 @@ export async function getSystemBotSnapshot(botId = SYSTEM_BOT_ID, options = {}) 
   const safeBotDef = getSystemBotDefinition(botId);
   const safeBotId = safeBotDef.id;
   const waitForEnsure = options && options.waitForEnsure === true;
-  const preferLocal = options && options.preferLocal === true;
+  const preferLocal = options && options.preferLocal === true && !BOT_GLOBAL_SYNC_ONLY;
   const localMaxAgeMs = Math.max(
     1000,
     Number(options?.localMaxAgeMs || BOT_LOCAL_CACHE_MAX_AGE_MS)
@@ -1566,6 +1982,7 @@ export async function getSystemBotSnapshot(botId = SYSTEM_BOT_ID, options = {}) 
     void ensureSystemBots().catch(() => null);
   }
   const nowIso = new Date().toISOString();
+  const joinedAtMs = Math.max(0, Number(payload?.joined_at_ms || 0));
   const [profile, stats, config] = await Promise.all([
     getUserProfile(safeBotId).catch(() => null),
     getUserStats(safeBotId).catch(() => null),
@@ -1574,39 +1991,61 @@ export async function getSystemBotSnapshot(botId = SYSTEM_BOT_ID, options = {}) 
       preferLocal
     }).catch(() => null)
   ]);
+  const fallbackSeed = BOT_GLOBAL_SYNC_ONLY
+    ? buildGlobalFallbackBotSnapshot(safeBotId)
+    : buildSeedBotSnapshot(safeBotId, nowIso);
 
   const safeConfig = config && typeof config === 'object'
     ? config
     : (
       cachedSnapshot?.config && typeof cachedSnapshot.config === 'object'
         ? cachedSnapshot.config
-        : buildSystemBotConfigPayload(safeBotDef, {}, nowIso)
+        : (fallbackSeed?.config || buildSystemBotConfigPayload(safeBotDef, {}, nowIso))
     );
   const safeProfile = profile && typeof profile === 'object'
     ? profile
     : (
       cachedSnapshot?.profile && typeof cachedSnapshot.profile === 'object'
         ? cachedSnapshot.profile
-        : buildSeedBotSnapshot(safeBotId, nowIso).profile
+        : fallbackSeed.profile
     );
   const safeStats = stats && typeof stats === 'object'
     ? stats
     : (
       cachedSnapshot?.stats && typeof cachedSnapshot.stats === 'object'
         ? cachedSnapshot.stats
-        : buildSeedBotSnapshot(safeBotId, nowIso).stats
+        : fallbackSeed.stats
     );
+  const safePassLevel = getBotEvolutionPassLevel(safeStats);
+  const rawProfileFrame = String(safeProfile?.equipped_frame || BOT_DEFAULT_FRAME_ID);
+  const rawProfileBackground = String(safeProfile?.equipped_background || BOT_DEFAULT_BACKGROUND_ID);
+  const rawProfileEmoji = String(safeProfile?.equipped_emoji || BOT_DEFAULT_EMOJI_ID);
+  const normalizedProfile = {
+    ...safeProfile,
+    equipped_frame: (
+      BOT_VALID_FRAME_ID_SET.has(rawProfileFrame)
+      && isBotCosmeticUnlockedForPassLevel(rawProfileFrame, safePassLevel)
+    ) ? rawProfileFrame : BOT_DEFAULT_FRAME_ID,
+    equipped_background: (
+      BOT_VALID_BACKGROUND_ID_SET.has(rawProfileBackground)
+      && isBotCosmeticUnlockedForPassLevel(rawProfileBackground, safePassLevel)
+    ) ? rawProfileBackground : BOT_DEFAULT_BACKGROUND_ID,
+    equipped_emoji: (
+      BOT_VALID_EMOJI_ID_SET.has(rawProfileEmoji)
+      && isBotCosmeticUnlockedForPassLevel(rawProfileEmoji, safePassLevel)
+    ) ? rawProfileEmoji : BOT_DEFAULT_EMOJI_ID
+  };
 
   const snapshotSource = (
     profile && typeof profile === 'object' && stats && typeof stats === 'object'
   )
     ? 'remote'
     : (
-      cachedSnapshot ? 'local_cache' : 'local_seed'
+      cachedSnapshot ? 'local_cache' : (BOT_GLOBAL_SYNC_ONLY ? 'global_fallback' : 'local_seed')
     );
   const nextSnapshot = {
     bot_id: safeBotId,
-    profile: safeProfile,
+    profile: normalizedProfile,
     stats: safeStats,
     config: safeConfig,
     profile_is_fallback: false,
@@ -1633,7 +2072,7 @@ export async function getRandomSystemBotSnapshot() {
 
 export async function getPvpBotConfig(botId = SYSTEM_BOT_ID, options = {}) {
   const botDef = getSystemBotDefinition(botId);
-  const preferLocal = options && options.preferLocal === true;
+  const preferLocal = options && options.preferLocal === true && !BOT_GLOBAL_SYNC_ONLY;
   const localSnapshot = getCachedBotSnapshot(botDef.id, BOT_LOCAL_CACHE_MAX_AGE_MS);
   const localConfig = localSnapshot?.config && typeof localSnapshot.config === 'object'
     ? localSnapshot.config
@@ -1672,14 +2111,23 @@ export async function getPvpBotConfig(botId = SYSTEM_BOT_ID, options = {}) {
         updated_at: String(localConfig.updated_at || nowIso)
       }
       : buildSystemBotConfigPayload(botDef, {}, nowIso);
-    await set(ref(firebaseDb, configPath), fallback).catch(() => null);
-    const seedSnapshot = localSnapshot || buildSeedBotSnapshot(botDef.id, nowIso);
+    if (ENABLE_CLIENT_BOT_BOOTSTRAP_WRITES) {
+      await set(ref(firebaseDb, configPath), fallback).catch(() => null);
+      if (botDef.id === SYSTEM_BOT_ID) {
+        await set(ref(firebaseDb, `pvp_bots_state/configs/${botDef.id}`), fallback).catch(() => null);
+      }
+    }
+    const seedSnapshot = localSnapshot || (
+      BOT_GLOBAL_SYNC_ONLY
+        ? buildGlobalFallbackBotSnapshot(botDef.id)
+        : buildSeedBotSnapshot(botDef.id, nowIso)
+    );
     setCachedBotSnapshot({
       bot_id: botDef.id,
       profile: seedSnapshot.profile,
       stats: seedSnapshot.stats,
       config: fallback
-    }, localSnapshot ? 'local_cache' : 'local_seed');
+    }, localSnapshot ? 'local_cache' : (BOT_GLOBAL_SYNC_ONLY ? 'global_fallback' : 'local_seed'));
     return fallback;
   }
   const normalized = {
@@ -1690,10 +2138,17 @@ export async function getPvpBotConfig(botId = SYSTEM_BOT_ID, options = {}) {
     gender: String(botDef.gender || row.gender || 'neutral'),
     updated_at: String(row.updated_at || nowIso)
   };
-  if (botDef.id !== SYSTEM_BOT_ID) {
-    await set(ref(firebaseDb, `pvp_bots_state/configs/${botDef.id}`), normalized).catch(() => null);
+  if (ENABLE_CLIENT_BOT_BOOTSTRAP_WRITES && !botConfigCoreEquals(row, normalized)) {
+    await set(ref(firebaseDb, configPath), normalized).catch(() => null);
+    if (botDef.id === SYSTEM_BOT_ID) {
+      await set(ref(firebaseDb, `pvp_bots_state/configs/${botDef.id}`), normalized).catch(() => null);
+    }
   }
-  const seedSnapshot = localSnapshot || buildSeedBotSnapshot(botDef.id, nowIso);
+  const seedSnapshot = localSnapshot || (
+    BOT_GLOBAL_SYNC_ONLY
+      ? buildGlobalFallbackBotSnapshot(botDef.id)
+      : buildSeedBotSnapshot(botDef.id, nowIso)
+  );
   setCachedBotSnapshot({
     bot_id: botDef.id,
     profile: seedSnapshot.profile,
@@ -1725,11 +2180,23 @@ export async function updatePvpBotConfig(patch = {}, botId = SYSTEM_BOT_ID) {
   if (botDef.id === SYSTEM_BOT_ID) {
     await set(ref(firebaseDb, 'pvp_bots_state/config'), next).catch(() => null);
   }
+  const currentStats = await getUserStats(botDef.id).catch(() => null);
   await runTransaction(ref(firebaseDb, `users/${botDef.id}`), (row) => (
-    buildSystemBotUserPayload(botDef, row, nowIso, next.personality, next.strength)
+    buildSystemBotUserPayload(
+      botDef,
+      row,
+      nowIso,
+      next.personality,
+      next.strength,
+      currentStats
+    )
   ));
   const seedSnapshot = getCachedBotSnapshot(botDef.id, BOT_LOCAL_CACHE_MAX_AGE_MS)
-    || buildSeedBotSnapshot(botDef.id, nowIso);
+    || (
+      BOT_GLOBAL_SYNC_ONLY
+        ? buildGlobalFallbackBotSnapshot(botDef.id)
+        : buildSeedBotSnapshot(botDef.id, nowIso)
+    );
   setCachedBotSnapshot({
     bot_id: botDef.id,
     profile: seedSnapshot.profile,
@@ -1820,7 +2287,7 @@ export async function setBotArenaDaemonControl(nextControl, actorId = '') {
 }
 
 export function subscribeBotArenaDaemonControl(onChange, onError = null) {
-  if (typeof onChange !== 'function') return () => {};
+  if (typeof onChange !== 'function') return () => { };
   const targetRef = ref(firebaseDb, BOT_DAEMON_CONTROL_PATH);
   const unsubscribe = onValue(
     targetRef,
@@ -1841,7 +2308,7 @@ export async function getBotArenaDaemonStatus() {
 }
 
 export function subscribeBotArenaDaemonStatus(onChange, onError = null) {
-  if (typeof onChange !== 'function') return () => {};
+  if (typeof onChange !== 'function') return () => { };
   const targetRef = ref(firebaseDb, BOT_DAEMON_STATUS_PATH);
   const unsubscribe = onValue(
     targetRef,
@@ -1862,7 +2329,7 @@ export async function getBotArenaQuizState() {
 }
 
 export function subscribeBotArenaQuizState(onChange, onError = null) {
-  if (typeof onChange !== 'function') return () => {};
+  if (typeof onChange !== 'function') return () => { };
   const targetRef = ref(firebaseDb, BOT_ARENA_QUIZ_STATE_PATH);
   const unsubscribe = onValue(
     targetRef,
@@ -1879,10 +2346,14 @@ export function subscribeBotArenaQuizState(onChange, onError = null) {
 
 async function syncUserQueueOrderFromArena(order, nowIso = new Date().toISOString()) {
   const safeOrder = normalizeBotQueueOrder(order);
-  await set(ref(firebaseDb, BOT_USER_QUEUE_PATH), {
-    order: safeOrder,
-    updated_at: nowIso
-  }).catch(() => null);
+  const current = await getNode(BOT_USER_QUEUE_PATH).catch(() => null);
+  const currentOrder = normalizeBotQueueOrder(current?.order);
+  if (!queueOrderEquals(currentOrder, safeOrder)) {
+    await set(ref(firebaseDb, BOT_USER_QUEUE_PATH), {
+      order: safeOrder,
+      updated_at: nowIso
+    }).catch(() => null);
+  }
   setCachedBotQueueOrder(safeOrder);
   return safeOrder;
 }
@@ -1890,8 +2361,14 @@ async function syncUserQueueOrderFromArena(order, nowIso = new Date().toISOStrin
 async function ensureArenaQueueNode() {
   const nowMs = Date.now();
   const nowIso = new Date(nowMs).toISOString();
-  await runTransaction(ref(firebaseDb, BOT_ARENA_QUEUE_PATH), (current) => {
+  const tx = await runTransaction(ref(firebaseDb, BOT_ARENA_QUEUE_PATH), (current) => {
     const safe = normalizeArenaQueueState(current);
+    const orderUnchanged = queueOrderEquals(current?.order || [], safe.order);
+    const cycleNoUnchanged = Math.max(0, Number(current?.cycle_no || 0)) === safe.cycle_no;
+    const cyclePlayedUnchanged = cyclePlayedEquals(current?.cycle_played || {}, safe.cycle_played);
+    if (current && orderUnchanged && cycleNoUnchanged && cyclePlayedUnchanged) {
+      return;
+    }
     return {
       order: safe.order,
       cycle_no: safe.cycle_no,
@@ -1899,9 +2376,79 @@ async function ensureArenaQueueNode() {
       updated_at: nowIso,
       updated_at_ms: nowMs
     };
-  });
+  }).catch(() => null);
+  const txRow = tx?.snapshot?.val?.();
+  if (txRow && typeof txRow === 'object') {
+    return normalizeArenaQueueState(txRow);
+  }
   const row = await getNode(BOT_ARENA_QUEUE_PATH).catch(() => null);
   return normalizeArenaQueueState(row);
+}
+
+function cacheBotQueuesState(arenaState, userOrderOverride = null) {
+  const safeArenaState = normalizeArenaQueueState(arenaState);
+  const arenaOrder = normalizeBotQueueOrder(safeArenaState.order);
+  const userOrder = normalizeBotQueueOrder(userOrderOverride || arenaOrder);
+  const next = {
+    userOrder,
+    arenaOrder,
+    arenaState: {
+      ...safeArenaState,
+      order: arenaOrder
+    }
+  };
+  ensureBotQueuesCached = next;
+  ensureBotQueuesCachedAtMs = Date.now();
+  setCachedBotQueueOrder(userOrder);
+  return next;
+}
+
+async function refreshBotQueuesReadOnly(options = {}) {
+  const forceRefresh = options?.force === true;
+  const nowMs = Date.now();
+  if (
+    !forceRefresh
+    && botQueueReadOnlyRefreshPromise
+    && (nowMs - botQueueReadOnlyRefreshAtMs) < BOT_QUEUE_READONLY_REFRESH_MIN_INTERVAL_MS
+  ) {
+    return botQueueReadOnlyRefreshPromise;
+  }
+  if (
+    !forceRefresh
+    && ensureBotQueuesCached
+    && typeof ensureBotQueuesCached === 'object'
+    && (nowMs - ensureBotQueuesCachedAtMs) < ENSURE_BOT_QUEUES_MIN_INTERVAL_MS
+  ) {
+    return ensureBotQueuesCached;
+  }
+
+  botQueueReadOnlyRefreshAtMs = nowMs;
+  botQueueReadOnlyRefreshPromise = (async () => {
+    try {
+      const [arenaRow, userRow] = await Promise.all([
+        getNode(BOT_ARENA_QUEUE_PATH).catch(() => null),
+        getNode(BOT_USER_QUEUE_PATH).catch(() => null)
+      ]);
+      const arenaState = normalizeArenaQueueState(arenaRow);
+      const arenaOrder = normalizeBotQueueOrder(arenaState.order);
+      const userOrder = normalizeBotQueueOrder(userRow?.order || arenaOrder);
+      return cacheBotQueuesState(arenaState, userOrder);
+    } catch (_error) {
+      const localOrder = getCachedBotQueueOrder();
+      const fallbackState = normalizeArenaQueueState({
+        order: localOrder,
+        updated_at: new Date().toISOString(),
+        updated_at_ms: Date.now()
+      });
+      return cacheBotQueuesState({
+        ...fallbackState,
+        local_only: true
+      }, localOrder);
+    } finally {
+      botQueueReadOnlyRefreshPromise = null;
+    }
+  })();
+  return botQueueReadOnlyRefreshPromise;
 }
 
 async function rotateGlobalBotQueue(botIds = [], options = {}) {
@@ -1950,19 +2497,15 @@ async function rotateGlobalBotQueue(botIds = [], options = {}) {
 
   const arenaState = normalizeArenaQueueState(tx?.snapshot?.val());
   await syncUserQueueOrderFromArena(arenaState.order, nowIso).catch(() => null);
-  ensureBotQueuesCached = {
-    userOrder: normalizeBotQueueOrder(arenaState.order),
-    arenaOrder: normalizeBotQueueOrder(arenaState.order),
-    arenaState: {
-      ...arenaState,
-      order: normalizeBotQueueOrder(arenaState.order)
-    }
-  };
-  ensureBotQueuesCachedAtMs = Date.now();
+  cacheBotQueuesState(arenaState, arenaState.order);
   return arenaState;
 }
 
 async function ensureBotQueues(options = {}) {
+  const readOnly = options?.readOnly === true;
+  if (readOnly) {
+    return refreshBotQueuesReadOnly({ force: options?.force === true });
+  }
   const forceRefresh = options?.force === true;
   const nowMs = Date.now();
   if (
@@ -1978,18 +2521,7 @@ async function ensureBotQueues(options = {}) {
     const arenaState = await ensureArenaQueueNode();
     const order = normalizeBotQueueOrder(arenaState.order);
     await syncUserQueueOrderFromArena(order).catch(() => null);
-    const next = {
-      userOrder: order,
-      arenaOrder: order,
-      arenaState: {
-        ...arenaState,
-        order
-      }
-    };
-    ensureBotQueuesCached = next;
-    ensureBotQueuesCachedAtMs = Date.now();
-    setCachedBotQueueOrder(order);
-    return next;
+    return cacheBotQueuesState(arenaState, order);
   } catch (_error) {
     const localOrder = getCachedBotQueueOrder();
     const fallbackState = normalizeArenaQueueState({
@@ -1997,18 +2529,10 @@ async function ensureBotQueues(options = {}) {
       updated_at: new Date().toISOString(),
       updated_at_ms: Date.now()
     });
-    const fallback = {
-      userOrder: localOrder,
-      arenaOrder: localOrder,
-      arenaState: {
-        ...fallbackState,
-        order: localOrder,
-        local_only: true
-      }
-    };
-    ensureBotQueuesCached = fallback;
-    ensureBotQueuesCachedAtMs = Date.now();
-    return fallback;
+    return cacheBotQueuesState({
+      ...fallbackState,
+      local_only: true
+    }, localOrder);
   }
 }
 
@@ -2421,8 +2945,9 @@ function isStaleOpenBotUserMatch(matchRow, nowMs = Date.now(), staleMs = BOT_USE
 }
 
 export async function getNextBotForUserMatch(targetDifficulty = '', options = {}) {
-  const preferLocal = options?.preferLocal === true;
+  const preferLocal = options?.preferLocal === true && !BOT_GLOBAL_SYNC_ONLY;
   const waitForEnsure = options?.waitForEnsure === true;
+  const enforceTargetDifficulty = options?.enforceTargetDifficulty === true;
   if (waitForEnsure) {
     await ensureSystemBots({ force: true }).catch(() => null);
   } else {
@@ -2448,8 +2973,8 @@ export async function getNextBotForUserMatch(targetDifficulty = '', options = {}
     if (cachedQueueOrder.length) {
       userOrder = cachedQueueOrder;
     }
-    // Refresh queues in background to keep local cache hot without blocking mobile matchmaking.
-    void ensureBotQueues().then((queueState) => {
+    // Refresh queue cache in read-only mode to avoid background write churn from clients.
+    void ensureBotQueues({ readOnly: true }).then((queueState) => {
       const nextOrder = normalizeBotQueueOrder(queueState?.userOrder || queueState?.arenaOrder || []);
       if (nextOrder.length) {
         setCachedBotQueueOrder(nextOrder);
@@ -2528,13 +3053,13 @@ export async function getNextBotForUserMatch(targetDifficulty = '', options = {}
   for (const botId of userOrder) {
     if (excludedSet.has(botId)) continue;
     if (busySet.has(botId)) continue;
-    if (safeTargetDifficulty) {
+    if (safeTargetDifficulty && enforceTargetDifficulty) {
       const botDifficulty = await getBotDifficultyFast(botId);
       if (botDifficulty && normalizeDifficulty(botDifficulty || 'easy') !== safeTargetDifficulty) continue;
     }
     const picked = await pickSnapshot(botId);
     if (!picked) continue;
-    if (safeTargetDifficulty) {
+    if (safeTargetDifficulty && enforceTargetDifficulty) {
       const statsDifficulty = resolveDifficultyByPvpPoints(picked?.stats?.pvp_points || 0);
       if (normalizeDifficulty(statsDifficulty || 'easy') !== safeTargetDifficulty) continue;
     }
@@ -2734,9 +3259,12 @@ async function finalizeBotArenaMatch(arenaState, endedReason = 'bot_duel_complet
     endedRoundNo = Math.max(BOT_ARENA_BASE_ROUNDS, Number(score.endedRoundNo || BOT_ARENA_BASE_ROUNDS));
   }
 
-  const winnerId = finalP1Score > finalP2Score ? state.bot_a_id
-    : (finalP2Score > finalP1Score ? state.bot_b_id
-      : (Math.random() < 0.5 ? state.bot_a_id : state.bot_b_id));
+  if (finalP1Score === finalP2Score) {
+    if (Math.random() < 0.5) finalP1Score += 1;
+    else finalP2Score += 1;
+  }
+
+  const winnerId = finalP1Score > finalP2Score ? state.bot_a_id : state.bot_b_id;
   const loserId = winnerId === state.bot_a_id ? state.bot_b_id : state.bot_a_id;
 
   await updatePvpMatch(state.match_id, {
@@ -3931,6 +4459,28 @@ async function isNicknameTaken(candidateNickname, userId) {
   });
 }
 
+export async function checkNicknameAvailability(candidateNickname, userId) {
+  const validation = validateNicknameInput(candidateNickname);
+  if (!validation.ok) {
+    return {
+      ok: false,
+      available: false,
+      nickname: '',
+      errorCode: validation.errorCode,
+      errorMessage: validation.errorMessage
+    };
+  }
+
+  const taken = await isNicknameTaken(validation.nickname, userId);
+  return {
+    ok: true,
+    available: !taken,
+    nickname: validation.nickname,
+    errorCode: taken ? 'nickname/taken' : '',
+    errorMessage: taken ? 'Este apelido já está em uso.' : ''
+  };
+}
+
 async function ensureUniqueNickname(baseNickname, userId) {
   const usersMap = await getNode('users').catch(() => null);
   const taken = new Set();
@@ -3961,6 +4511,7 @@ export async function getUserProfile(userId) {
   const onboardingCompleted = row.onboarding_completed === true || !onboardingRequired;
   const rawNickname = String(row.nickname || '').trim();
   const rawFullName = String(row.full_name || row.name || '').trim();
+  const seasonClaims = normalizeSeasonClaimsMap(row.season_claims);
   return {
     id: userId,
     auth_id: userId,
@@ -3972,6 +4523,7 @@ export async function getUserProfile(userId) {
     equipped_emoji: row.equipped_emoji || 'emoji_profile',
     onboarding_required: onboardingRequired,
     onboarding_completed: onboardingCompleted,
+    season_claims: seasonClaims,
     created_at: row.created_at || null,
     updated_at: row.updated_at || null
   };
@@ -4000,10 +4552,31 @@ export async function ensureUserProfile(authUser) {
   // Do not block user auth bootstrap on bot roster hydration.
   void ensureSystemBots().catch(() => null);
   const userId = String(authUser.uid);
+  const displayName = String(authUser.displayName || '').trim();
+  const avatar = String((authUser.photoURL && authUser.photoURL.trim()) || '🙂');
   const existing = await getUserProfile(userId);
   const nowIso = new Date().toISOString();
 
   if (existing) {
+    const shouldSyncDisplayName = displayName && displayName !== String(existing.full_name || '').trim();
+    const shouldSyncAvatar = avatar && avatar !== String(existing.avatar || '🙂').trim();
+    const shouldCompleteOnboarding = (
+      existing.onboarding_required === true
+      && validateNicknameInput(String(existing.nickname || '').trim()).ok
+    );
+
+    if (shouldSyncDisplayName || shouldSyncAvatar || shouldCompleteOnboarding) {
+      await update(ref(firebaseDb, `users/${userId}`), {
+        full_name: shouldSyncDisplayName ? displayName : (existing.full_name || null),
+        avatar: shouldSyncAvatar ? avatar : (existing.avatar || '🙂'),
+        onboarding_required: shouldCompleteOnboarding ? false : existing.onboarding_required === true,
+        onboarding_completed: shouldCompleteOnboarding
+          || existing.onboarding_completed === true
+          || existing.onboarding_required !== true,
+        updated_at: nowIso
+      }).catch(() => null);
+    }
+
     const stats = await getUserStats(userId);
     if (!stats) {
       await set(ref(firebaseDb, `user_stats/${userId}`), {
@@ -4047,24 +4620,25 @@ export async function ensureUserProfile(authUser) {
         }).catch(() => null);
       }
     }
-    return existing;
+    return getUserProfile(userId);
   }
 
-  const displayName = String(authUser.displayName || '').trim();
-  const avatar = String((authUser.photoURL && authUser.photoURL.trim()) || '🙂');
+  const initialDisplayName = displayName;
+  const initialAvatar = avatar;
 
   await set(ref(firebaseDb, `users/${userId}`), {
     id: userId,
     auth_id: userId,
-    full_name: '',
+    full_name: initialDisplayName || '',
     nickname: '',
-    avatar,
+    avatar: initialAvatar,
     equipped_frame: 'frame_default',
     equipped_background: 'bg_default',
     equipped_emoji: 'emoji_profile',
     onboarding_required: true,
     onboarding_completed: false,
     reset_ack_version: 0,
+    season_claims: {},
     created_at: nowIso,
     updated_at: nowIso
   });
@@ -4116,36 +4690,35 @@ export async function updateUserProfile(userId, updates) {
 
     const taken = await isNicknameTaken(validation.nickname, userId);
     if (taken) {
-      const error = new Error('Este apelido ja esta em uso.');
+      const error = new Error('Este apelido já está em uso.');
       error.code = 'nickname/taken';
       throw error;
     }
     nextNickname = validation.nickname;
   }
   const requiresOnboarding = current?.onboarding_required === true;
-  const nextFullNameRaw = updates.full_name !== undefined
-    ? updates.full_name
-    : (current?.full_name || '');
-  const fullNameValidation = validateFullNameInput(nextFullNameRaw, {
-    required: requiresOnboarding || updates.full_name !== undefined
-  });
-  if (!fullNameValidation.ok) {
-    const error = new Error(fullNameValidation.errorMessage);
-    error.code = fullNameValidation.errorCode;
-    throw error;
+  let nextFullName = String(current?.full_name || '').trim();
+  if (updates.full_name !== undefined) {
+    const fullNameValidation = validateFullNameInput(updates.full_name, {
+      required: false
+    });
+    if (!fullNameValidation.ok) {
+      const error = new Error(fullNameValidation.errorMessage);
+      error.code = fullNameValidation.errorCode;
+      throw error;
+    }
+    nextFullName = fullNameValidation.full_name || '';
   }
   const shouldCompleteOnboarding = Boolean(
     requiresOnboarding
     && updates.nickname !== undefined
-    && updates.full_name !== undefined
-    && fullNameValidation.full_name
     && nextNickname
   );
 
   const payload = {
     id: userId,
     auth_id: userId,
-    full_name: fullNameValidation.full_name || null,
+    full_name: nextFullName || null,
     nickname: nextNickname,
     avatar: updates.avatar !== undefined
       ? String(updates.avatar || '🙂')
@@ -4156,6 +4729,7 @@ export async function updateUserProfile(userId, updates) {
     onboarding_required: shouldCompleteOnboarding ? false : requiresOnboarding,
     onboarding_completed: shouldCompleteOnboarding || current?.onboarding_completed === true || !requiresOnboarding,
     reset_ack_version: Number(current?.reset_ack_version || 0),
+    season_claims: normalizeSeasonClaimsMap(current?.season_claims),
     created_at: current?.created_at || nowIso,
     updated_at: nowIso
   };
@@ -4164,57 +4738,247 @@ export async function updateUserProfile(userId, updates) {
   return getUserProfile(userId);
 }
 
+export async function claimSeasonStartReward(userId, payload = {}) {
+  const uid = String(userId || '').trim();
+  if (!uid) {
+    return { ok: false, claimed: false, reason: 'invalid_user' };
+  }
+
+  const seasonId = String(payload?.seasonId || '').trim();
+  if (!seasonId) {
+    return { ok: false, claimed: false, reason: 'invalid_season' };
+  }
+
+  const rewardCoins = Math.max(0, Math.trunc(Number(payload?.rewardCoins || 0)));
+  const seasonStartAtMs = Math.max(0, Math.trunc(Number(payload?.seasonStartAtMs || 0)));
+  const seasonEndAtMs = Math.max(0, Math.trunc(Number(payload?.seasonEndAtMs || 0)));
+  const nowIso = new Date().toISOString();
+
+  let rewardGranted = false;
+  let claimRow = null;
+
+  const userTx = await runTransaction(ref(firebaseDb, `users/${uid}`), (current) => {
+    const prev = current && typeof current === 'object'
+      ? current
+      : {
+        id: uid,
+        auth_id: uid,
+        full_name: '',
+        nickname: 'Jogador',
+        avatar: '🙂',
+        equipped_frame: 'frame_default',
+        equipped_background: 'bg_default',
+        equipped_emoji: 'emoji_profile',
+        onboarding_required: false,
+        onboarding_completed: true,
+        reset_ack_version: 0,
+        season_claims: {},
+        created_at: nowIso
+      };
+    const seasonClaims = normalizeSeasonClaimsMap(prev.season_claims);
+    const existingClaim = normalizeSeasonClaimRow(seasonClaims[seasonId], seasonId);
+    if (existingClaim && existingClaim.claimed_at) {
+      rewardGranted = false;
+      return {
+        ...prev,
+        season_claims: seasonClaims,
+        updated_at: nowIso
+      };
+    }
+
+    rewardGranted = true;
+    const nextClaim = normalizeSeasonClaimRow({
+      season_id: seasonId,
+      claimed_at: nowIso,
+      reward_coins: rewardCoins,
+      season_start_at_ms: seasonStartAtMs,
+      season_end_at_ms: seasonEndAtMs
+    }, seasonId);
+    const nextSeasonClaims = {
+      ...seasonClaims,
+      [seasonId]: nextClaim
+    };
+    return {
+      ...prev,
+      season_claims: nextSeasonClaims,
+      updated_at: nowIso
+    };
+  });
+
+  const userNext = userTx?.snapshot?.val();
+  const normalizedClaims = normalizeSeasonClaimsMap(userNext?.season_claims);
+  claimRow = normalizeSeasonClaimRow(normalizedClaims[seasonId], seasonId);
+
+  if (!rewardGranted) {
+    const stats = await getUserStats(uid).catch(() => null);
+    return {
+      ok: true,
+      claimed: false,
+      already_claimed: true,
+      claim: claimRow,
+      granted_coins: 0,
+      total_coins: Math.max(0, Math.trunc(Number(stats?.coins || 0)))
+    };
+  }
+
+  let totalCoins = 0;
+  await runTransaction(ref(firebaseDb, `user_stats/${uid}`), (current) => {
+    const prev = current && typeof current === 'object'
+      ? current
+      : {
+        user_id: uid,
+        total_xp: 0,
+        level: 1,
+        ranking_points: 0,
+        pvp_points: 0,
+        coins: 20,
+        pvp_battles: 0,
+        pvp_wins: 0,
+        pvp_losses: 0,
+        pvp_processed_matches: {},
+        pvp_recalculated_at_ms: 0,
+        best_streak: 0,
+        total_correct: 0,
+        total_answered: 0,
+        quizzes_completed: 0,
+        topic_progress: {},
+        quiz_best_scores: {},
+        quiz_best_stars: {},
+        achievement_ids: [],
+        quiz_rewarded: {}
+      };
+    const prevCoins = Math.max(0, Math.trunc(Number(prev.coins || 20)));
+    totalCoins = prevCoins + rewardCoins;
+    return {
+      ...prev,
+      user_id: uid,
+      coins: totalCoins,
+      is_system_bot: prev.is_system_bot === true || isSystemBotUserId(uid),
+      progress_updated_at_ms: Math.max(0, Number(prev.progress_updated_at_ms || Date.now())),
+      updated_at: nowIso
+    };
+  });
+
+  return {
+    ok: true,
+    claimed: true,
+    already_claimed: false,
+    claim: claimRow,
+    granted_coins: rewardCoins,
+    total_coins: totalCoins
+  };
+}
+
 export async function upsertStatsFromProgress(userId, progress) {
   if (!userId || !progress) return;
 
   const totalXp = getProgressTotalXp(progress);
   const nowIso = new Date().toISOString();
+  const nowMs = Date.now();
   const incomingUpdatedAtMs = Math.max(1, Number(progress.updatedAt || Date.now()));
 
   await runTransaction(ref(firebaseDb, `user_stats/${userId}`), (current) => {
     const prev = current && typeof current === 'object' ? current : {};
     const prevSyncMs = Math.max(0, Number(prev.progress_updated_at_ms || 0));
-    const nextSyncMs = Math.max(incomingUpdatedAtMs, prevSyncMs + 1, Date.now());
+    const staleIncoming = incomingUpdatedAtMs + 1500 < prevSyncMs;
 
-    const pvpBattles = Math.max(0, Math.trunc(Number(progress.pvpBattles || 0)));
-    const pvpWins = Math.min(pvpBattles, Math.max(0, Math.trunc(Number(progress.pvpWins || 0))));
-    const pvpLosses = Math.max(0, pvpBattles - pvpWins);
-    const topicProgress = progress.topicProgress && typeof progress.topicProgress === 'object'
+    const mergeNumericMapByMax = (baseMap, incomingMap) => {
+      const next = baseMap && typeof baseMap === 'object' ? { ...baseMap } : {};
+      const safeIncoming = incomingMap && typeof incomingMap === 'object' ? incomingMap : {};
+      Object.entries(safeIncoming).forEach(([key, value]) => {
+        const safeKey = String(key || '').trim();
+        if (!safeKey) return;
+        const prevValue = Math.max(0, Number(next[safeKey] || 0));
+        const nextValue = Math.max(0, Number(value || 0));
+        next[safeKey] = Math.max(prevValue, nextValue);
+      });
+      return next;
+    };
+
+    const mergeQuizRewardedByMax = (baseMap, incomingMap) => {
+      const next = baseMap && typeof baseMap === 'object' ? { ...baseMap } : {};
+      const safeIncoming = incomingMap && typeof incomingMap === 'object' ? incomingMap : {};
+      Object.entries(safeIncoming).forEach(([quizKey, row]) => {
+        const safeQuizKey = String(quizKey || '').trim();
+        if (!safeQuizKey || !row || typeof row !== 'object') return;
+        const prevRow = next[safeQuizKey] && typeof next[safeQuizKey] === 'object'
+          ? next[safeQuizKey]
+          : {};
+        next[safeQuizKey] = {
+          xp: Math.max(Math.max(0, Number(prevRow.xp || 0)), Math.max(0, Number(row.xp || 0))),
+          coins: Math.max(Math.max(0, Number(prevRow.coins || 0)), Math.max(0, Number(row.coins || 0)))
+        };
+      });
+      return next;
+    };
+
+    const mergeProcessedMatches = (baseMap, incomingMap) => {
+      const next = baseMap && typeof baseMap === 'object' ? { ...baseMap } : {};
+      const safeIncoming = incomingMap && typeof incomingMap === 'object' ? incomingMap : {};
+      Object.entries(safeIncoming).forEach(([matchId, value]) => {
+        const safeMatchId = String(matchId || '').trim();
+        if (!safeMatchId) return;
+        if (value === undefined || value === null) return;
+        next[safeMatchId] = value;
+      });
+      return next;
+    };
+
+    const incomingPvpBattles = Math.max(0, Math.trunc(Number(progress.pvpBattles || 0)));
+    const incomingPvpWins = Math.min(incomingPvpBattles, Math.max(0, Math.trunc(Number(progress.pvpWins || 0))));
+    const incomingPvpLosses = Math.max(0, incomingPvpBattles - incomingPvpWins);
+    const incomingTopicProgress = progress.topicProgress && typeof progress.topicProgress === 'object'
       ? progress.topicProgress
       : {};
-    const quizBestScores = progress.quizBestScores && typeof progress.quizBestScores === 'object'
+    const incomingQuizBestScores = progress.quizBestScores && typeof progress.quizBestScores === 'object'
       ? progress.quizBestScores
       : {};
-    const quizBestStars = progress.quizBestStars && typeof progress.quizBestStars === 'object'
+    const incomingQuizBestStars = progress.quizBestStars && typeof progress.quizBestStars === 'object'
       ? progress.quizBestStars
       : {};
-    const pvpProcessedMatches = progress.pvpProcessedMatches && typeof progress.pvpProcessedMatches === 'object'
+    const incomingPvpProcessedMatches = progress.pvpProcessedMatches && typeof progress.pvpProcessedMatches === 'object'
       ? progress.pvpProcessedMatches
       : {};
-    const achievementIds = normalizeAchievementIds(progress.achievements);
-    const quizRewarded = normalizeQuizRewardedMap(progress.quizRewarded);
+    const incomingAchievementIds = normalizeAchievementIds(progress.achievements);
+    const incomingQuizRewarded = normalizeQuizRewardedMap(progress.quizRewarded);
+    const mergedAchievementIds = normalizeAchievementIds([
+      ...(Array.isArray(prev.achievement_ids) ? prev.achievement_ids : []),
+      ...incomingAchievementIds
+    ]);
+    const prevPvpBattles = Math.max(0, Math.trunc(Number(prev.pvp_battles || 0)));
+    const prevPvpWins = Math.max(0, Math.trunc(Number(prev.pvp_wins || 0)));
+    const prevPvpLosses = Math.max(0, Math.trunc(Number(prev.pvp_losses || 0)));
+    const prevPvpPoints = Math.max(0, Math.trunc(Number(prev.pvp_points || 0)));
+    const incomingPvpPoints = Math.max(0, Math.trunc(Number(progress.pvpPoints || 0)));
+    const resolvedPvpPoints = staleIncoming ? Math.max(prevPvpPoints, incomingPvpPoints) : incomingPvpPoints;
+    const incomingCoins = Math.max(0, Math.trunc(Number(progress.coins || 0)));
+    const prevCoins = Math.max(0, Math.trunc(Number(prev.coins || 0)));
+    const resolvedCoins = staleIncoming ? Math.max(prevCoins, incomingCoins) : incomingCoins;
+    const nextSyncMs = staleIncoming
+      ? Math.max(prevSyncMs, nowMs)
+      : Math.max(incomingUpdatedAtMs, prevSyncMs + 1, nowMs);
 
     return {
       user_id: userId,
-      total_xp: Math.max(0, Math.trunc(Number(totalXp || 0))),
-      level: Math.max(1, Math.trunc(Number(progress.level || 1))),
-      ranking_points: Math.max(0, Math.trunc(Number(progress.rankingPoints || 0))),
-      pvp_points: Math.max(0, Math.trunc(Number(progress.pvpPoints || 0))),
-      coins: Math.max(0, Math.trunc(Number(progress.coins || 0))),
-      pvp_battles: pvpBattles,
-      pvp_wins: pvpWins,
-      pvp_losses: pvpLosses,
-      pvp_processed_matches: pvpProcessedMatches,
+      total_xp: Math.max(Math.max(0, Math.trunc(Number(prev.total_xp || 0))), Math.max(0, Math.trunc(Number(totalXp || 0)))),
+      level: Math.max(Math.max(1, Math.trunc(Number(prev.level || 1))), Math.max(1, Math.trunc(Number(progress.level || 1)))),
+      ranking_points: Math.max(Math.max(0, Math.trunc(Number(prev.ranking_points || 0))), Math.max(0, Math.trunc(Number(progress.rankingPoints || 0)))),
+      pvp_points: resolvedPvpPoints,
+      coins: resolvedCoins,
+      pvp_battles: Math.max(prevPvpBattles, incomingPvpBattles),
+      pvp_wins: Math.max(prevPvpWins, incomingPvpWins),
+      pvp_losses: Math.max(prevPvpLosses, incomingPvpLosses),
+      pvp_processed_matches: mergeProcessedMatches(prev.pvp_processed_matches, incomingPvpProcessedMatches),
       pvp_recalculated_at_ms: Math.max(0, Number(prev.pvp_recalculated_at_ms || 0)),
-      best_streak: Math.max(0, Math.trunc(Number(progress.bestStreak || 0))),
-      total_correct: Math.max(0, Math.trunc(Number(progress.totalCorrect || 0))),
-      total_answered: Math.max(0, Math.trunc(Number(progress.totalAnswered || 0))),
-      quizzes_completed: Math.max(0, Math.trunc(Number(progress.quizzes || 0))),
-      topic_progress: topicProgress,
-      quiz_best_scores: quizBestScores,
-      quiz_best_stars: quizBestStars,
-      achievement_ids: achievementIds,
-      quiz_rewarded: quizRewarded,
+      best_streak: Math.max(Math.max(0, Math.trunc(Number(prev.best_streak || 0))), Math.max(0, Math.trunc(Number(progress.bestStreak || 0)))),
+      total_correct: Math.max(Math.max(0, Math.trunc(Number(prev.total_correct || 0))), Math.max(0, Math.trunc(Number(progress.totalCorrect || 0)))),
+      total_answered: Math.max(Math.max(0, Math.trunc(Number(prev.total_answered || 0))), Math.max(0, Math.trunc(Number(progress.totalAnswered || 0)))),
+      quizzes_completed: Math.max(Math.max(0, Math.trunc(Number(prev.quizzes_completed || 0))), Math.max(0, Math.trunc(Number(progress.quizzes || 0)))),
+      topic_progress: mergeNumericMapByMax(prev.topic_progress, incomingTopicProgress),
+      quiz_best_scores: mergeNumericMapByMax(prev.quiz_best_scores, incomingQuizBestScores),
+      quiz_best_stars: mergeNumericMapByMax(prev.quiz_best_stars, incomingQuizBestStars),
+      achievement_ids: mergedAchievementIds,
+      quiz_rewarded: mergeQuizRewardedByMax(prev.quiz_rewarded, incomingQuizRewarded),
       is_system_bot: prev.is_system_bot === true || isSystemBotUserId(userId),
       progress_updated_at_ms: nextSyncMs,
       updated_at: nowIso
@@ -4261,23 +5025,137 @@ export async function saveQuizResult(userId, result) {
 }
 
 function buildGlobalRankingsList(usersMap, statsMap, userShopMap = {}, mode = 'pve', limit = 50) {
-  if (!statsMap || typeof statsMap !== 'object') return [];
-
   const users = usersMap && typeof usersMap === 'object' ? usersMap : {};
   const shopRows = userShopMap && typeof userShopMap === 'object' ? userShopMap : {};
-  const list = Object.entries(statsMap).map(([userId, rawStats]) => {
+  const seededStatsMap = {
+    ...(statsMap && typeof statsMap === 'object' ? statsMap : {})
+  };
+  SYSTEM_BOT_ROSTER.forEach((botDef) => {
+    const botId = String(botDef?.id || '').trim();
+    if (!botId) return;
+    if (seededStatsMap[botId] && typeof seededStatsMap[botId] === 'object') return;
+    const seedSnapshot = getCachedBotSnapshot(botId, BOT_LOCAL_CACHE_MAX_AGE_MS)
+      || (
+        BOT_GLOBAL_SYNC_ONLY
+          ? buildGlobalFallbackBotSnapshot(botId)
+          : buildSeedBotSnapshot(botId)
+      );
+    seededStatsMap[botId] = seedSnapshot?.stats && typeof seedSnapshot.stats === 'object'
+      ? seedSnapshot.stats
+      : {
+        user_id: botId,
+        ranking_points: 0,
+        pvp_points: getDefaultBotPvpPointsByStrength(getSystemBotDefaultStrength(botId)),
+        pvp_wins: 0,
+        pvp_battles: 0,
+        level: 1,
+        total_correct: 0,
+        total_xp: 0,
+        is_system_bot: true
+      };
+  });
+  const hasUserProfileIdentity = (row) => {
+    const safe = row && typeof row === 'object' ? row : {};
+    return Boolean(
+      String(safe.nickname || '').trim()
+      || String(safe.full_name || '').trim()
+      || String(safe.avatar || '').trim()
+    );
+  };
+  const resolveStatsUserId = (statsKey, statsRow) => {
+    const byKey = String(statsKey || '').trim();
+    const byField = String(statsRow?.user_id || '').trim();
+    const candidates = [byField, byKey].filter(Boolean);
+    for (const candidate of candidates) {
+      if (isSystemBotUserId(candidate)) return candidate;
+    }
+    for (const candidate of candidates) {
+      if (users[candidate] && typeof users[candidate] === 'object') return candidate;
+    }
+    return candidates[0] || byKey;
+  };
+
+  const list = Object.entries(seededStatsMap).map(([statsKey, rawStats]) => {
     const stats = rawStats && typeof rawStats === 'object' ? rawStats : {};
+    const userId = resolveStatsUserId(statsKey, stats);
+    if (!userId) return null;
+    const isSystemBot = isSystemBotUserId(userId);
+    const botDef = isSystemBot ? getSystemBotDefinition(userId) : null;
     const user = users[userId] && typeof users[userId] === 'object' ? users[userId] : {};
+    const hasIdentity = hasUserProfileIdentity(user);
+    if (!isSystemBot && !hasIdentity) return null;
     const shopRow = shopRows[userId] && typeof shopRows[userId] === 'object' ? shopRows[userId] : {};
     const shopEquipped = shopRow.equipped && typeof shopRow.equipped === 'object' ? shopRow.equipped : {};
-    const frame = String(shopEquipped.frame || user.equipped_frame || 'frame_default');
-    const background = String(shopEquipped.background || user.equipped_background || 'bg_default');
-    const emoji = String(shopEquipped.emoji || user.equipped_emoji || 'emoji_profile');
+    const botPassLevel = isSystemBot ? getBotEvolutionPassLevel(stats) : 0;
+    const botSnapshot = isSystemBot ? getCachedBotSnapshot(userId, BOT_LOCAL_CACHE_MAX_AGE_MS) : null;
+    const botProfile = botSnapshot?.profile && typeof botSnapshot.profile === 'object'
+      ? botSnapshot.profile
+      : {};
+    const botPersonality = String(
+      user.bot_personality
+      || botProfile.bot_personality
+      || botDef?.default_personality
+      || 'provocador'
+    ).trim();
+    const botCosmeticsSeed = isSystemBot
+      ? getRandomSystemBotShopCosmetics(userId, botPersonality, {
+        passLevel: botPassLevel,
+        budgetCoins: BOT_INITIAL_SHOP_BUDGET_COINS
+      })
+      : null;
+    const seededEquipped = botCosmeticsSeed?.equipped && typeof botCosmeticsSeed.equipped === 'object'
+      ? botCosmeticsSeed.equipped
+      : {};
+
+    let frame = isSystemBot
+      ? String(
+        shopEquipped.frame
+        || botProfile.equipped_frame
+        || seededEquipped.frame
+        || user.equipped_frame
+        || 'frame_default'
+      )
+      : String(shopEquipped.frame || user.equipped_frame || 'frame_default');
+    let background = isSystemBot
+      ? String(
+        shopEquipped.background
+        || botProfile.equipped_background
+        || seededEquipped.background
+        || user.equipped_background
+        || 'bg_default'
+      )
+      : String(shopEquipped.background || user.equipped_background || 'bg_default');
+    let emoji = isSystemBot
+      ? String(
+        shopEquipped.emoji
+        || botProfile.equipped_emoji
+        || seededEquipped.emoji
+        || user.equipped_emoji
+        || 'emoji_profile'
+      )
+      : String(shopEquipped.emoji || user.equipped_emoji || 'emoji_profile');
+    if (!BOT_VALID_FRAME_ID_SET.has(frame)) frame = 'frame_default';
+    if (!BOT_VALID_BACKGROUND_ID_SET.has(background)) background = 'bg_default';
+    if (!BOT_VALID_EMOJI_ID_SET.has(emoji)) emoji = 'emoji_profile';
+    if (isSystemBot && !isBotCosmeticUnlockedForPassLevel(frame, botPassLevel)) {
+      frame = 'frame_default';
+    }
+    if (isSystemBot && !isBotCosmeticUnlockedForPassLevel(background, botPassLevel)) {
+      background = 'bg_default';
+    }
+    if (isSystemBot && !isBotCosmeticUnlockedForPassLevel(emoji, botPassLevel)) {
+      emoji = 'emoji_profile';
+    }
 
     return {
       user_id: userId,
-      nickname: String(user.nickname || 'Jogador'),
-      avatar: String(user.avatar || '🤓'),
+      nickname: String(
+        user.nickname
+        || botProfile.nickname
+        || botDef?.nickname
+        || (hasIdentity ? 'Jogador' : '')
+      ),
+      avatar: String(user.avatar || botProfile.avatar || botDef?.avatar || '🤓'),
       equipped_frame: frame,
       equipped_background: background,
       equipped_emoji: emoji,
@@ -4289,10 +5167,35 @@ function buildGlobalRankingsList(usersMap, statsMap, userShopMap = {}, mode = 'p
       total_correct: Math.max(0, Number(stats.total_correct || 0)),
       total_xp: Math.max(0, Number(stats.total_xp || 0))
     };
+  }).filter((row) => !!row && String(row.nickname || '').trim().length > 0);
+
+  const uniqueByUserId = new Map();
+  list.forEach((row) => {
+    const safeUserId = String(row?.user_id || '').trim();
+    if (!safeUserId) return;
+    const prev = uniqueByUserId.get(safeUserId);
+    if (!prev) {
+      uniqueByUserId.set(safeUserId, row);
+      return;
+    }
+    const nextIsBetter = (
+      Number(row.pvp_points || 0) > Number(prev.pvp_points || 0)
+      || (
+        Number(row.pvp_points || 0) === Number(prev.pvp_points || 0)
+        && Number(row.ranking_points || 0) > Number(prev.ranking_points || 0)
+      )
+      || (
+        Number(row.pvp_points || 0) === Number(prev.pvp_points || 0)
+        && Number(row.ranking_points || 0) === Number(prev.ranking_points || 0)
+        && Number(row.total_xp || 0) > Number(prev.total_xp || 0)
+      )
+    );
+    if (nextIsBetter) uniqueByUserId.set(safeUserId, row);
   });
+  const dedupedList = Array.from(uniqueByUserId.values());
 
   const safeMode = String(mode || 'pve').toLowerCase() === 'pvp' ? 'pvp' : 'pve';
-  list.sort((a, b) => {
+  dedupedList.sort((a, b) => {
     if (safeMode === 'pvp') {
       return (
         b.pvp_points - a.pvp_points ||
@@ -4309,7 +5212,7 @@ function buildGlobalRankingsList(usersMap, statsMap, userShopMap = {}, mode = 'p
     );
   });
 
-  return list.slice(0, Math.max(1, Number(limit || 50)));
+  return dedupedList.slice(0, Math.max(1, Number(limit || 50)));
 }
 
 export async function getGlobalRankings(mode = 'pve', limit = 50) {
@@ -4323,8 +5226,7 @@ export async function getGlobalRankings(mode = 'pve', limit = 50) {
 }
 
 export function subscribeGlobalRankings(mode = 'pve', limit = 50, onChange, onError = null) {
-  if (typeof onChange !== 'function') return () => {};
-  ensureSystemBot().catch(() => null);
+  if (typeof onChange !== 'function') return () => { };
 
   let usersMap = {};
   let statsMap = {};
@@ -4333,6 +5235,9 @@ export function subscribeGlobalRankings(mode = 'pve', limit = 50, onChange, onEr
   const emit = () => {
     onChange(buildGlobalRankingsList(usersMap, statsMap, userShopMap, mode, limit));
   };
+  ensureSystemBot().then(() => {
+    emit();
+  }).catch(() => null);
 
   const usersRef = ref(firebaseDb, 'users');
   const statsRef = ref(firebaseDb, 'user_stats');
@@ -4387,16 +5292,26 @@ export async function getQuizRankings(language, topic, difficulty, limit = 50) {
 
   if (!rowsMap || typeof rowsMap !== 'object') return [];
 
-  const list = Object.entries(rowsMap).map(([userId, raw]) => {
+  const list = Object.entries(rowsMap).map(([rowUserId, raw]) => {
     const row = raw && typeof raw === 'object' ? raw : {};
+    const userId = String(row?.user_id || rowUserId || '').trim();
+    if (!userId) return null;
+    const isSystemBot = isSystemBotUserId(userId);
+    const botDef = isSystemBot ? getSystemBotDefinition(userId) : null;
     const user = usersMap && typeof usersMap === 'object' && usersMap[userId] && typeof usersMap[userId] === 'object'
       ? usersMap[userId]
       : {};
+    const hasIdentity = Boolean(
+      String(user.nickname || '').trim()
+      || String(user.full_name || '').trim()
+      || String(user.avatar || '').trim()
+    );
+    if (!isSystemBot && !hasIdentity) return null;
 
     return {
       user_id: userId,
-      nickname: String(user.nickname || 'Jogador'),
-      avatar: String(user.avatar || '🤓'),
+      nickname: String(user.nickname || botDef?.nickname || (hasIdentity ? 'Jogador' : '')),
+      avatar: String(user.avatar || botDef?.avatar || '🤓'),
       equipped_frame: String(user.equipped_frame || 'frame_default'),
       equipped_background: String(user.equipped_background || 'bg_default'),
       equipped_emoji: String(user.equipped_emoji || 'emoji_profile'),
@@ -4405,10 +5320,30 @@ export async function getQuizRankings(language, topic, difficulty, limit = 50) {
       total_questions: Math.max(1, Number(row.total_questions || 1)),
       best_streak: Math.max(0, Number(row.best_streak || 0))
     };
-  });
+  }).filter((entry) => !!entry && String(entry.nickname || '').trim().length > 0);
 
-  list.sort((a, b) => b.correct_count - a.correct_count || b.score_pct - a.score_pct);
-  return list.slice(0, Math.max(1, Number(limit || 50)));
+  const uniqueByUserId = new Map();
+  list.forEach((entry) => {
+    const safeUserId = String(entry?.user_id || '').trim();
+    if (!safeUserId) return;
+    const prev = uniqueByUserId.get(safeUserId);
+    if (!prev) {
+      uniqueByUserId.set(safeUserId, entry);
+      return;
+    }
+    const nextIsBetter = (
+      Number(entry.correct_count || 0) > Number(prev.correct_count || 0)
+      || (
+        Number(entry.correct_count || 0) === Number(prev.correct_count || 0)
+        && Number(entry.score_pct || 0) > Number(prev.score_pct || 0)
+      )
+    );
+    if (nextIsBetter) uniqueByUserId.set(safeUserId, entry);
+  });
+  const dedupedList = Array.from(uniqueByUserId.values());
+
+  dedupedList.sort((a, b) => b.correct_count - a.correct_count || b.score_pct - a.score_pct);
+  return dedupedList.slice(0, Math.max(1, Number(limit || 50)));
 }
 
 export async function upsertPresence(user) {
@@ -4530,24 +5465,107 @@ export async function getUserShop(userId) {
   return row;
 }
 
+const SHOP_DEFAULT_EQUIPPED_BY_TYPE = Object.freeze({
+  frame: 'frame_default',
+  background: 'bg_default',
+  emoji: 'emoji_profile'
+});
+
+function normalizeShopOwnedIds(value) {
+  const source = Array.isArray(value) ? value : [];
+  const defaults = Object.values(SHOP_DEFAULT_EQUIPPED_BY_TYPE);
+  return [...new Set(
+    [...source, ...defaults]
+      .map((id) => String(id || '').trim())
+      .filter(Boolean)
+  )];
+}
+
+function toShopUpdatedAtMs(value) {
+  const safe = value && typeof value === 'object' ? value : {};
+  const byMsField = Number(safe.updated_at_ms || 0);
+  const byCamelField = Number(safe.updatedAt || 0);
+  const byIsoField = Date.parse(String(safe.updated_at || ''));
+  return Math.max(
+    0,
+    Number.isFinite(byMsField) ? byMsField : 0,
+    Number.isFinite(byCamelField) ? byCamelField : 0,
+    Number.isFinite(byIsoField) ? byIsoField : 0
+  );
+}
+
+function pickMergedShopEquippedId(type, incomingId, currentId, ownedSet, preferIncoming = true) {
+  const safeType = String(type || '').trim();
+  const fallbackId = String(SHOP_DEFAULT_EQUIPPED_BY_TYPE[safeType] || SHOP_DEFAULT_EQUIPPED_BY_TYPE.emoji);
+  const nextId = String(incomingId || fallbackId).trim() || fallbackId;
+  const prevId = String(currentId || fallbackId).trim() || fallbackId;
+  const nextOwned = ownedSet.has(nextId);
+  const prevOwned = ownedSet.has(prevId);
+
+  if (nextOwned && prevOwned) {
+    const nextIsDefault = nextId === fallbackId;
+    const prevIsDefault = prevId === fallbackId;
+    if (nextIsDefault && !prevIsDefault) return prevId;
+    if (!nextIsDefault && prevIsDefault) return nextId;
+    return preferIncoming ? nextId : prevId;
+  }
+  if (nextOwned) return nextId;
+  if (prevOwned) return prevId;
+  return fallbackId;
+}
+
 export async function saveUserShop(userId, shopData) {
   if (!userId || !shopData || typeof shopData !== 'object') return null;
-  const nowIso = new Date().toISOString();
-  const owned = Array.isArray(shopData.owned)
-    ? [...new Set(shopData.owned.map((id) => String(id || '').trim()).filter(Boolean))]
-    : [];
-  const payload = {
-    owned,
-    equipped: {
-      frame: String(shopData?.equipped?.frame || 'frame_default'),
-      background: String(shopData?.equipped?.background || 'bg_default'),
-      emoji: String(shopData?.equipped?.emoji || 'emoji_profile')
-    },
-    updated_at: nowIso
+  const incomingOwned = normalizeShopOwnedIds(shopData.owned);
+  const incomingEquipped = {
+    frame: String(shopData?.equipped?.frame || SHOP_DEFAULT_EQUIPPED_BY_TYPE.frame),
+    background: String(shopData?.equipped?.background || SHOP_DEFAULT_EQUIPPED_BY_TYPE.background),
+    emoji: String(shopData?.equipped?.emoji || SHOP_DEFAULT_EQUIPPED_BY_TYPE.emoji)
   };
-
-  await set(ref(firebaseDb, `user_shop/${userId}`), payload);
-  return payload;
+  const incomingUpdatedAtMs = Math.max(toShopUpdatedAtMs(shopData), Date.now());
+  const tx = await runTransaction(ref(firebaseDb, `user_shop/${userId}`), (current) => {
+    const base = current && typeof current === 'object' ? current : {};
+    const currentOwned = normalizeShopOwnedIds(base.owned);
+    const mergedOwned = normalizeShopOwnedIds([...currentOwned, ...incomingOwned]);
+    const ownedSet = new Set(mergedOwned);
+    const currentEquipped = {
+      frame: String(base?.equipped?.frame || SHOP_DEFAULT_EQUIPPED_BY_TYPE.frame),
+      background: String(base?.equipped?.background || SHOP_DEFAULT_EQUIPPED_BY_TYPE.background),
+      emoji: String(base?.equipped?.emoji || SHOP_DEFAULT_EQUIPPED_BY_TYPE.emoji)
+    };
+    const currentUpdatedAtMs = toShopUpdatedAtMs(base);
+    const preferIncoming = incomingUpdatedAtMs >= currentUpdatedAtMs;
+    const mergedUpdatedAtMs = Math.max(currentUpdatedAtMs, incomingUpdatedAtMs, Date.now());
+    return {
+      owned: mergedOwned,
+      equipped: {
+        frame: pickMergedShopEquippedId(
+          'frame',
+          incomingEquipped.frame,
+          currentEquipped.frame,
+          ownedSet,
+          preferIncoming
+        ),
+        background: pickMergedShopEquippedId(
+          'background',
+          incomingEquipped.background,
+          currentEquipped.background,
+          ownedSet,
+          preferIncoming
+        ),
+        emoji: pickMergedShopEquippedId(
+          'emoji',
+          incomingEquipped.emoji,
+          currentEquipped.emoji,
+          ownedSet,
+          preferIncoming
+        )
+      },
+      updated_at: new Date(mergedUpdatedAtMs).toISOString(),
+      updated_at_ms: mergedUpdatedAtMs
+    };
+  });
+  return tx?.snapshot?.exists() ? tx.snapshot.val() : null;
 }
 
 function getPairLockKey(userA, userB) {
@@ -4569,7 +5587,7 @@ export async function getQueueEntryByUser(userId) {
 }
 
 export function subscribeQueueEntry(userId, onChange, onError = null) {
-  if (!userId || typeof onChange !== 'function') return () => {};
+  if (!userId || typeof onChange !== 'function') return () => { };
   const targetRef = ref(firebaseDb, `pvp_queue/${userId}`);
   const unsubscribe = onValue(
     targetRef,
@@ -4592,9 +5610,11 @@ export async function upsertQueueEntry(payload) {
   const difficulty = normalizeDifficulty(payload?.difficulty || 'easy');
   const category = normalizePvpCategory(payload?.category || payload?.difficulty || 'easy', difficulty);
   const knowledgeArea = String(payload?.knowledge_area || '').trim();
+  const joinedAtMs = Math.max(0, Number(payload?.joined_at_ms || 0));
   const queueRef = ref(firebaseDb, `pvp_queue/${userId}`);
   const tx = await runTransaction(queueRef, (current) => {
     const base = current && typeof current === 'object' ? current : {};
+    const baseJoinedAtMs = Math.max(0, Number(base.joined_at_ms || 0));
     return {
       ...base,
       user_id: userId,
@@ -4612,6 +5632,7 @@ export async function upsertQueueEntry(payload) {
       category,
       status: 'waiting',
       match_id: null,
+      joined_at_ms: joinedAtMs || baseJoinedAtMs || Date.now(),
       created_at: base.created_at || nowIso,
       updated_at: nowIso
     };
@@ -4884,7 +5905,7 @@ export async function getPvpMatchesSnapshot() {
 }
 
 export function subscribePvpMatches(onChange, onError = null) {
-  if (typeof onChange !== 'function') return () => {};
+  if (typeof onChange !== 'function') return () => { };
   const targetRef = ref(firebaseDb, 'pvp_matches');
   const unsubscribe = onValue(
     targetRef,
@@ -4941,7 +5962,7 @@ export async function findOpenMatchForUser(userId) {
 }
 
 export function subscribeMatch(matchId, onChange, onError = null) {
-  if (!matchId || typeof onChange !== 'function') return () => {};
+  if (!matchId || typeof onChange !== 'function') return () => { };
   const targetRef = ref(firebaseDb, `pvp_matches/${matchId}`);
   const unsubscribe = onValue(
     targetRef,
@@ -4973,6 +5994,7 @@ export async function upsertPvpAnswer(answerPayload) {
     user_id: userId,
     answer_idx: Number(answerPayload?.answer_idx ?? -1),
     is_correct: !!answerPayload?.is_correct,
+    correct_answer_idx: Number(answerPayload?.correct_answer_idx ?? -1),
     answered_at_ms: Number(answerPayload?.answered_at_ms || nowMs),
     answered_at: String(answerPayload?.answered_at || nowIso),
     created_at: String(answerPayload?.created_at || nowIso)
@@ -5011,8 +6033,1564 @@ export async function getPvpRoundAnswers(matchId, roundNo) {
 }
 
 export function subscribeRoundAnswers(matchId, roundNo, onChange, onError = null) {
-  if (!matchId || !roundNo || typeof onChange !== 'function') return () => {};
+  if (!matchId || !roundNo || typeof onChange !== 'function') return () => { };
   const targetRef = ref(firebaseDb, `pvp_answers/${matchId}/${roundNo}`);
+  const unsubscribe = onValue(
+    targetRef,
+    (snap) => {
+      const rows = snap.exists() ? snap.val() : null;
+      const list = rows && typeof rows === 'object'
+        ? Object.values(rows).filter((row) => row && typeof row === 'object')
+        : [];
+      onChange(list);
+    },
+    (error) => {
+      if (typeof onError === 'function') onError(error);
+    }
+  );
+  return () => unsubscribe();
+}
+
+const PVP_TEAM_ROOM_SIDE_CAPACITY = 2;
+
+function normalizePvpTeamRoomStatus(value) {
+  const key = String(value || '').trim().toLowerCase();
+  if (key === 'active' || key === 'finished') return key;
+  return 'lobby';
+}
+
+function normalizePvpTeamSide(value) {
+  return String(value || '').trim().toLowerCase() === 'blue' ? 'blue' : 'red';
+}
+
+function normalizePvpTeamRoomNameValue(value = '') {
+  return String(value || '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 32);
+}
+
+function normalizePvpTeamRoomNameCompareKey(value = '') {
+  return normalizePvpTeamRoomNameValue(value)
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+}
+
+function normalizePvpTeamRoomMember(value = {}, fallback = {}) {
+  const safe = value && typeof value === 'object' ? value : {};
+  const base = fallback && typeof fallback === 'object' ? fallback : {};
+  const userId = String(safe.user_id || base.user_id || '').trim();
+  if (!userId) return null;
+  const joinedAtMs = Math.max(0, Number(safe.joined_at_ms || base.joined_at_ms || 0));
+  return {
+    user_id: userId,
+    nickname: String(safe.nickname || base.nickname || 'Jogador'),
+    avatar: String(safe.avatar || base.avatar || '🙂'),
+    level: Math.max(1, Number(safe.level || base.level || 1)),
+    pvp_points: Math.max(0, Number(safe.pvp_points || base.pvp_points || 0)),
+    equipped_frame: String(safe.equipped_frame || base.equipped_frame || 'frame_default'),
+    equipped_background: String(safe.equipped_background || base.equipped_background || 'bg_default'),
+    equipped_emoji: String(safe.equipped_emoji || base.equipped_emoji || 'emoji_profile'),
+    joined_at_ms: joinedAtMs,
+    joined_at: String(
+      safe.joined_at
+      || base.joined_at
+      || (joinedAtMs ? new Date(joinedAtMs).toISOString() : '')
+    )
+  };
+}
+
+function normalizePvpTeamRoomMembers(value = []) {
+  const source = Array.isArray(value)
+    ? value
+    : (value && typeof value === 'object' ? Object.values(value) : []);
+  const next = [];
+  const seen = new Set();
+  source.forEach((entry) => {
+    const member = normalizePvpTeamRoomMember(entry);
+    const userId = String(member?.user_id || '').trim();
+    if (!userId || seen.has(userId)) return;
+    seen.add(userId);
+    next.push(member);
+  });
+  next.sort((a, b) => (
+    Math.max(0, Number(a?.joined_at_ms || 0)) - Math.max(0, Number(b?.joined_at_ms || 0))
+  ));
+  return next.slice(0, PVP_TEAM_ROOM_SIDE_CAPACITY);
+}
+
+function getPvpTeamRoomMemberIds(roomRow = null) {
+  const safe = roomRow && typeof roomRow === 'object' ? roomRow : {};
+  return [
+    ...normalizePvpTeamRoomMembers(safe.red_members),
+    ...normalizePvpTeamRoomMembers(safe.blue_members)
+  ]
+    .map((member) => String(member?.user_id || '').trim())
+    .filter(Boolean);
+}
+
+function sanitizePvpTeamRoomReadyMemberIds(value = [], allowedIds = []) {
+  const source = Array.isArray(value)
+    ? value
+    : (value && typeof value === 'object' ? Object.values(value) : []);
+  const allowed = new Set(
+    (Array.isArray(allowedIds) ? allowedIds : [])
+      .map((entry) => String(entry || '').trim())
+      .filter(Boolean)
+  );
+  const next = [];
+  const seen = new Set();
+  source.forEach((entry) => {
+    const userId = String(entry || '').trim();
+    if (!userId || seen.has(userId)) return;
+    if (allowed.size && !allowed.has(userId)) return;
+    seen.add(userId);
+    next.push(userId);
+  });
+  return next;
+}
+
+function sanitizePvpTeamRoomNotice(value = null) {
+  const safe = value && typeof value === 'object' ? value : null;
+  if (!safe) return null;
+  const id = String(safe.id || '').trim();
+  const title = String(safe.title || '').trim();
+  const message = String(safe.message || '').trim();
+  if (!id || !message) return null;
+  return stripUndefinedDeep({
+    id,
+    title: title || 'Aviso da sala',
+    message,
+    created_at: String(safe.created_at || '').trim() || new Date().toISOString(),
+    created_by_user_id: String(safe.created_by_user_id || '').trim()
+  });
+}
+
+function sanitizePvpTeamRoomRow(row, options = {}) {
+  const safe = row && typeof row === 'object' ? row : null;
+  if (!safe) return null;
+  const includeSecrets = options?.includeSecrets === true;
+  const redMembers = normalizePvpTeamRoomMembers(safe.red_members);
+  const blueMembers = normalizePvpTeamRoomMembers(safe.blue_members);
+  const memberIds = [
+    ...redMembers.map((member) => String(member?.user_id || '').trim()),
+    ...blueMembers.map((member) => String(member?.user_id || '').trim())
+  ].filter(Boolean);
+  const passwordHash = String(safe.password_hash || '').trim();
+  return stripUndefinedDeep({
+    ...safe,
+    name: normalizePvpTeamRoomNameValue(safe.name || 'Sala de equipe') || 'Sala de equipe',
+    status: normalizePvpTeamRoomStatus(safe.status),
+    visibility: String(safe.visibility || (passwordHash ? 'password' : 'open')).trim().toLowerCase() === 'password'
+      ? 'password'
+      : 'open',
+    has_password: Boolean(passwordHash),
+    password_hash: includeSecrets ? passwordHash : undefined,
+    max_side_size: PVP_TEAM_ROOM_SIDE_CAPACITY,
+    red_members: redMembers,
+    blue_members: blueMembers,
+    ready_member_ids: sanitizePvpTeamRoomReadyMemberIds(safe.ready_member_ids, memberIds),
+    lobby_notice: sanitizePvpTeamRoomNotice(safe.lobby_notice),
+    created_by_user_id: String(safe.created_by_user_id || '').trim(),
+    match_id: String(safe.match_id || '').trim() || null
+  });
+}
+
+function normalizePvpTeamBattleSchedule(value = []) {
+  const source = Array.isArray(value)
+    ? value
+    : (value && typeof value === 'object' ? Object.values(value) : []);
+  return source
+    .map((entry, index) => {
+      const safe = entry && typeof entry === 'object' ? entry : {};
+      const redUserId = String(safe.red_user_id || '').trim();
+      const blueUserId = String(safe.blue_user_id || '').trim();
+      if (!redUserId || !blueUserId) return null;
+      return {
+        battle_no: Math.max(1, Number(safe.battle_no || index + 1)),
+        block_no: Math.max(1, Number(safe.block_no || 1)),
+        round_in_block: Math.max(1, Number(safe.round_in_block || 1)),
+        red_user_id: redUserId,
+        blue_user_id: blueUserId
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => Math.max(1, Number(a.battle_no || 1)) - Math.max(1, Number(b.battle_no || 1)));
+}
+
+function sanitizePvpTeamMemberScores(value = {}, allowedIds = []) {
+  const source = value && typeof value === 'object' ? value : {};
+  const allowAll = !Array.isArray(allowedIds) || !allowedIds.length;
+  const allowed = new Set(
+    (Array.isArray(allowedIds) ? allowedIds : [])
+      .map((entry) => String(entry || '').trim())
+      .filter(Boolean)
+  );
+  const next = {};
+  Object.entries(source).forEach(([userId, score]) => {
+    const safeUserId = String(userId || '').trim();
+    if (!safeUserId) return;
+    if (!allowAll && !allowed.has(safeUserId)) return;
+    next[safeUserId] = Math.max(0, Number(score || 0));
+  });
+  return next;
+}
+
+function sanitizePvpTeamMatchRow(row) {
+  const safe = row && typeof row === 'object' ? row : null;
+  if (!safe) return null;
+  const redMembers = normalizePvpTeamRoomMembers(safe.red_members);
+  const blueMembers = normalizePvpTeamRoomMembers(safe.blue_members);
+  const allowedIds = [
+    ...redMembers.map((member) => String(member?.user_id || '').trim()),
+    ...blueMembers.map((member) => String(member?.user_id || '').trim())
+  ].filter(Boolean);
+  return stripUndefinedDeep({
+    ...safe,
+    mode: 'team_battle',
+    status: String(safe.status || '').trim().toLowerCase() === 'finished'
+      ? 'finished'
+      : (String(safe.status || '').trim().toLowerCase() === 'round_result' ? 'round_result' : 'active'),
+    battle_no: Math.max(1, Number(safe.battle_no || 1)),
+    total_rounds: Math.max(1, Number(safe.total_rounds || 12)),
+    red_score: Math.max(0, Number(safe.red_score || 0)),
+    blue_score: Math.max(0, Number(safe.blue_score || 0)),
+    result_battle_no: safe.result_battle_no === null || safe.result_battle_no === undefined
+      ? null
+      : (Number.isFinite(Number(safe.result_battle_no)) ? Math.max(1, Number(safe.result_battle_no || 1)) : null),
+    next_battle_no: safe.next_battle_no === null || safe.next_battle_no === undefined
+      ? null
+      : (Number.isFinite(Number(safe.next_battle_no)) ? Math.max(1, Number(safe.next_battle_no || 1)) : null),
+    result_battle_correct_answer_idx: Number.isFinite(Number(safe.result_battle_correct_answer_idx))
+      ? Number(safe.result_battle_correct_answer_idx)
+      : null,
+    winner_side: ['red', 'blue', 'draw'].includes(String(safe.winner_side || '').trim().toLowerCase())
+      ? String(safe.winner_side || '').trim().toLowerCase()
+      : '',
+    red_members: redMembers,
+    blue_members: blueMembers,
+    battle_schedule: normalizePvpTeamBattleSchedule(safe.battle_schedule),
+    member_scores: sanitizePvpTeamMemberScores(safe.member_scores, allowedIds),
+    room_id: String(safe.room_id || '').trim(),
+    knowledge_area: String(safe.knowledge_area || '').trim()
+  });
+}
+
+export async function createPvpTeamRoom(roomPayload) {
+  const id = String(roomPayload?.id || '').trim();
+  if (!id) return null;
+  const nowIso = new Date().toISOString();
+  const requestedName = normalizePvpTeamRoomNameValue(roomPayload?.name || '');
+  if (!requestedName) return null;
+  const roomNameKey = normalizePvpTeamRoomNameCompareKey(requestedName);
+  if (!roomNameKey) return null;
+
+  const payload = sanitizePvpTeamRoomRow({
+    ...roomPayload,
+    id,
+    name: requestedName,
+    status: roomPayload?.status || 'lobby',
+    red_members: roomPayload?.red_members || [],
+    blue_members: roomPayload?.blue_members || [],
+    ready_member_ids: roomPayload?.ready_member_ids || [],
+    lobby_notice: roomPayload?.lobby_notice || null,
+    max_side_size: PVP_TEAM_ROOM_SIDE_CAPACITY,
+    created_at: roomPayload?.created_at || nowIso,
+    updated_at: roomPayload?.updated_at || nowIso
+  }, { includeSecrets: true });
+
+  const tx = await runTransaction(ref(firebaseDb, 'pvp_team_rooms'), (current) => {
+    const safeCurrent = current && typeof current === 'object' ? current : {};
+    if (safeCurrent[id] && typeof safeCurrent[id] === 'object') return;
+    const duplicateExists = Object.entries(safeCurrent).some(([roomId, row]) => {
+      if (!row || typeof row !== 'object' || String(roomId || '').trim() === id) return false;
+      const existingNameKey = normalizePvpTeamRoomNameCompareKey(String(row.name || ''));
+      return !!existingNameKey && existingNameKey === roomNameKey;
+    });
+    if (duplicateExists) return;
+    return {
+      ...safeCurrent,
+      [id]: payload
+    };
+  });
+
+  if (!tx?.committed) {
+    const rows = tx?.snapshot?.val();
+    const safeRows = rows && typeof rows === 'object' ? rows : {};
+    const duplicateEntry = Object.entries(safeRows).find(([roomId, row]) => {
+      if (!row || typeof row !== 'object' || String(roomId || '').trim() === id) return false;
+      const existingNameKey = normalizePvpTeamRoomNameCompareKey(String(row.name || ''));
+      return !!existingNameKey && existingNameKey === roomNameKey;
+    });
+    if (duplicateEntry) {
+      const duplicateError = new Error('pvp_team_room_name_already_exists');
+      duplicateError.code = 'pvp_team_room/name-already-exists';
+      duplicateError.roomName = requestedName;
+      duplicateError.roomId = String(duplicateEntry[0] || '').trim();
+      throw duplicateError;
+    }
+    return null;
+  }
+
+  const rows = tx?.snapshot?.val();
+  const createdRow = rows && typeof rows === 'object' ? rows[id] : null;
+  if (!createdRow || typeof createdRow !== 'object') return null;
+  return sanitizePvpTeamRoomRow({ id, ...createdRow });
+}
+
+export async function updatePvpTeamRoom(roomId, patch) {
+  const safeRoomId = String(roomId || '').trim();
+  if (!safeRoomId || !patch || typeof patch !== 'object') return null;
+  const nowIso = new Date().toISOString();
+  const safePatch = stripUndefinedDeep({
+    ...patch,
+    updated_at: nowIso
+  });
+  await update(ref(firebaseDb, `pvp_team_rooms/${safeRoomId}`), safePatch);
+  const row = await getNode(`pvp_team_rooms/${safeRoomId}`);
+  return row ? sanitizePvpTeamRoomRow(row) : null;
+}
+
+export async function getPvpTeamRoom(roomId) {
+  const safeRoomId = String(roomId || '').trim();
+  if (!safeRoomId) return null;
+  const row = await getNode(`pvp_team_rooms/${safeRoomId}`);
+  if (!row || typeof row !== 'object') return null;
+  return sanitizePvpTeamRoomRow(row);
+}
+
+export async function getPvpTeamRoomsSnapshot() {
+  const rows = await getNode('pvp_team_rooms');
+  if (!rows || typeof rows !== 'object') return [];
+  return Object.entries(rows)
+    .filter(([id, row]) => !!id && row && typeof row === 'object')
+    .map(([id, row]) => sanitizePvpTeamRoomRow({ id, ...row }))
+    .filter(Boolean)
+    .sort((a, b) => (
+      toMillis(b?.updated_at || b?.created_at) - toMillis(a?.updated_at || a?.created_at)
+    ));
+}
+
+export function subscribePvpTeamRooms(onChange, onError = null) {
+  if (typeof onChange !== 'function') return () => { };
+  const targetRef = ref(firebaseDb, 'pvp_team_rooms');
+  const unsubscribe = onValue(
+    targetRef,
+    (snap) => {
+      const rows = snap.exists() ? snap.val() : null;
+      const list = rows && typeof rows === 'object'
+        ? Object.entries(rows)
+          .filter(([id, row]) => !!id && row && typeof row === 'object')
+          .map(([id, row]) => sanitizePvpTeamRoomRow({ id, ...row }))
+          .filter(Boolean)
+          .sort((a, b) => (
+            toMillis(b?.updated_at || b?.created_at) - toMillis(a?.updated_at || a?.created_at)
+          ))
+        : [];
+      onChange(list);
+    },
+    (error) => {
+      if (typeof onError === 'function') onError(error);
+    }
+  );
+  return () => unsubscribe();
+}
+
+export function subscribePvpTeamRoom(roomId, onChange, onError = null) {
+  const safeRoomId = String(roomId || '').trim();
+  if (!safeRoomId || typeof onChange !== 'function') return () => { };
+  const targetRef = ref(firebaseDb, `pvp_team_rooms/${safeRoomId}`);
+  const unsubscribe = onValue(
+    targetRef,
+    (snap) => {
+      const row = snap.exists() ? snap.val() : null;
+      onChange(row && typeof row === 'object' ? sanitizePvpTeamRoomRow({ id: safeRoomId, ...row }) : null);
+    },
+    (error) => {
+      if (typeof onError === 'function') onError(error);
+    }
+  );
+  return () => unsubscribe();
+}
+
+export async function joinPvpTeamRoom(roomId, memberPayload, options = {}) {
+  const safeRoomId = String(roomId || '').trim();
+  const userId = String(memberPayload?.user_id || '').trim();
+  if (!safeRoomId || !userId) return null;
+
+  const requestedSideRaw = String(options?.side || memberPayload?.side || 'red').trim().toLowerCase();
+  const requestedSide = requestedSideRaw === 'auto' ? 'auto' : normalizePvpTeamSide(requestedSideRaw);
+  const passwordHashAttempt = String(
+    options?.password_hash
+    || options?.passwordHash
+    || memberPayload?.password_hash
+    || ''
+  ).trim();
+  const nowMs = Date.now();
+  const nowIso = new Date(nowMs).toISOString();
+
+  const tx = await runTransaction(ref(firebaseDb, `pvp_team_rooms/${safeRoomId}`), (current) => {
+    const safeCurrent = sanitizePvpTeamRoomRow(current, { includeSecrets: true });
+    if (!safeCurrent) return current;
+    if (safeCurrent.status !== 'lobby') return current;
+
+    const currentRed = normalizePvpTeamRoomMembers(safeCurrent.red_members);
+    const currentBlue = normalizePvpTeamRoomMembers(safeCurrent.blue_members);
+    const existingMember = [...currentRed, ...currentBlue].find((member) => String(member?.user_id || '') === userId) || null;
+    const wasMember = !!existingMember;
+    const currentReadyIds = sanitizePvpTeamRoomReadyMemberIds(
+      safeCurrent.ready_member_ids,
+      [
+        ...currentRed.map((member) => String(member?.user_id || '').trim()),
+        ...currentBlue.map((member) => String(member?.user_id || '').trim())
+      ]
+    );
+    if (!wasMember && safeCurrent.has_password) {
+      const expectedHash = String(safeCurrent.password_hash || '').trim();
+      if (!expectedHash || expectedHash !== passwordHashAttempt) return current;
+    }
+
+    const redMembers = currentRed.filter((member) => String(member?.user_id || '') !== userId);
+    const blueMembers = currentBlue.filter((member) => String(member?.user_id || '') !== userId);
+    const nextMember = normalizePvpTeamRoomMember({
+      ...existingMember,
+      ...memberPayload,
+      user_id: userId,
+      joined_at_ms: existingMember?.joined_at_ms || nowMs,
+      joined_at: existingMember?.joined_at || nowIso
+    });
+    if (!nextMember) return current;
+
+    const resolvedSide = requestedSide === 'auto'
+      ? (
+        currentRed.length >= PVP_TEAM_ROOM_SIDE_CAPACITY && currentBlue.length >= PVP_TEAM_ROOM_SIDE_CAPACITY
+          ? ''
+          : currentRed.length >= PVP_TEAM_ROOM_SIDE_CAPACITY
+            ? 'blue'
+            : currentBlue.length >= PVP_TEAM_ROOM_SIDE_CAPACITY
+              ? 'red'
+              : (currentBlue.length < currentRed.length ? 'blue' : 'red')
+      )
+      : requestedSide;
+
+    if (!resolvedSide) return current;
+
+    if (resolvedSide === 'blue') {
+      if (blueMembers.length >= PVP_TEAM_ROOM_SIDE_CAPACITY) return current;
+      blueMembers.push(nextMember);
+    } else {
+      if (redMembers.length >= PVP_TEAM_ROOM_SIDE_CAPACITY) return current;
+      redMembers.push(nextMember);
+    }
+
+    const remainingIds = [
+      ...redMembers.map((member) => String(member?.user_id || '').trim()),
+      ...blueMembers.map((member) => String(member?.user_id || '').trim())
+    ].filter(Boolean);
+    const nextHostUserId = remainingIds.includes(String(safeCurrent.created_by_user_id || '').trim())
+      ? String(safeCurrent.created_by_user_id || '').trim()
+      : (remainingIds[0] || userId);
+
+    return sanitizePvpTeamRoomRow({
+      ...safeCurrent,
+      red_members: redMembers,
+      blue_members: blueMembers,
+      ready_member_ids: currentReadyIds,
+      created_by_user_id: nextHostUserId,
+      updated_at: nowIso
+    }, { includeSecrets: true });
+  });
+
+  if (!tx?.snapshot?.exists()) return null;
+  return sanitizePvpTeamRoomRow(tx.snapshot.val());
+}
+
+export async function leavePvpTeamRoom(roomId, userId) {
+  const safeRoomId = String(roomId || '').trim();
+  const safeUserId = String(userId || '').trim();
+  if (!safeRoomId || !safeUserId) return null;
+  const nowIso = new Date().toISOString();
+
+  const tx = await runTransaction(ref(firebaseDb, `pvp_team_rooms/${safeRoomId}`), (current) => {
+    const safeCurrent = sanitizePvpTeamRoomRow(current, { includeSecrets: true });
+    if (!safeCurrent) return current;
+    const redMembers = normalizePvpTeamRoomMembers(safeCurrent.red_members)
+      .filter((member) => String(member?.user_id || '').trim() !== safeUserId);
+    const blueMembers = normalizePvpTeamRoomMembers(safeCurrent.blue_members)
+      .filter((member) => String(member?.user_id || '').trim() !== safeUserId);
+    const remainingIds = [
+      ...redMembers.map((member) => String(member?.user_id || '').trim()),
+      ...blueMembers.map((member) => String(member?.user_id || '').trim())
+    ].filter(Boolean);
+    if (!remainingIds.length) return null;
+    const nextHostUserId = remainingIds.includes(String(safeCurrent.created_by_user_id || '').trim())
+      ? String(safeCurrent.created_by_user_id || '').trim()
+      : remainingIds[0];
+    return sanitizePvpTeamRoomRow({
+      ...safeCurrent,
+      red_members: redMembers,
+      blue_members: blueMembers,
+      created_by_user_id: nextHostUserId,
+      updated_at: nowIso
+    }, { includeSecrets: true });
+  });
+
+  if (!tx?.snapshot?.exists()) return null;
+  return sanitizePvpTeamRoomRow(tx.snapshot.val());
+}
+
+export async function setPvpTeamRoomMemberReady(roomId, userId, isReady = false) {
+  const safeRoomId = String(roomId || '').trim();
+  const safeUserId = String(userId || '').trim();
+  if (!safeRoomId || !safeUserId) return null;
+  const nowIso = new Date().toISOString();
+
+  const tx = await runTransaction(ref(firebaseDb, `pvp_team_rooms/${safeRoomId}`), (current) => {
+    const safeCurrent = sanitizePvpTeamRoomRow(current, { includeSecrets: true });
+    if (!safeCurrent || safeCurrent.status !== 'lobby') return current;
+    const memberIds = getPvpTeamRoomMemberIds(safeCurrent);
+    if (!memberIds.includes(safeUserId)) return current;
+    const readyIds = new Set(sanitizePvpTeamRoomReadyMemberIds(safeCurrent.ready_member_ids, memberIds));
+    if (isReady) readyIds.add(safeUserId);
+    else readyIds.delete(safeUserId);
+    return sanitizePvpTeamRoomRow({
+      ...safeCurrent,
+      ready_member_ids: Array.from(readyIds),
+      updated_at: nowIso
+    }, { includeSecrets: true });
+  });
+
+  if (!tx?.snapshot?.exists()) return null;
+  return sanitizePvpTeamRoomRow(tx.snapshot.val());
+}
+
+export async function publishPvpTeamRoomNotice(roomId, noticePayload) {
+  const safeRoomId = String(roomId || '').trim();
+  const safeNotice = sanitizePvpTeamRoomNotice(noticePayload);
+  if (!safeRoomId || !safeNotice) return null;
+  const nowIso = new Date().toISOString();
+
+  const tx = await runTransaction(ref(firebaseDb, `pvp_team_rooms/${safeRoomId}`), (current) => {
+    const safeCurrent = sanitizePvpTeamRoomRow(current, { includeSecrets: true });
+    if (!safeCurrent) return current;
+    return sanitizePvpTeamRoomRow({
+      ...safeCurrent,
+      lobby_notice: safeNotice,
+      updated_at: nowIso
+    }, { includeSecrets: true });
+  });
+
+  if (!tx?.snapshot?.exists()) return null;
+  return sanitizePvpTeamRoomRow(tx.snapshot.val());
+}
+
+export async function createPvpTeamMatch(matchPayload) {
+  const id = String(matchPayload?.id || '').trim();
+  if (!id) return null;
+  const nowIso = new Date().toISOString();
+  const payload = sanitizePvpTeamMatchRow({
+    ...matchPayload,
+    id,
+    status: String(matchPayload?.status || 'active'),
+    battle_no: Math.max(1, Number(matchPayload?.battle_no || 1)),
+    total_rounds: Math.max(1, Number(matchPayload?.total_rounds || 12)),
+    red_score: Math.max(0, Number(matchPayload?.red_score || 0)),
+    blue_score: Math.max(0, Number(matchPayload?.blue_score || 0)),
+    created_at: matchPayload?.created_at || nowIso,
+    updated_at: matchPayload?.updated_at || nowIso
+  });
+
+  const tx = await runTransaction(ref(firebaseDb, `pvp_team_matches/${id}`), (current) => {
+    if (current && typeof current === 'object') return current;
+    return payload;
+  });
+  if (!tx?.snapshot?.exists()) return null;
+  return sanitizePvpTeamMatchRow(tx.snapshot.val());
+}
+
+export async function updatePvpTeamMatch(matchId, patch) {
+  const safeMatchId = String(matchId || '').trim();
+  if (!safeMatchId || !patch || typeof patch !== 'object') return null;
+  const nowIso = new Date().toISOString();
+  const safePatch = stripUndefinedDeep({
+    ...patch,
+    updated_at: nowIso
+  });
+  await update(ref(firebaseDb, `pvp_team_matches/${safeMatchId}`), safePatch);
+  const row = await getNode(`pvp_team_matches/${safeMatchId}`);
+  return row ? sanitizePvpTeamMatchRow({ id: safeMatchId, ...row }) : null;
+}
+
+export async function getPvpTeamMatch(matchId) {
+  const safeMatchId = String(matchId || '').trim();
+  if (!safeMatchId) return null;
+  const row = await getNode(`pvp_team_matches/${safeMatchId}`);
+  if (!row || typeof row !== 'object') return null;
+  return sanitizePvpTeamMatchRow({ id: safeMatchId, ...row });
+}
+
+export async function findOpenPvpTeamMatchForUser(userId) {
+  const safeUserId = String(userId || '').trim();
+  if (!safeUserId) return null;
+  const rows = await getNode('pvp_team_matches').catch(() => null);
+  if (!rows || typeof rows !== 'object') return null;
+
+  let best = null;
+  let bestUpdatedAtMs = 0;
+  Object.entries(rows).forEach(([matchId, row]) => {
+    const safeRow = sanitizePvpTeamMatchRow({ id: matchId, ...(row && typeof row === 'object' ? row : {}) });
+    if (!safeRow) return;
+    if (safeRow.status !== 'active' && safeRow.status !== 'round_result') return;
+    const memberIds = [
+      ...safeRow.red_members.map((member) => String(member?.user_id || '').trim()),
+      ...safeRow.blue_members.map((member) => String(member?.user_id || '').trim())
+    ].filter(Boolean);
+    if (!memberIds.includes(safeUserId)) return;
+    const updatedAtMs = toMillis(safeRow.updated_at || safeRow.created_at);
+    if (!best || updatedAtMs >= bestUpdatedAtMs) {
+      best = safeRow;
+      bestUpdatedAtMs = updatedAtMs;
+    }
+  });
+  return best;
+}
+
+export function subscribePvpTeamMatch(matchId, onChange, onError = null) {
+  const safeMatchId = String(matchId || '').trim();
+  if (!safeMatchId || typeof onChange !== 'function') return () => { };
+  const targetRef = ref(firebaseDb, `pvp_team_matches/${safeMatchId}`);
+  const unsubscribe = onValue(
+    targetRef,
+    (snap) => {
+      const row = snap.exists() ? snap.val() : null;
+      onChange(row && typeof row === 'object' ? sanitizePvpTeamMatchRow({ id: safeMatchId, ...row }) : null);
+    },
+    (error) => {
+      if (typeof onError === 'function') onError(error);
+    }
+  );
+  return () => unsubscribe();
+}
+
+export async function upsertPvpTeamAnswer(answerPayload) {
+  const matchId = String(answerPayload?.match_id || '').trim();
+  const userId = String(answerPayload?.user_id || '').trim();
+  const battleNo = Math.max(1, Number(answerPayload?.battle_no || 0));
+  if (!matchId || !userId || !battleNo) return null;
+
+  const nowMs = Date.now();
+  const nowIso = new Date(nowMs).toISOString();
+  const answerRef = ref(firebaseDb, `pvp_team_answers/${matchId}/${battleNo}/${userId}`);
+  const incoming = {
+    match_id: matchId,
+    battle_no: battleNo,
+    user_id: userId,
+    answer_idx: Number(answerPayload?.answer_idx ?? -1),
+    is_correct: !!answerPayload?.is_correct,
+    correct_answer_idx: Number(answerPayload?.correct_answer_idx ?? -1),
+    answered_at_ms: Number(answerPayload?.answered_at_ms || nowMs),
+    answered_at: String(answerPayload?.answered_at || nowIso),
+    created_at: String(answerPayload?.created_at || nowIso)
+  };
+
+  const tx = await runTransaction(answerRef, (current) => {
+    const existing = current && typeof current === 'object' ? current : null;
+    if (!existing) return incoming;
+
+    const existingIdx = Number(existing.answer_idx ?? -1);
+    const incomingIdx = Number(incoming.answer_idx ?? -1);
+    const existingCommitted = Number.isFinite(existingIdx) && existingIdx >= 0;
+    const incomingCommitted = Number.isFinite(incomingIdx) && incomingIdx >= 0;
+
+    if (existingCommitted && !incomingCommitted) return existing;
+    if (existingCommitted && incomingCommitted) return existing;
+    if (!existingCommitted && incomingCommitted) {
+      return {
+        ...existing,
+        ...incoming,
+        created_at: existing.created_at || incoming.created_at
+      };
+    }
+    return existing;
+  });
+
+  if (!tx?.snapshot?.exists()) return null;
+  return tx.snapshot.val();
+}
+
+export async function getPvpTeamBattleAnswers(matchId, battleNo) {
+  const safeMatchId = String(matchId || '').trim();
+  const safeBattleNo = Math.max(1, Number(battleNo || 0));
+  if (!safeMatchId || !safeBattleNo) return [];
+  const rows = await getNode(`pvp_team_answers/${safeMatchId}/${safeBattleNo}`);
+  if (!rows || typeof rows !== 'object') return [];
+  return Object.values(rows).filter((row) => row && typeof row === 'object');
+}
+
+export function subscribePvpTeamBattleAnswers(matchId, battleNo, onChange, onError = null) {
+  const safeMatchId = String(matchId || '').trim();
+  const safeBattleNo = Math.max(1, Number(battleNo || 0));
+  if (!safeMatchId || !safeBattleNo || typeof onChange !== 'function') return () => { };
+  const targetRef = ref(firebaseDb, `pvp_team_answers/${safeMatchId}/${safeBattleNo}`);
+  const unsubscribe = onValue(
+    targetRef,
+    (snap) => {
+      const rows = snap.exists() ? snap.val() : null;
+      const list = rows && typeof rows === 'object'
+        ? Object.values(rows).filter((row) => row && typeof row === 'object')
+        : [];
+      onChange(list);
+    },
+    (error) => {
+      if (typeof onError === 'function') onError(error);
+    }
+  );
+  return () => unsubscribe();
+}
+
+const PVP_ELIMINATION_ROOM_CAPACITY = 4;
+const PVP_ELIMINATION_ROUNDS_PER_CYCLE = 3;
+
+function normalizePvpEliminationRoomStatus(value) {
+  const key = String(value || '').trim().toLowerCase();
+  if (key === 'pending_accept' || key === 'active' || key === 'finished') return key;
+  return 'lobby';
+}
+
+function normalizePvpEliminationRoomNameValue(value = '') {
+  return String(value || '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 32);
+}
+
+function normalizePvpEliminationRoomNameCompareKey(value = '') {
+  return normalizePvpEliminationRoomNameValue(value)
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+}
+
+function normalizePvpEliminationMember(value = {}, fallback = {}) {
+  return normalizePvpTeamRoomMember(value, fallback);
+}
+
+function normalizePvpEliminationMembers(value = []) {
+  const source = Array.isArray(value)
+    ? value
+    : (value && typeof value === 'object' ? Object.values(value) : []);
+  const next = [];
+  const seen = new Set();
+  source.forEach((entry) => {
+    const member = normalizePvpEliminationMember(entry);
+    const userId = String(member?.user_id || '').trim();
+    if (!userId || seen.has(userId)) return;
+    seen.add(userId);
+    next.push(member);
+  });
+  next.sort((a, b) => (
+    Math.max(0, Number(a?.joined_at_ms || 0)) - Math.max(0, Number(b?.joined_at_ms || 0))
+  ));
+  return next.slice(0, PVP_ELIMINATION_ROOM_CAPACITY);
+}
+
+function getPvpEliminationRoomMemberIds(roomRow = null) {
+  const safe = roomRow && typeof roomRow === 'object' ? roomRow : {};
+  return normalizePvpEliminationMembers(safe.members)
+    .map((member) => String(member?.user_id || '').trim())
+    .filter(Boolean);
+}
+
+function sanitizePvpEliminationRoomReadyMemberIds(value = [], allowedIds = []) {
+  const source = Array.isArray(value)
+    ? value
+    : (value && typeof value === 'object' ? Object.values(value) : []);
+  const allowed = new Set(
+    (Array.isArray(allowedIds) ? allowedIds : [])
+      .map((entry) => String(entry || '').trim())
+      .filter(Boolean)
+  );
+  const next = [];
+  const seen = new Set();
+  source.forEach((entry) => {
+    const userId = String(entry || '').trim();
+    if (!userId || seen.has(userId)) return;
+    if (allowed.size && !allowed.has(userId)) return;
+    seen.add(userId);
+    next.push(userId);
+  });
+  return next;
+}
+
+function sanitizePvpEliminationRoomNotice(value = null) {
+  const safe = value && typeof value === 'object' ? value : null;
+  if (!safe) return null;
+  const id = String(safe.id || '').trim();
+  const title = String(safe.title || '').trim();
+  const message = String(safe.message || '').trim();
+  if (!id || !message) return null;
+  return stripUndefinedDeep({
+    id,
+    title: title || 'Aviso da sala',
+    message,
+    created_at: String(safe.created_at || '').trim() || new Date().toISOString(),
+    created_by_user_id: String(safe.created_by_user_id || '').trim()
+  });
+}
+
+function sanitizePvpEliminationAcceptState(value = 'pending') {
+  const key = String(value || '').trim().toLowerCase();
+  if (key === 'accepted' || key === 'rejected') return key;
+  return 'pending';
+}
+
+function sanitizePvpEliminationRoomAcceptStates(value = {}, allowedIds = []) {
+  const source = value && typeof value === 'object' ? value : {};
+  const allowed = new Set(
+    (Array.isArray(allowedIds) ? allowedIds : [])
+      .map((entry) => String(entry || '').trim())
+      .filter(Boolean)
+  );
+  const next = {};
+  allowed.forEach((userId) => {
+    next[userId] = sanitizePvpEliminationAcceptState(source[userId]);
+  });
+  return next;
+}
+
+function sanitizePvpEliminationRoomAcceptBotDecisionAtMs(value = {}, allowedIds = []) {
+  const source = value && typeof value === 'object' ? value : {};
+  const allowed = new Set(
+    (Array.isArray(allowedIds) ? allowedIds : [])
+      .map((entry) => String(entry || '').trim())
+      .filter(Boolean)
+  );
+  const next = {};
+  allowed.forEach((userId) => {
+    const decisionAtMs = Math.max(0, Number(source[userId] || 0));
+    if (decisionAtMs > 0) {
+      next[userId] = decisionAtMs;
+    }
+  });
+  return next;
+}
+
+function sanitizePvpEliminationRoomAcceptBotWillReject(value = {}, allowedIds = []) {
+  const source = value && typeof value === 'object' ? value : {};
+  const allowed = new Set(
+    (Array.isArray(allowedIds) ? allowedIds : [])
+      .map((entry) => String(entry || '').trim())
+      .filter(Boolean)
+  );
+  const next = {};
+  allowed.forEach((userId) => {
+    const raw = source[userId];
+    if (raw === true || raw === false) {
+      next[userId] = raw;
+    } else {
+      const normalized = String(raw || '').trim().toLowerCase();
+      if (normalized === 'true' || normalized === '1') next[userId] = true;
+      if (normalized === 'false' || normalized === '0') next[userId] = false;
+    }
+  });
+  return next;
+}
+
+function sanitizePvpEliminationUserIdList(value = [], allowedIds = [], maxItems = 8) {
+  const source = Array.isArray(value)
+    ? value
+    : (value && typeof value === 'object' ? Object.values(value) : []);
+  const allowed = new Set(
+    (Array.isArray(allowedIds) ? allowedIds : [])
+      .map((entry) => String(entry || '').trim())
+      .filter(Boolean)
+  );
+  const next = [];
+  const seen = new Set();
+  source.forEach((entry) => {
+    const userId = String(entry || '').trim();
+    if (!userId || seen.has(userId)) return;
+    if (allowed.size && !allowed.has(userId)) return;
+    seen.add(userId);
+    next.push(userId);
+  });
+  return next.slice(0, Math.max(1, Number(maxItems || 8)));
+}
+
+function sanitizePvpEliminationMemberScores(value = {}, allowedIds = []) {
+  const source = value && typeof value === 'object' ? value : {};
+  const allowAll = !Array.isArray(allowedIds) || !allowedIds.length;
+  const allowed = new Set(
+    (Array.isArray(allowedIds) ? allowedIds : [])
+      .map((entry) => String(entry || '').trim())
+      .filter(Boolean)
+  );
+  const next = {};
+  Object.entries(source).forEach(([userId, score]) => {
+    const safeUserId = String(userId || '').trim();
+    if (!safeUserId) return;
+    if (!allowAll && !allowed.has(safeUserId)) return;
+    next[safeUserId] = Math.max(0, Number(score || 0));
+  });
+  return next;
+}
+
+function sanitizePvpEliminationRoomRow(row, options = {}) {
+  const safe = row && typeof row === 'object' ? row : null;
+  if (!safe) return null;
+  const includeSecrets = options?.includeSecrets === true;
+  const members = normalizePvpEliminationMembers(safe.members);
+  const memberIds = members.map((member) => String(member?.user_id || '').trim()).filter(Boolean);
+  const acceptMemberStates = sanitizePvpEliminationRoomAcceptStates(safe.accept_member_states, memberIds);
+  const acceptBotDecisionAtMs = sanitizePvpEliminationRoomAcceptBotDecisionAtMs(safe.accept_bot_decision_at_ms, memberIds);
+  const acceptBotWillReject = sanitizePvpEliminationRoomAcceptBotWillReject(safe.accept_bot_will_reject, memberIds);
+  const passwordHash = String(safe.password_hash || '').trim();
+  return stripUndefinedDeep({
+    ...safe,
+    name: normalizePvpEliminationRoomNameValue(safe.name || 'Sala eliminatoria') || 'Sala eliminatoria',
+    status: normalizePvpEliminationRoomStatus(safe.status),
+    visibility: String(safe.visibility || (passwordHash ? 'password' : 'open')).trim().toLowerCase() === 'password'
+      ? 'password'
+      : 'open',
+    has_password: Boolean(passwordHash),
+    password_hash: includeSecrets ? passwordHash : undefined,
+    members,
+    max_players: PVP_ELIMINATION_ROOM_CAPACITY,
+    ready_member_ids: sanitizePvpEliminationRoomReadyMemberIds(safe.ready_member_ids, memberIds),
+    lobby_notice: sanitizePvpEliminationRoomNotice(safe.lobby_notice),
+    accept_member_states: acceptMemberStates,
+    accept_started_at_ms: Math.max(0, Number(safe.accept_started_at_ms || 0)),
+    accept_deadline_ms: Math.max(0, Number(safe.accept_deadline_ms || 0)),
+    accept_start_countdown_ms: Math.max(0, Number(safe.accept_start_countdown_ms || 0)),
+    accept_reject_at_ms: Math.max(0, Number(safe.accept_reject_at_ms || 0)),
+    accept_bot_decision_at_ms: acceptBotDecisionAtMs,
+    accept_bot_will_reject: acceptBotWillReject,
+    created_by_user_id: String(safe.created_by_user_id || '').trim(),
+    match_id: String(safe.match_id || '').trim() || null
+  });
+}
+
+function normalizePvpEliminationCycleRounds(value = []) {
+  const source = Array.isArray(value)
+    ? value
+    : (value && typeof value === 'object' ? Object.values(value) : []);
+  return source
+    .map((entry, index) => {
+      const safe = entry && typeof entry === 'object' ? entry : {};
+      const pairsSource = Array.isArray(safe.pairs)
+        ? safe.pairs
+        : (safe.pairs && typeof safe.pairs === 'object' ? Object.values(safe.pairs) : []);
+      const pairs = pairsSource
+        .map((pairEntry, pairIndex) => {
+          const pair = pairEntry && typeof pairEntry === 'object' ? pairEntry : {};
+          const player1UserId = String(pair.player1_user_id || pair.red_user_id || '').trim();
+          const player2UserId = String(pair.player2_user_id || pair.blue_user_id || '').trim();
+          if (!player1UserId || !player2UserId || player1UserId === player2UserId) return null;
+          return {
+            pair_no: Math.max(1, Number(pair.pair_no || pairIndex + 1)),
+            player1_user_id: player1UserId,
+            player2_user_id: player2UserId
+          };
+        })
+        .filter(Boolean)
+        .sort((a, b) => Math.max(1, Number(a.pair_no || 1)) - Math.max(1, Number(b.pair_no || 1)));
+      return {
+        round_in_cycle: Math.max(1, Number(safe.round_in_cycle || index + 1)),
+        waiting_user_ids: sanitizePvpEliminationUserIdList(safe.waiting_user_ids, [], PVP_ELIMINATION_ROOM_CAPACITY),
+        pairs
+      };
+    })
+    .filter((entry) => Array.isArray(entry.pairs) && entry.pairs.length)
+    .sort((a, b) => Math.max(1, Number(a.round_in_cycle || 1)) - Math.max(1, Number(b.round_in_cycle || 1)));
+}
+
+function sanitizePvpEliminationMatchStatus(value) {
+  const key = String(value || '').trim().toLowerCase();
+  if (key === 'round_result' || key === 'elimination_result' || key === 'finished') return key;
+  return 'active';
+}
+
+function sanitizePvpEliminationMatchRow(row) {
+  const safe = row && typeof row === 'object' ? row : null;
+  if (!safe) return null;
+  const members = normalizePvpEliminationMembers(safe.members);
+  const allMemberIds = members.map((member) => String(member?.user_id || '').trim()).filter(Boolean);
+  const activeMemberIds = sanitizePvpEliminationUserIdList(
+    safe.active_member_ids && Array.isArray(safe.active_member_ids) && safe.active_member_ids.length
+      ? safe.active_member_ids
+      : allMemberIds,
+    allMemberIds,
+    PVP_ELIMINATION_ROOM_CAPACITY
+  );
+  const spectatorMemberIds = sanitizePvpEliminationUserIdList(
+    safe.spectator_member_ids,
+    allMemberIds,
+    PVP_ELIMINATION_ROOM_CAPACITY
+  ).filter((userId) => !activeMemberIds.includes(userId));
+  const eliminationOrder = sanitizePvpEliminationUserIdList(
+    safe.elimination_order,
+    allMemberIds,
+    PVP_ELIMINATION_ROOM_CAPACITY
+  ).filter((userId) => !activeMemberIds.includes(userId));
+  const optOutMemberIds = sanitizePvpEliminationUserIdList(
+    safe.opt_out_member_ids,
+    allMemberIds,
+    PVP_ELIMINATION_ROOM_CAPACITY
+  );
+  const cycleRounds = normalizePvpEliminationCycleRounds(safe.cycle_rounds);
+  const activePairUserIds = sanitizePvpEliminationUserIdList(
+    safe.active_pair_user_ids,
+    activeMemberIds,
+    2
+  );
+  return stripUndefinedDeep({
+    ...safe,
+    mode: 'elimination',
+    status: sanitizePvpEliminationMatchStatus(safe.status),
+    battle_no: Math.max(1, Number(safe.battle_no || 1)),
+    cycle_no: Math.max(1, Number(safe.cycle_no || 1)),
+    round_in_cycle: Math.max(1, Number(safe.round_in_cycle || 1)),
+    pair_no: Math.max(1, Number(safe.pair_no || 1)),
+    total_rounds_per_cycle: Math.max(1, Number(safe.total_rounds_per_cycle || PVP_ELIMINATION_ROUNDS_PER_CYCLE)),
+    members,
+    active_member_ids: activeMemberIds,
+    spectator_member_ids: spectatorMemberIds,
+    elimination_order: eliminationOrder,
+    opt_out_member_ids: optOutMemberIds,
+    member_scores: sanitizePvpEliminationMemberScores(safe.member_scores, allMemberIds),
+    cycle_member_scores: sanitizePvpEliminationMemberScores(safe.cycle_member_scores, activeMemberIds),
+    cycle_rounds: cycleRounds,
+    active_pair_user_ids: activePairUserIds,
+    room_id: String(safe.room_id || '').trim(),
+    knowledge_area: String(safe.knowledge_area || '').trim(),
+    winner_user_id: String(safe.winner_user_id || '').trim() || null,
+    eliminated_user_id: String(safe.eliminated_user_id || '').trim() || null,
+    result_battle_no: safe.result_battle_no === null || safe.result_battle_no === undefined
+      ? null
+      : (Number.isFinite(Number(safe.result_battle_no)) ? Math.max(1, Number(safe.result_battle_no || 1)) : null),
+    next_battle_no: safe.next_battle_no === null || safe.next_battle_no === undefined
+      ? null
+      : (Number.isFinite(Number(safe.next_battle_no)) ? Math.max(1, Number(safe.next_battle_no || 1)) : null),
+    next_round_in_cycle: safe.next_round_in_cycle === null || safe.next_round_in_cycle === undefined
+      ? null
+      : (Number.isFinite(Number(safe.next_round_in_cycle)) ? Math.max(1, Number(safe.next_round_in_cycle || 1)) : null),
+    next_pair_no: safe.next_pair_no === null || safe.next_pair_no === undefined
+      ? null
+      : (Number.isFinite(Number(safe.next_pair_no)) ? Math.max(1, Number(safe.next_pair_no || 1)) : null),
+    result_battle_correct_answer_idx: Number.isFinite(Number(safe.result_battle_correct_answer_idx))
+      ? Number(safe.result_battle_correct_answer_idx)
+      : null,
+    result_battle_winner_user_id: String(safe.result_battle_winner_user_id || '').trim() || null,
+    round_result_until_ms: Math.max(0, Number(safe.round_result_until_ms || 0)),
+    elimination_until_ms: Math.max(0, Number(safe.elimination_until_ms || 0))
+  });
+}
+
+export async function createPvpEliminationRoom(roomPayload) {
+  const id = String(roomPayload?.id || '').trim();
+  if (!id) return null;
+  const nowIso = new Date().toISOString();
+  const requestedName = normalizePvpEliminationRoomNameValue(roomPayload?.name || '');
+  if (!requestedName) return null;
+  const roomNameKey = normalizePvpEliminationRoomNameCompareKey(requestedName);
+  if (!roomNameKey) return null;
+
+  const payload = sanitizePvpEliminationRoomRow({
+    ...roomPayload,
+    id,
+    name: requestedName,
+    status: roomPayload?.status || 'lobby',
+    members: roomPayload?.members || [],
+    ready_member_ids: roomPayload?.ready_member_ids || [],
+    lobby_notice: roomPayload?.lobby_notice || null,
+    accept_member_states: roomPayload?.accept_member_states || {},
+    accept_started_at_ms: Math.max(0, Number(roomPayload?.accept_started_at_ms || 0)),
+    accept_deadline_ms: Math.max(0, Number(roomPayload?.accept_deadline_ms || 0)),
+    accept_start_countdown_ms: Math.max(0, Number(roomPayload?.accept_start_countdown_ms || 0)),
+    accept_reject_at_ms: Math.max(0, Number(roomPayload?.accept_reject_at_ms || 0)),
+    accept_bot_decision_at_ms: roomPayload?.accept_bot_decision_at_ms || {},
+    accept_bot_will_reject: roomPayload?.accept_bot_will_reject || {},
+    max_players: PVP_ELIMINATION_ROOM_CAPACITY,
+    created_at: roomPayload?.created_at || nowIso,
+    updated_at: roomPayload?.updated_at || nowIso
+  }, { includeSecrets: true });
+
+  const tx = await runTransaction(ref(firebaseDb, 'pvp_elimination_rooms'), (current) => {
+    const safeCurrent = current && typeof current === 'object' ? current : {};
+    if (safeCurrent[id] && typeof safeCurrent[id] === 'object') return;
+    const duplicateExists = Object.entries(safeCurrent).some(([roomId, row]) => {
+      if (!row || typeof row !== 'object' || String(roomId || '').trim() === id) return false;
+      const existingNameKey = normalizePvpEliminationRoomNameCompareKey(String(row.name || ''));
+      return !!existingNameKey && existingNameKey === roomNameKey;
+    });
+    if (duplicateExists) return;
+    return {
+      ...safeCurrent,
+      [id]: payload
+    };
+  });
+
+  if (!tx?.committed) {
+    const rows = tx?.snapshot?.val();
+    const safeRows = rows && typeof rows === 'object' ? rows : {};
+    const duplicateEntry = Object.entries(safeRows).find(([roomId, row]) => {
+      if (!row || typeof row !== 'object' || String(roomId || '').trim() === id) return false;
+      const existingNameKey = normalizePvpEliminationRoomNameCompareKey(String(row.name || ''));
+      return !!existingNameKey && existingNameKey === roomNameKey;
+    });
+    if (duplicateEntry) {
+      const duplicateError = new Error('pvp_elimination_room_name_already_exists');
+      duplicateError.code = 'pvp_elimination_room/name-already-exists';
+      duplicateError.roomName = requestedName;
+      duplicateError.roomId = String(duplicateEntry[0] || '').trim();
+      throw duplicateError;
+    }
+    return null;
+  }
+
+  const rows = tx?.snapshot?.val();
+  const createdRow = rows && typeof rows === 'object' ? rows[id] : null;
+  if (!createdRow || typeof createdRow !== 'object') return null;
+  return sanitizePvpEliminationRoomRow({ id, ...createdRow });
+}
+
+export async function updatePvpEliminationRoom(roomId, patch) {
+  const safeRoomId = String(roomId || '').trim();
+  if (!safeRoomId || !patch || typeof patch !== 'object') return null;
+  const nowIso = new Date().toISOString();
+  const safePatch = stripUndefinedDeep({
+    ...patch,
+    updated_at: nowIso
+  });
+  await update(ref(firebaseDb, `pvp_elimination_rooms/${safeRoomId}`), safePatch);
+  const row = await getNode(`pvp_elimination_rooms/${safeRoomId}`);
+  return row ? sanitizePvpEliminationRoomRow({ id: safeRoomId, ...row }) : null;
+}
+
+export async function getPvpEliminationRoom(roomId) {
+  const safeRoomId = String(roomId || '').trim();
+  if (!safeRoomId) return null;
+  const row = await getNode(`pvp_elimination_rooms/${safeRoomId}`);
+  if (!row || typeof row !== 'object') return null;
+  return sanitizePvpEliminationRoomRow({ id: safeRoomId, ...row });
+}
+
+export async function getPvpEliminationRoomsSnapshot() {
+  const rows = await getNode('pvp_elimination_rooms');
+  if (!rows || typeof rows !== 'object') return [];
+  return Object.entries(rows)
+    .filter(([id, row]) => !!id && row && typeof row === 'object')
+    .map(([id, row]) => sanitizePvpEliminationRoomRow({ id, ...row }))
+    .filter(Boolean)
+    .sort((a, b) => (
+      toMillis(b?.updated_at || b?.created_at) - toMillis(a?.updated_at || a?.created_at)
+    ));
+}
+
+export function subscribePvpEliminationRooms(onChange, onError = null) {
+  if (typeof onChange !== 'function') return () => { };
+  const targetRef = ref(firebaseDb, 'pvp_elimination_rooms');
+  const unsubscribe = onValue(
+    targetRef,
+    (snap) => {
+      const rows = snap.exists() ? snap.val() : null;
+      const list = rows && typeof rows === 'object'
+        ? Object.entries(rows)
+          .filter(([id, row]) => !!id && row && typeof row === 'object')
+          .map(([id, row]) => sanitizePvpEliminationRoomRow({ id, ...row }))
+          .filter(Boolean)
+          .sort((a, b) => (
+            toMillis(b?.updated_at || b?.created_at) - toMillis(a?.updated_at || a?.created_at)
+          ))
+        : [];
+      onChange(list);
+    },
+    (error) => {
+      if (typeof onError === 'function') onError(error);
+    }
+  );
+  return () => unsubscribe();
+}
+
+export function subscribePvpEliminationRoom(roomId, onChange, onError = null) {
+  const safeRoomId = String(roomId || '').trim();
+  if (!safeRoomId || typeof onChange !== 'function') return () => { };
+  const targetRef = ref(firebaseDb, `pvp_elimination_rooms/${safeRoomId}`);
+  const unsubscribe = onValue(
+    targetRef,
+    (snap) => {
+      const row = snap.exists() ? snap.val() : null;
+      onChange(row && typeof row === 'object' ? sanitizePvpEliminationRoomRow({ id: safeRoomId, ...row }) : null);
+    },
+    (error) => {
+      if (typeof onError === 'function') onError(error);
+    }
+  );
+  return () => unsubscribe();
+}
+
+export async function joinPvpEliminationRoom(roomId, memberPayload, options = {}) {
+  const safeRoomId = String(roomId || '').trim();
+  const userId = String(memberPayload?.user_id || '').trim();
+  if (!safeRoomId || !userId) return null;
+
+  const passwordHashAttempt = String(
+    options?.password_hash
+    || options?.passwordHash
+    || memberPayload?.password_hash
+    || ''
+  ).trim();
+  const nowMs = Date.now();
+  const nowIso = new Date(nowMs).toISOString();
+
+  const tx = await runTransaction(ref(firebaseDb, `pvp_elimination_rooms/${safeRoomId}`), (current) => {
+    const safeCurrent = sanitizePvpEliminationRoomRow(current, { includeSecrets: true });
+    if (!safeCurrent) return current;
+    if (safeCurrent.status !== 'lobby') return current;
+
+    const currentMembers = normalizePvpEliminationMembers(safeCurrent.members);
+    const existingMember = currentMembers.find((member) => String(member?.user_id || '').trim() === userId) || null;
+    const wasMember = !!existingMember;
+    const currentReadyIds = sanitizePvpEliminationRoomReadyMemberIds(
+      safeCurrent.ready_member_ids,
+      currentMembers.map((member) => String(member?.user_id || '').trim())
+    );
+    if (!wasMember && safeCurrent.has_password) {
+      const expectedHash = String(safeCurrent.password_hash || '').trim();
+      if (!expectedHash || expectedHash !== passwordHashAttempt) return current;
+    }
+    if (!wasMember && currentMembers.length >= PVP_ELIMINATION_ROOM_CAPACITY) return current;
+
+    const nextMembers = currentMembers.filter((member) => String(member?.user_id || '').trim() !== userId);
+    const nextMember = normalizePvpEliminationMember({
+      ...existingMember,
+      ...memberPayload,
+      user_id: userId,
+      joined_at_ms: existingMember?.joined_at_ms || nowMs,
+      joined_at: existingMember?.joined_at || nowIso
+    });
+    if (!nextMember) return current;
+    nextMembers.push(nextMember);
+    nextMembers.sort((a, b) => (
+      Math.max(0, Number(a?.joined_at_ms || 0)) - Math.max(0, Number(b?.joined_at_ms || 0))
+    ));
+
+    const remainingIds = nextMembers.map((member) => String(member?.user_id || '').trim()).filter(Boolean);
+    const nextHostUserId = remainingIds.includes(String(safeCurrent.created_by_user_id || '').trim())
+      ? String(safeCurrent.created_by_user_id || '').trim()
+      : (remainingIds[0] || userId);
+
+    return sanitizePvpEliminationRoomRow({
+      ...safeCurrent,
+      members: nextMembers,
+      ready_member_ids: currentReadyIds,
+      created_by_user_id: nextHostUserId,
+      updated_at: nowIso
+    }, { includeSecrets: true });
+  });
+
+  if (!tx?.snapshot?.exists()) return null;
+  return sanitizePvpEliminationRoomRow({ id: safeRoomId, ...tx.snapshot.val() });
+}
+
+export async function leavePvpEliminationRoom(roomId, userId) {
+  const safeRoomId = String(roomId || '').trim();
+  const safeUserId = String(userId || '').trim();
+  if (!safeRoomId || !safeUserId) return null;
+  const nowIso = new Date().toISOString();
+
+  const tx = await runTransaction(ref(firebaseDb, `pvp_elimination_rooms/${safeRoomId}`), (current) => {
+    const safeCurrent = sanitizePvpEliminationRoomRow(current, { includeSecrets: true });
+    if (!safeCurrent) return current;
+    const nextMembers = normalizePvpEliminationMembers(safeCurrent.members)
+      .filter((member) => String(member?.user_id || '').trim() !== safeUserId);
+    const remainingIds = nextMembers.map((member) => String(member?.user_id || '').trim()).filter(Boolean);
+    if (!remainingIds.length) return null;
+    const nextHostUserId = remainingIds.includes(String(safeCurrent.created_by_user_id || '').trim())
+      ? String(safeCurrent.created_by_user_id || '').trim()
+      : remainingIds[0];
+    return sanitizePvpEliminationRoomRow({
+      ...safeCurrent,
+      members: nextMembers,
+      ready_member_ids: sanitizePvpEliminationRoomReadyMemberIds(safeCurrent.ready_member_ids, remainingIds),
+      created_by_user_id: nextHostUserId,
+      updated_at: nowIso
+    }, { includeSecrets: true });
+  });
+
+  if (!tx?.snapshot?.exists()) return null;
+  return sanitizePvpEliminationRoomRow({ id: safeRoomId, ...tx.snapshot.val() });
+}
+
+export async function setPvpEliminationRoomMemberReady(roomId, userId, isReady = false) {
+  const safeRoomId = String(roomId || '').trim();
+  const safeUserId = String(userId || '').trim();
+  if (!safeRoomId || !safeUserId) return null;
+  const nowIso = new Date().toISOString();
+
+  const tx = await runTransaction(ref(firebaseDb, `pvp_elimination_rooms/${safeRoomId}`), (current) => {
+    const safeCurrent = sanitizePvpEliminationRoomRow(current, { includeSecrets: true });
+    if (!safeCurrent || safeCurrent.status !== 'lobby') return current;
+    const memberIds = getPvpEliminationRoomMemberIds(safeCurrent);
+    if (!memberIds.includes(safeUserId)) return current;
+    const readyIds = new Set(sanitizePvpEliminationRoomReadyMemberIds(safeCurrent.ready_member_ids, memberIds));
+    if (isReady) readyIds.add(safeUserId);
+    else readyIds.delete(safeUserId);
+    return sanitizePvpEliminationRoomRow({
+      ...safeCurrent,
+      ready_member_ids: Array.from(readyIds),
+      updated_at: nowIso
+    }, { includeSecrets: true });
+  });
+
+  if (!tx?.snapshot?.exists()) return null;
+  return sanitizePvpEliminationRoomRow({ id: safeRoomId, ...tx.snapshot.val() });
+}
+
+export async function setPvpEliminationRoomAcceptState(roomId, userId, acceptState = 'pending') {
+  const safeRoomId = String(roomId || '').trim();
+  const safeUserId = String(userId || '').trim();
+  if (!safeRoomId || !safeUserId) return null;
+  const nextState = sanitizePvpEliminationAcceptState(acceptState);
+  const nowMs = Date.now();
+  const nowIso = new Date(nowMs).toISOString();
+
+  const tx = await runTransaction(ref(firebaseDb, `pvp_elimination_rooms/${safeRoomId}`), (current) => {
+    const safeCurrent = sanitizePvpEliminationRoomRow(current, { includeSecrets: true });
+    if (!safeCurrent) return current;
+    if (safeCurrent.status !== 'pending_accept') return current;
+    const memberIds = getPvpEliminationRoomMemberIds(safeCurrent);
+    if (!memberIds.includes(safeUserId)) return current;
+
+    const acceptStates = sanitizePvpEliminationRoomAcceptStates(
+      safeCurrent.accept_member_states,
+      memberIds
+    );
+    if (acceptStates[safeUserId] === nextState) return current;
+
+    const nextAcceptStates = {
+      ...acceptStates,
+      [safeUserId]: nextState
+    };
+    return sanitizePvpEliminationRoomRow({
+      ...safeCurrent,
+      accept_member_states: nextAcceptStates,
+      accept_reject_at_ms: nextState === 'rejected'
+        ? Math.max(nowMs, Number(safeCurrent.accept_reject_at_ms || 0))
+        : Math.max(0, Number(safeCurrent.accept_reject_at_ms || 0)),
+      updated_at: nowIso
+    }, { includeSecrets: true });
+  });
+
+  if (!tx?.snapshot?.exists()) return null;
+  return sanitizePvpEliminationRoomRow({ id: safeRoomId, ...tx.snapshot.val() });
+}
+
+export async function publishPvpEliminationRoomNotice(roomId, noticePayload) {
+  const safeRoomId = String(roomId || '').trim();
+  const safeNotice = sanitizePvpEliminationRoomNotice(noticePayload);
+  if (!safeRoomId || !safeNotice) return null;
+  const nowIso = new Date().toISOString();
+
+  const tx = await runTransaction(ref(firebaseDb, `pvp_elimination_rooms/${safeRoomId}`), (current) => {
+    const safeCurrent = sanitizePvpEliminationRoomRow(current, { includeSecrets: true });
+    if (!safeCurrent) return current;
+    return sanitizePvpEliminationRoomRow({
+      ...safeCurrent,
+      lobby_notice: safeNotice,
+      updated_at: nowIso
+    }, { includeSecrets: true });
+  });
+
+  if (!tx?.snapshot?.exists()) return null;
+  return sanitizePvpEliminationRoomRow({ id: safeRoomId, ...tx.snapshot.val() });
+}
+
+export async function createPvpEliminationMatch(matchPayload) {
+  const id = String(matchPayload?.id || '').trim();
+  if (!id) return null;
+  const nowIso = new Date().toISOString();
+  const payload = sanitizePvpEliminationMatchRow({
+    ...matchPayload,
+    id,
+    status: String(matchPayload?.status || 'active'),
+    battle_no: Math.max(1, Number(matchPayload?.battle_no || 1)),
+    cycle_no: Math.max(1, Number(matchPayload?.cycle_no || 1)),
+    round_in_cycle: Math.max(1, Number(matchPayload?.round_in_cycle || 1)),
+    pair_no: Math.max(1, Number(matchPayload?.pair_no || 1)),
+    total_rounds_per_cycle: Math.max(
+      1,
+      Number(matchPayload?.total_rounds_per_cycle || PVP_ELIMINATION_ROUNDS_PER_CYCLE)
+    ),
+    created_at: matchPayload?.created_at || nowIso,
+    updated_at: matchPayload?.updated_at || nowIso
+  });
+  const tx = await runTransaction(ref(firebaseDb, `pvp_elimination_matches/${id}`), (current) => {
+    if (current && typeof current === 'object') return current;
+    return payload;
+  });
+  if (!tx?.snapshot?.exists()) return null;
+  return sanitizePvpEliminationMatchRow({ id, ...tx.snapshot.val() });
+}
+
+export async function updatePvpEliminationMatch(matchId, patch) {
+  const safeMatchId = String(matchId || '').trim();
+  if (!safeMatchId || !patch || typeof patch !== 'object') return null;
+  const nowIso = new Date().toISOString();
+  const safePatch = stripUndefinedDeep({
+    ...patch,
+    updated_at: nowIso
+  });
+  await update(ref(firebaseDb, `pvp_elimination_matches/${safeMatchId}`), safePatch);
+  const row = await getNode(`pvp_elimination_matches/${safeMatchId}`);
+  return row ? sanitizePvpEliminationMatchRow({ id: safeMatchId, ...row }) : null;
+}
+
+export async function getPvpEliminationMatch(matchId) {
+  const safeMatchId = String(matchId || '').trim();
+  if (!safeMatchId) return null;
+  const row = await getNode(`pvp_elimination_matches/${safeMatchId}`);
+  if (!row || typeof row !== 'object') return null;
+  return sanitizePvpEliminationMatchRow({ id: safeMatchId, ...row });
+}
+
+export async function markPvpEliminationMatchParticipantOptOut(matchId, userId) {
+  const safeMatchId = String(matchId || '').trim();
+  const safeUserId = String(userId || '').trim();
+  if (!safeMatchId || !safeUserId) return null;
+
+  const nowIso = new Date().toISOString();
+  const tx = await runTransaction(ref(firebaseDb, `pvp_elimination_matches/${safeMatchId}`), (current) => {
+    const safeCurrent = sanitizePvpEliminationMatchRow(current);
+    if (!safeCurrent) return current;
+    const memberIds = safeCurrent.members
+      .map((member) => String(member?.user_id || '').trim())
+      .filter(Boolean);
+    if (!memberIds.includes(safeUserId)) return current;
+    const currentOptOutIds = sanitizePvpEliminationUserIdList(
+      safeCurrent.opt_out_member_ids,
+      memberIds,
+      PVP_ELIMINATION_ROOM_CAPACITY
+    );
+    if (currentOptOutIds.includes(safeUserId)) return current;
+    return sanitizePvpEliminationMatchRow({
+      ...safeCurrent,
+      opt_out_member_ids: [...currentOptOutIds, safeUserId],
+      updated_at: nowIso
+    });
+  });
+
+  if (!tx?.snapshot?.exists()) return null;
+  return sanitizePvpEliminationMatchRow({ id: safeMatchId, ...tx.snapshot.val() });
+}
+
+export async function findOpenPvpEliminationMatchForUser(userId) {
+  const safeUserId = String(userId || '').trim();
+  if (!safeUserId) return null;
+  const rows = await getNode('pvp_elimination_matches').catch(() => null);
+  if (!rows || typeof rows !== 'object') return null;
+
+  let best = null;
+  let bestUpdatedAtMs = 0;
+  Object.entries(rows).forEach(([matchId, row]) => {
+    const safeRow = sanitizePvpEliminationMatchRow({ id: matchId, ...(row && typeof row === 'object' ? row : {}) });
+    if (!safeRow) return;
+    if (!['active', 'round_result', 'elimination_result'].includes(safeRow.status)) return;
+    const optedOutIds = Array.isArray(safeRow.opt_out_member_ids)
+      ? safeRow.opt_out_member_ids.map((entry) => String(entry || '').trim()).filter(Boolean)
+      : [];
+    if (optedOutIds.includes(safeUserId)) return;
+    const activeIds = Array.isArray(safeRow.active_member_ids)
+      ? safeRow.active_member_ids.map((entry) => String(entry || '').trim()).filter(Boolean)
+      : [];
+    if (!activeIds.includes(safeUserId)) return;
+    const updatedAtMs = toMillis(safeRow.updated_at || safeRow.created_at);
+    if (!best || updatedAtMs >= bestUpdatedAtMs) {
+      best = safeRow;
+      bestUpdatedAtMs = updatedAtMs;
+    }
+  });
+  return best;
+}
+
+export function subscribePvpEliminationMatch(matchId, onChange, onError = null) {
+  const safeMatchId = String(matchId || '').trim();
+  if (!safeMatchId || typeof onChange !== 'function') return () => { };
+  const targetRef = ref(firebaseDb, `pvp_elimination_matches/${safeMatchId}`);
+  const unsubscribe = onValue(
+    targetRef,
+    (snap) => {
+      const row = snap.exists() ? snap.val() : null;
+      onChange(row && typeof row === 'object' ? sanitizePvpEliminationMatchRow({ id: safeMatchId, ...row }) : null);
+    },
+    (error) => {
+      if (typeof onError === 'function') onError(error);
+    }
+  );
+  return () => unsubscribe();
+}
+
+export async function upsertPvpEliminationAnswer(answerPayload) {
+  const matchId = String(answerPayload?.match_id || '').trim();
+  const userId = String(answerPayload?.user_id || '').trim();
+  const battleNo = Math.max(1, Number(answerPayload?.battle_no || 0));
+  if (!matchId || !userId || !battleNo) return null;
+
+  const nowMs = Date.now();
+  const nowIso = new Date(nowMs).toISOString();
+  const answerRef = ref(firebaseDb, `pvp_elimination_answers/${matchId}/${battleNo}/${userId}`);
+  const incoming = {
+    match_id: matchId,
+    battle_no: battleNo,
+    user_id: userId,
+    answer_idx: Number(answerPayload?.answer_idx ?? -1),
+    is_correct: !!answerPayload?.is_correct,
+    correct_answer_idx: Number(answerPayload?.correct_answer_idx ?? -1),
+    answered_at_ms: Number(answerPayload?.answered_at_ms || nowMs),
+    answered_at: String(answerPayload?.answered_at || nowIso),
+    created_at: String(answerPayload?.created_at || nowIso)
+  };
+
+  const tx = await runTransaction(answerRef, (current) => {
+    const existing = current && typeof current === 'object' ? current : null;
+    if (!existing) return incoming;
+
+    const existingIdx = Number(existing.answer_idx ?? -1);
+    const incomingIdx = Number(incoming.answer_idx ?? -1);
+    const existingCommitted = Number.isFinite(existingIdx) && existingIdx >= 0;
+    const incomingCommitted = Number.isFinite(incomingIdx) && incomingIdx >= 0;
+
+    if (existingCommitted && !incomingCommitted) return existing;
+    if (existingCommitted && incomingCommitted) return existing;
+    if (!existingCommitted && incomingCommitted) {
+      return {
+        ...existing,
+        ...incoming,
+        created_at: existing.created_at || incoming.created_at
+      };
+    }
+    return existing;
+  });
+
+  if (!tx?.snapshot?.exists()) return null;
+  return tx.snapshot.val();
+}
+
+export async function getPvpEliminationBattleAnswers(matchId, battleNo) {
+  const safeMatchId = String(matchId || '').trim();
+  const safeBattleNo = Math.max(1, Number(battleNo || 0));
+  if (!safeMatchId || !safeBattleNo) return [];
+  const rows = await getNode(`pvp_elimination_answers/${safeMatchId}/${safeBattleNo}`);
+  if (!rows || typeof rows !== 'object') return [];
+  return Object.values(rows).filter((row) => row && typeof row === 'object');
+}
+
+export function subscribePvpEliminationBattleAnswers(matchId, battleNo, onChange, onError = null) {
+  const safeMatchId = String(matchId || '').trim();
+  const safeBattleNo = Math.max(1, Number(battleNo || 0));
+  if (!safeMatchId || !safeBattleNo || typeof onChange !== 'function') return () => { };
+  const targetRef = ref(firebaseDb, `pvp_elimination_answers/${safeMatchId}/${safeBattleNo}`);
   const unsubscribe = onValue(
     targetRef,
     (snap) => {
@@ -5055,7 +7633,7 @@ export async function pushPvpEmojiEvent(matchId, payload = {}) {
 
 export function subscribePvpEmojiEvents(matchId, onChange, onError = null) {
   const safeMatchId = String(matchId || '').trim();
-  if (!safeMatchId || typeof onChange !== 'function') return () => {};
+  if (!safeMatchId || typeof onChange !== 'function') return () => { };
   const targetRef = ref(firebaseDb, `pvp_emoji_events/${safeMatchId}`);
   const unsubscribe = onValue(
     targetRef,
@@ -5182,3 +7760,4 @@ export async function applyPvpOutcomeToUserStats(userId, payload = {}) {
 
   return getUserStats(uid);
 }
+

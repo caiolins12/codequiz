@@ -1,8 +1,5 @@
 /* eslint-disable no-console */
-const fs = require('fs');
-const os = require('os');
-const path = require('path');
-const { execSync } = require('child_process');
+const { createDbApiClient } = require('./lib/db-api-client');
 
 function toMillis(value) {
   if (typeof value === 'number' && Number.isFinite(value)) return value;
@@ -79,61 +76,6 @@ function getPvpResultForUser(row, uid) {
   return winnerId === safeUid ? 'win' : 'loss';
 }
 
-function loadProjectIdFromFirebaseRc(cwd) {
-  try {
-    const raw = fs.readFileSync(path.join(cwd, '.firebaserc'), 'utf8');
-    const parsed = JSON.parse(raw);
-    return String(parsed?.projects?.default || '').trim();
-  } catch {
-    return '';
-  }
-}
-
-function runFirebase(projectId, args) {
-  const firebaseBin = process.platform === 'win32' ? 'firebase.cmd' : 'firebase';
-  const fullArgs = [...args];
-  if (projectId) {
-    fullArgs.push('--project', projectId);
-  }
-  const quoted = [firebaseBin, ...fullArgs.map((arg) => {
-    const raw = String(arg || '');
-    if (!raw.includes(' ') && !raw.includes('"')) return raw;
-    return `"${raw.replace(/"/g, '\\"')}"`;
-  })].join(' ');
-  return execSync(quoted, {
-    encoding: 'utf8',
-    shell: true,
-    maxBuffer: 64 * 1024 * 1024,
-    stdio: ['pipe', 'pipe', 'pipe']
-  });
-}
-
-function fetchNode(projectId, nodePath) {
-  const output = runFirebase(projectId, ['database:get', nodePath, '--pretty']);
-  const safe = String(output || '').trim();
-  if (!safe || safe === 'null') return null;
-  return JSON.parse(safe);
-}
-
-function writeTmpJson(prefix, data) {
-  const file = path.join(os.tmpdir(), `${prefix}_${Date.now()}_${Math.floor(Math.random() * 10000)}.json`);
-  fs.writeFileSync(file, JSON.stringify(data), 'utf8');
-  return file;
-}
-
-function applyPatch(projectId, nodePath, patchObj) {
-  const file = writeTmpJson('pvp_recalc_patch', patchObj);
-  try {
-    runFirebase(projectId, ['database:update', nodePath, file, '--force']);
-  } finally {
-    try {
-      fs.unlinkSync(file);
-    } catch {
-      // ignore
-    }
-  }
-}
-
 function buildNextStatsRow(uid, base, pvpState, nowMs) {
   const current = base && typeof base === 'object' ? base : {};
   const pvp = pvpState && typeof pvpState === 'object' ? pvpState : {};
@@ -167,18 +109,13 @@ function buildNextStatsRow(uid, base, pvpState, nowMs) {
   };
 }
 
-function main() {
-  const cwd = process.cwd();
-  const projectIdArg = process.argv.find((arg) => arg.startsWith('--project=')) || '';
+async function main() {
   const applyArg = process.argv.includes('--apply');
-  const projectId = String(projectIdArg.split('=')[1] || loadProjectIdFromFirebaseRc(cwd) || '').trim();
-  if (!projectId) {
-    throw new Error('Projeto Firebase nao encontrado. Use --project=<id>.');
-  }
+  const db = createDbApiClient();
 
-  console.log(`[recalc] Projeto: ${projectId}`);
-  const userStatsRaw = fetchNode(projectId, '/user_stats') || {};
-  const pvpMatchesRaw = fetchNode(projectId, '/pvp_matches') || {};
+  console.log('[recalc] Fonte: Cloudflare Durable DB');
+  const userStatsRaw = await db.get('/user_stats');
+  const pvpMatchesRaw = await db.get('/pvp_matches');
   const userStatsMap = userStatsRaw && typeof userStatsRaw === 'object' ? userStatsRaw : {};
   const pvpMatchesMap = pvpMatchesRaw && typeof pvpMatchesRaw === 'object' ? pvpMatchesRaw : {};
 
@@ -294,25 +231,23 @@ function main() {
   console.log(`[recalc] Partidas com patch de anulacao/limpeza: ${matchesToPatchCount}`);
 
   if (!applyArg) {
-    console.log('[recalc] Modo dry-run. Use --apply para gravar no Firebase.');
+    console.log('[recalc] Modo dry-run. Use --apply para gravar no banco Cloudflare.');
     return;
   }
 
   if (updatedUsers > 0) {
     console.log('[recalc] Aplicando patch em /user_stats ...');
-    applyPatch(projectId, '/user_stats', nextUserRows);
+    await db.update('/user_stats', nextUserRows);
   }
   if (matchesToPatchCount > 0) {
     console.log('[recalc] Aplicando patch em /pvp_matches ...');
-    applyPatch(projectId, '/pvp_matches', nextMatchRows);
+    await db.update('/pvp_matches', nextMatchRows);
   }
 
   console.log('[recalc] Concluido.');
 }
 
-try {
-  main();
-} catch (error) {
+main().catch((error) => {
   console.error('[recalc] Falha:', error?.message || error);
   process.exitCode = 1;
-}
+});

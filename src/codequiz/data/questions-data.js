@@ -11,6 +11,9 @@ const LANGUAGES = [
   { id: 'c', name: 'C', icon: '⚙️', color: '#555555', desc: 'Controle total sobre a máquina' },
   { id: 'html_css', name: 'HTML & CSS', icon: '🌐', color: '#e34c26', desc: 'Construa páginas e interfaces' },
   { id: 'sql', name: 'SQL', icon: '🗄️', color: '#336791', desc: 'Consulte e gerencie dados' },
+  { id: 'mundo_cultura', name: 'Mundo e Cultura', icon: '🧭', color: '#14b8a6', desc: 'Curiosidades globais, lugares marcantes e tradições' },
+  { id: 'historia_sociedade', name: 'História e Sociedade', icon: '🏛️', color: '#f59e0b', desc: 'Eventos históricos, cidadania e vida em comunidade' },
+  { id: 'ciencia_criatividade', name: 'Ciência e Criatividade', icon: '🔬', color: '#8b5cf6', desc: 'Universo, descobertas, artes e entretenimento' },
   { id: 'biblia_at', name: 'Antigo Testamento', icon: '📜', color: '#c0872e', desc: 'Gênesis, profetas, reis e a história de Israel' },
   { id: 'biblia_nt', name: 'Novo Testamento', icon: '✝️', color: '#8b5cf6', desc: 'Evangelhos, epístolas e a vida de Jesus' },
   { id: 'doutrinas', name: 'Doutrinas Cristãs', icon: '⛪', color: '#ef4444', desc: 'Fundamentos da fé, credos e teologia sistemática' },
@@ -99,6 +102,26 @@ const TOPICS = {
     { id: 'aggregate', name: 'Agregação', emoji: '📊', desc: 'COUNT, SUM, AVG, GROUP BY' },
     { id: 'insert_update', name: 'INSERT & UPDATE', emoji: '✏️', desc: 'inserir e atualizar dados' },
     { id: 'create', name: 'CREATE & ALTER', emoji: '🧱', desc: 'tabelas, colunas, tipos' }
+  ],
+  assuntos_gerais: [
+    { id: 'curiosidades_mundo', name: 'Curiosidades do Mundo', emoji: '🌎', desc: 'fatos surpreendentes e trivia inteligente' },
+    { id: 'historia_geral', name: 'História Geral', emoji: '🏺', desc: 'personagens, eventos e viradas do mundo' },
+    { id: 'geografia_culturas', name: 'Geografia e Culturas', emoji: '🗺️', desc: 'lugares, costumes e identidades marcantes' },
+    { id: 'ciencia_espaco', name: 'Ciência e Espaço', emoji: '🔬', desc: 'descobertas, natureza e universo' },
+    { id: 'artes_entretenimento', name: 'Artes e Entretenimento', emoji: '🎭', desc: 'música, cinema, literatura e criatividade' },
+    { id: 'cotidiano_sociedade', name: 'Cotidiano e Sociedade', emoji: '📱', desc: 'hábitos, cidadania e tecnologia no dia a dia' }
+  ],
+  mundo_cultura: [
+    { id: 'curiosidades_mundo', name: 'Curiosidades do Mundo', emoji: '🌎', desc: 'fatos surpreendentes e trivia inteligente' },
+    { id: 'geografia_culturas', name: 'Geografia e Culturas', emoji: '🗺️', desc: 'lugares, costumes e identidades marcantes' }
+  ],
+  historia_sociedade: [
+    { id: 'historia_geral', name: 'História Geral', emoji: '🏺', desc: 'personagens, eventos e viradas do mundo' },
+    { id: 'cotidiano_sociedade', name: 'Cotidiano e Sociedade', emoji: '📱', desc: 'hábitos, cidadania e tecnologia no dia a dia' }
+  ],
+  ciencia_criatividade: [
+    { id: 'ciencia_espaco', name: 'Ciência e Espaço', emoji: '🔬', desc: 'descobertas, natureza e universo' },
+    { id: 'artes_entretenimento', name: 'Artes e Entretenimento', emoji: '🎭', desc: 'música, cinema, literatura e criatividade' }
   ],
   biblia_at: [
     { id: 'genesis_criacao', name: 'Gênesis e Criação', emoji: '🌍', desc: 'criação, Adão, Eva e os patriarcas' },
@@ -1334,6 +1357,128 @@ const QUESTIONS = {
       ]
     }
   },
+  assuntos_gerais: {
+    curiosidades_mundo: {
+      easy: [
+        { q: 'Qual animal é famoso por ter três corações?', opts: ['Polvo', 'Girafa', 'Pinguim', 'Golfinho'], answer: 0, explain: 'O polvo tem três corações: dois ajudam a bombear sangue para as brânquias e um para o resto do corpo.' },
+        { q: 'Qual monumento de Paris foi construído para a Exposição Universal de 1889?', opts: ['Arco do Triunfo', 'Museu do Louvre', 'Torre Eiffel', 'Catedral de Notre-Dame'], answer: 2, explain: 'A Torre Eiffel foi erguida para a Exposição Universal de 1889 e se tornou um dos maiores símbolos da França.' },
+        { q: 'Qual continente reúne o maior número de países reconhecidos?', opts: ['Europa', 'África', 'Ásia', 'América do Sul'], answer: 1, explain: 'A África concentra o maior número de países reconhecidos internacionalmente, com mais de 50 nações.' },
+        { q: 'Qual alimento natural é famoso por durar muito tempo sem estragar quando bem armazenado?', opts: ['Leite', 'Mel', 'Pão', 'Banana'], answer: 1, explain: 'O mel tem baixa umidade e características naturais que dificultam a proliferação de micro-organismos.' },
+        { q: 'Qual é o maior oceano da Terra?', opts: ['Atlântico', 'Índico', 'Ártico', 'Pacífico'], answer: 3, explain: 'O Oceano Pacífico é o maior do planeta, cobrindo uma área imensa entre Ásia, Oceania e Américas.' }
+      ],
+      medium: [
+        { q: 'Por que a Estátua da Liberdade tem cor esverdeada hoje?', opts: ['Foi pintada de verde', 'É feita de bronze pintado', 'O cobre oxidou com o tempo', 'Mudou de cor por causa da chuva ácida'], answer: 2, explain: 'A camada externa da estátua é de cobre. Com o tempo, o metal oxidou e formou a coloração esverdeada.' },
+        { q: 'De onde vem o nome "sanduíche"?', opts: ['De um cozinheiro francês', 'Do conde de Sandwich', 'De uma cidade italiana', 'De um festival inglês'], answer: 1, explain: 'O nome ficou associado ao conde de Sandwich, que teria pedido carne entre fatias de pão para comer sem interromper o jogo.' },
+        { q: 'Qual fruta é conhecida por ter as sementes na parte externa?', opts: ['Uva', 'Morango', 'Maçã', 'Laranja'], answer: 1, explain: 'O morango é famoso por ter pequenas estruturas em sua superfície externa que parecem sementes.' },
+        { q: 'O que é a chamada "ilusão da Lua"?', opts: ['A Lua muda de cor todo mês', 'A Lua parece maior perto do horizonte', 'A Lua some em noites frias', 'A Lua fica mais próxima da Terra no inverno'], answer: 1, explain: 'A ilusão da Lua é um efeito visual em que ela parece maior quando está próxima ao horizonte, embora o tamanho aparente real quase não mude.' }
+      ],
+      hard: [
+        { q: 'Qual papa promulgou o calendário gregoriano em 1582?', opts: ['Leão X', 'Gregório XIII', 'Inocêncio III', 'Júlio II'], answer: 1, explain: 'O calendário gregoriano recebeu esse nome porque foi promulgado pelo papa Gregório XIII para corrigir defasagens do calendário juliano.' },
+        { q: 'Como se chama a técnica japonesa de reparar cerâmica com ouro?', opts: ['Origami', 'Kintsugi', 'Ikebana', 'Shibori'], answer: 1, explain: 'Kintsugi é a arte de reparar peças quebradas com laca e pó de ouro, valorizando a história do objeto.' },
+        { q: 'Qual cidade já foi chamada de Bizâncio e depois Constantinopla?', opts: ['Atenas', 'Istambul', 'Alexandria', 'Cartago'], answer: 1, explain: 'A atual Istambul já foi conhecida como Bizâncio e Constantinopla em diferentes períodos históricos.' }
+      ]
+    },
+    historia_geral: {
+      easy: [
+        { q: 'As pirâmides de Gizé foram construídas por qual civilização antiga?', opts: ['Romana', 'Egípcia', 'Maia', 'Persa'], answer: 1, explain: 'As pirâmides de Gizé são obras do Egito Antigo e estão entre os monumentos mais famosos da humanidade.' },
+        { q: 'Em que ano começou a Revolução Francesa?', opts: ['1492', '1789', '1914', '1945'], answer: 1, explain: 'A Revolução Francesa começou em 1789 e transformou profundamente a política e a sociedade europeia.' },
+        { q: 'Qual muro caiu em 1989 e virou símbolo do fim da Guerra Fria?', opts: ['Muro de Adriano', 'Muro da China', 'Muro de Berlim', 'Muro das Lamentações'], answer: 2, explain: 'A queda do Muro de Berlim em 1989 marcou o enfraquecimento do bloco soviético e o fim de uma era.' },
+        { q: 'Qual líder ficou conhecido pela defesa da não violência na luta pela independência da Índia?', opts: ['Nelson Mandela', 'Mahatma Gandhi', 'Winston Churchill', 'Napoleão Bonaparte'], answer: 1, explain: 'Mahatma Gandhi se tornou símbolo da resistência não violenta e da independência indiana.' },
+        { q: 'Qual líder sul-africano passou 27 anos preso e depois se tornou presidente?', opts: ['Desmond Tutu', 'Nelson Mandela', 'Che Guevara', 'Fidel Castro'], answer: 1, explain: 'Nelson Mandela passou 27 anos preso durante o apartheid e depois liderou a África do Sul em uma transição histórica.' }
+      ],
+      medium: [
+        { q: 'Qual evento de 1453 costuma ser usado para marcar o fim da Idade Média?', opts: ['A descoberta da América', 'A queda de Constantinopla', 'A Revolução Francesa', 'A independência dos EUA'], answer: 1, explain: 'A queda de Constantinopla para os otomanos, em 1453, é um marco tradicional do fim da Idade Média.' },
+        { q: 'O que foi a Pax Romana?', opts: ['Uma guerra civil em Roma', 'Um período de relativa paz e estabilidade no Império Romano', 'Uma lei religiosa da Roma Antiga', 'A divisão final do império em dois'], answer: 1, explain: 'Pax Romana foi um longo período de relativa estabilidade política e expansão administrativa no Império Romano.' },
+        { q: 'Qual encontro de 1884-1885 ficou associado à partilha da África entre potências europeias?', opts: ['Congresso de Viena', 'Conferência de Berlim', 'Tratado de Versalhes', 'Conferência de Yalta'], answer: 1, explain: 'A Conferência de Berlim reuniu potências europeias e influenciou a divisão colonial de territórios africanos.' },
+        { q: 'Qual líder se tornou símbolo da revolução do Haiti e da luta contra a escravidão?', opts: ['Simón Bolívar', 'Toussaint Louverture', 'Pancho Villa', 'José Martí'], answer: 1, explain: 'Toussaint Louverture foi uma das figuras centrais da Revolução Haitiana e da resistência contra o sistema escravista.' }
+      ],
+      hard: [
+        { q: 'Qual documento inglês de 1215 limitou o poder do rei e influenciou o constitucionalismo?', opts: ['Bill of Rights', 'Magna Carta', 'Código Napoleônico', 'Petição de Direito'], answer: 1, explain: 'A Magna Carta, assinada em 1215, limitou o poder real e se tornou referência histórica para liberdades e garantias legais.' },
+        { q: 'Qual império tinha sua capital em Tenochtitlán?', opts: ['Inca', 'Asteca', 'Bizantino', 'Mongol'], answer: 1, explain: 'Tenochtitlán foi a capital do Império Asteca e ficava na região onde hoje está a Cidade do México.' },
+        { q: 'Como ficou conhecida a política de abertura promovida por Mikhail Gorbachev na União Soviética?', opts: ['Perestroika', 'Glasnost', 'Cortina de Ferro', 'Coexistência Pacífica'], answer: 1, explain: 'Glasnost significa abertura e transparência política, enquanto Perestroika se relaciona mais à reestruturação econômica e administrativa.' }
+      ]
+    },
+    geografia_culturas: {
+      easy: [
+        { q: 'Qual país é frequentemente lembrado pelo formato de "bota" em seu mapa?', opts: ['Portugal', 'Itália', 'Grécia', 'Croácia'], answer: 1, explain: 'A Itália é famosa pelo contorno geográfico que lembra uma bota no mapa europeu.' },
+        { q: 'Qual linha imaginária divide a Terra em hemisfério Norte e hemisfério Sul?', opts: ['Trópico de Câncer', 'Meridiano de Greenwich', 'Linha do Equador', 'Círculo Polar Ártico'], answer: 2, explain: 'A Linha do Equador divide o planeta em hemisfério Norte e hemisfério Sul.' },
+        { q: 'Em qual continente fica o deserto do Saara?', opts: ['Ásia', 'África', 'América do Norte', 'Oceania'], answer: 1, explain: 'O Saara fica na África e é um dos desertos mais conhecidos do mundo.' },
+        { q: 'Em qual país fica Machu Picchu?', opts: ['México', 'Peru', 'Chile', 'Bolívia'], answer: 1, explain: 'Machu Picchu está localizada no Peru e é um dos sítios arqueológicos mais famosos da civilização inca.' },
+        { q: 'Qual festa tradicional mexicana é marcada por altares coloridos e homenagens aos mortos?', opts: ['Cinco de Mayo', 'Día de los Muertos', 'San Fermín', 'Carnaval de Barranquilla'], answer: 1, explain: 'O Día de los Muertos é uma tradição mexicana que celebra a memória de familiares e amigos com altares e símbolos coloridos.' }
+      ],
+      medium: [
+        { q: 'O que é um arquipélago?', opts: ['Uma floresta tropical fechada', 'Um conjunto de ilhas', 'Uma montanha vulcânica isolada', 'Um rio que atravessa vários países'], answer: 1, explain: 'Arquipélago é um conjunto de ilhas próximas entre si, como acontece em várias regiões do mundo.' },
+        { q: 'Qual é a menor nação do mundo em área territorial?', opts: ['Mônaco', 'Malta', 'Vaticano', 'Luxemburgo'], answer: 2, explain: 'O Vaticano é o menor Estado soberano do mundo em área territorial.' },
+        { q: 'Em qual país o tango se tornou um símbolo cultural ligado a Buenos Aires?', opts: ['Uruguai', 'Espanha', 'Argentina', 'Cuba'], answer: 2, explain: 'O tango está fortemente associado à Argentina, especialmente à cidade de Buenos Aires.' },
+        { q: 'O que são fiordes?', opts: ['Rios subterrâneos', 'Planícies congeladas', 'Entradas estreitas do mar entre montanhas', 'Ilhas artificiais ligadas por pontes'], answer: 2, explain: 'Fiordes são entradas do mar cercadas por encostas íngremes, muito comuns em regiões moldadas por geleiras.' }
+      ],
+      hard: [
+        { q: 'Qual estreito separa a Ásia da América do Norte?', opts: ['Estreito de Gibraltar', 'Estreito de Bering', 'Canal de Suez', 'Estreito de Malaca'], answer: 1, explain: 'O Estreito de Bering separa o extremo leste da Ásia do extremo oeste da América do Norte.' },
+        { q: 'Qual mar interior encolheu drasticamente no século XX por causa do desvio de rios para irrigação?', opts: ['Mar Cáspio', 'Mar Negro', 'Mar de Aral', 'Mar Vermelho'], answer: 2, explain: 'O Mar de Aral perdeu grande parte de sua área após projetos de irrigação que desviaram rios que o abasteciam.' },
+        { q: 'Qual é a capital da Mongólia?', opts: ['Astana', 'Tashkent', 'Ulan Bator', 'Katmandu'], answer: 2, explain: 'Ulan Bator é a capital da Mongólia e concentra boa parte da população do país.' }
+      ]
+    },
+    ciencia_espaco: {
+      easy: [
+        { q: 'Qual é o maior planeta do Sistema Solar?', opts: ['Saturno', 'Marte', 'Júpiter', 'Netuno'], answer: 2, explain: 'Júpiter é o maior planeta do Sistema Solar, com massa muito superior à da Terra.' },
+        { q: 'Qual gás as plantas absorvem principalmente para realizar fotossíntese?', opts: ['Oxigênio', 'Dióxido de carbono', 'Hidrogênio', 'Hélio'], answer: 1, explain: 'Na fotossíntese, as plantas absorvem dióxido de carbono e usam a luz para produzir energia química.' },
+        { q: 'Qual força física nos mantém sobre o chão?', opts: ['Atrito', 'Gravidade', 'Magnetismo', 'Pressão'], answer: 1, explain: 'A gravidade é a força que atrai os corpos em direção ao centro da Terra.' },
+        { q: 'Qual estrela está no centro do Sistema Solar?', opts: ['Sírius', 'Alpha Centauri', 'Sol', 'Betelgeuse'], answer: 2, explain: 'O Sol é a estrela central do Sistema Solar e a principal fonte de energia para a Terra.' },
+        { q: 'Qual instrumento é usado para observar astros distantes com mais detalhe?', opts: ['Microscópio', 'Telescópio', 'Barômetro', 'Termômetro'], answer: 1, explain: 'O telescópio ajuda a observar planetas, estrelas e galáxias com mais ampliação e precisão.' }
+      ],
+      medium: [
+        { q: 'O que a escala Richter mede?', opts: ['Velocidade do vento', 'Magnitude dos terremotos', 'Intensidade da luz solar', 'Profundidade do oceano'], answer: 1, explain: 'A escala Richter ficou conhecida por medir a magnitude dos terremotos, indicando a energia liberada.' },
+        { q: 'O que é o DNA?', opts: ['Um órgão do corpo humano', 'Uma molécula que carrega informação genética', 'Uma estrela recém-formada', 'Um tipo de rocha vulcânica'], answer: 1, explain: 'O DNA armazena as instruções genéticas dos seres vivos e participa da hereditariedade.' },
+        { q: 'Por que astronautas parecem flutuar em órbita?', opts: ['Porque não existe gravidade alguma no espaço', 'Porque estão em queda livre contínua ao redor da Terra', 'Porque usam roupas muito leves', 'Porque o ar da nave empurra seus corpos'], answer: 1, explain: 'Astronautas em órbita parecem flutuar porque a nave e tudo dentro dela estão em queda livre contínua ao redor da Terra.' },
+        { q: 'O que é um ano-luz?', opts: ['O tempo que a Lua leva para orbitar a Terra', 'A distância que a luz percorre em um ano', 'O brilho emitido por uma estrela durante um ano', 'O tempo que a Terra leva para dar duas voltas no Sol'], answer: 1, explain: 'Ano-luz é uma unidade de distância usada em astronomia, não uma medida de tempo.' }
+      ],
+      hard: [
+        { q: 'Em qual camada da atmosfera se concentra a maior parte do ozônio que protege a Terra?', opts: ['Troposfera', 'Mesosfera', 'Estratosfera', 'Termosfera'], answer: 2, explain: 'A camada de ozônio fica principalmente na estratosfera e ajuda a bloquear parte da radiação ultravioleta.' },
+        { q: 'Como se chama a explosão de uma estrela que pode brilhar mais do que uma galáxia inteira por um período?', opts: ['Nebulosa', 'Supernova', 'Aurora', 'Eclipse'], answer: 1, explain: 'A supernova é uma explosão estelar extremamente energética, capaz de liberar enorme quantidade de luz e matéria.' },
+        { q: 'O que é um exoplaneta?', opts: ['Um planeta localizado fora do Sistema Solar', 'Um planeta anão coberto por gelo', 'Um satélite natural muito grande', 'Um asteroide capturado por um planeta'], answer: 0, explain: 'Exoplaneta é qualquer planeta que orbita uma estrela que não seja o Sol.' }
+      ]
+    },
+    artes_entretenimento: {
+      easy: [
+        { q: 'Quem pintou a Mona Lisa?', opts: ['Vincent van Gogh', 'Leonardo da Vinci', 'Pablo Picasso', 'Claude Monet'], answer: 1, explain: 'A Mona Lisa foi pintada por Leonardo da Vinci e é uma das obras mais famosas da história da arte.' },
+        { q: 'Em qual arte o público assiste a atores se apresentando ao vivo em um palco?', opts: ['Cinema', 'Teatro', 'Fotografia', 'Escultura'], answer: 1, explain: 'No teatro, a performance acontece ao vivo diante da plateia.' },
+        { q: 'Qual estilo musical nasceu em Nova Orleans e ficou famoso pela improvisação?', opts: ['Ópera', 'Jazz', 'Reggae', 'Flamenco'], answer: 1, explain: 'O jazz se desenvolveu em Nova Orleans e se tornou conhecido pela improvisação e pela riqueza rítmica.' },
+        { q: 'Qual instrumento costuma ter 88 teclas na versão clássica?', opts: ['Violino', 'Piano', 'Flauta', 'Tambor'], answer: 1, explain: 'O piano tradicional tem 88 teclas, distribuídas entre notas graves e agudas.' },
+        { q: 'Como se chama a narrativa que combina imagens em sequência e balões de fala?', opts: ['História em quadrinhos', 'Sinfonia', 'Performance', 'Curta-metragem'], answer: 0, explain: 'Histórias em quadrinhos contam narrativas por meio de desenhos em sequência, texto e balões.' }
+      ],
+      medium: [
+        { q: 'O que é um remake no cinema?', opts: ['Um filme feito sem roteiro', 'Uma nova versão de uma obra já existente', 'Um documentário sobre bastidores', 'Uma sequência filmada em plano único'], answer: 1, explain: 'Remake é uma nova adaptação ou recriação de uma obra que já havia sido lançada antes.' },
+        { q: 'A qual movimento artístico Salvador Dalí está fortemente associado?', opts: ['Impressionismo', 'Cubismo', 'Surrealismo', 'Barroco'], answer: 2, explain: 'Salvador Dalí é um dos nomes mais conhecidos do surrealismo, movimento marcado por imagens oníricas e inesperadas.' },
+        { q: 'Quem escreveu Dom Quixote?', opts: ['Miguel de Cervantes', 'William Shakespeare', 'Victor Hugo', 'Jorge Luis Borges'], answer: 0, explain: 'Dom Quixote foi escrito por Miguel de Cervantes e é uma das obras mais influentes da literatura ocidental.' },
+        { q: 'O que é um storyboard?', opts: ['Uma trilha sonora provisória', 'Uma sequência de quadros usada para planejar cenas', 'Uma legenda automática para filmes', 'Um tipo de câmera analógica'], answer: 1, explain: 'Storyboard é um planejamento visual de cenas, muito usado em cinema, animação e publicidade.' }
+      ],
+      hard: [
+        { q: 'Qual termo italiano indica um andamento lento na música erudita?', opts: ['Allegro', 'Presto', 'Adagio', 'Vivace'], answer: 2, explain: 'Adagio indica andamento mais lento e expressivo, comum em trechos mais contemplativos.' },
+        { q: 'No cinema, o que significa dizer que um som é diegético?', opts: ['É um som ouvido apenas pela plateia', 'É um som que pertence ao universo da cena', 'É um efeito usado só em filmes mudos', 'É um som gravado depois da edição final'], answer: 1, explain: 'Som diegético é aquele que faz parte do mundo narrativo e pode ser ouvido pelos personagens.' },
+        { q: 'Qual técnica de animação fotografa quadro a quadro objetos reais para criar movimento?', opts: ['Motion capture', 'Rotoscopia', 'Stop-motion', 'Time-lapse'], answer: 2, explain: 'Stop-motion cria movimento ao registrar pequenas mudanças em objetos reais quadro a quadro.' }
+      ]
+    },
+    cotidiano_sociedade: {
+      easy: [
+        { q: 'Em um semáforo tradicional, qual cor indica atenção?', opts: ['Verde', 'Amarelo', 'Azul', 'Branco'], answer: 1, explain: 'No semáforo tradicional, o amarelo indica atenção e preparação para parar ou seguir com cuidado.' },
+        { q: 'O que significa reciclar?', opts: ['Jogar qualquer lixo na rua', 'Transformar resíduos em novos materiais ou produtos', 'Guardar objetos sem uso para sempre', 'Misturar lixo orgânico e plástico'], answer: 1, explain: 'Reciclar é reaproveitar materiais descartados para gerar novos produtos e reduzir desperdícios.' },
+        { q: 'Qual prática ajuda a criar uma senha mais segura?', opts: ['Usar apenas números em ordem', 'Repetir a mesma senha em todos os sites', 'Combinar letras, números e símbolos', 'Escolher a data de nascimento'], answer: 2, explain: 'Senhas mais fortes combinam diferentes tipos de caracteres e evitam padrões fáceis de adivinhar.' },
+        { q: 'Para que serve a vacinação?', opts: ['Substituir a alimentação saudável', 'Treinar o sistema imunológico para se proteger melhor', 'Aumentar a força muscular', 'Eliminar a necessidade de higiene'], answer: 1, explain: 'A vacinação ajuda o organismo a reconhecer agentes infecciosos e responder melhor a eles.' },
+        { q: 'O que um QR code permite fazer rapidamente com a câmera do celular?', opts: ['Aumentar o volume do aparelho', 'Abrir ou transferir informações digitais', 'Melhorar o sinal da internet', 'Carregar a bateria mais rápido'], answer: 1, explain: 'QR codes podem levar a links, pagamentos, cardápios, formulários e várias outras informações digitais.' }
+      ],
+      medium: [
+        { q: 'O que é phishing?', opts: ['Uma técnica de pesca esportiva', 'Um golpe para roubar dados fingindo ser fonte confiável', 'Um antivírus para celular', 'Um tipo de conexão sem fio'], answer: 1, explain: 'Phishing é um golpe digital em que alguém tenta enganar a vítima para roubar senhas, códigos ou dados pessoais.' },
+        { q: 'O que significa ver um cadeado com HTTPS no navegador?', opts: ['O site é sempre verdadeiro e confiável', 'A conexão entre navegador e site está criptografada', 'O site não usa cookies', 'O conteúdo foi revisado por órgãos públicos'], answer: 1, explain: 'HTTPS indica conexão criptografada. Isso ajuda na segurança, mas não garante sozinho a reputação do site.' },
+        { q: 'O que é fake news?', opts: ['Uma notícia traduzida de outro idioma', 'Uma informação falsa ou enganosa divulgada como verdadeira', 'Uma piada publicada em revista', 'Uma notícia sem foto'], answer: 1, explain: 'Fake news é conteúdo falso ou enganoso espalhado como se fosse informação confiável.' },
+        { q: 'Qual foi a principal ideia por trás do código de barras no comércio?', opts: ['Trocar preços por cores', 'Permitir leitura óptica rápida de produtos e dados', 'Eliminar a necessidade de embalagens', 'Substituir dinheiro por cartões'], answer: 1, explain: 'O código de barras facilitou identificar produtos e processar vendas com leitura automática e rápida.' }
+      ],
+      hard: [
+        { q: 'O que significa autenticação em dois fatores?', opts: ['Usar duas contas ao mesmo tempo', 'Confirmar a identidade com uma segunda etapa além da senha', 'Ter duas senhas idênticas para o mesmo app', 'Trocar a senha a cada duas semanas'], answer: 1, explain: 'A autenticação em dois fatores adiciona uma segunda prova de identidade, como código, biometria ou aplicativo autenticador.' },
+        { q: 'O que é obsolescência programada?', opts: ['Quando um produto melhora sozinho com o tempo', 'Quando um produto é projetado para ter vida útil limitada ou estimular troca frequente', 'Quando um software se atualiza automaticamente', 'Quando um aparelho é reciclado pela fábrica'], answer: 1, explain: 'Obsolescência programada descreve estratégias que reduzem a vida útil percebida ou real de produtos para incentivar substituição.' },
+        { q: 'O que define a criptografia de ponta a ponta em uma conversa digital?', opts: ['A mensagem fica pública para auditoria', 'Somente remetente e destinatário conseguem ler o conteúdo', 'O texto pode ser lido por qualquer roteador da rede', 'A conversa some automaticamente após um minuto'], answer: 1, explain: 'Na criptografia de ponta a ponta, o conteúdo é protegido de modo que apenas as pontas da conversa consigam acessá-lo.' }
+      ]
+    }
+  },
   biblia_at: {
     genesis_criacao: {
       easy: [
@@ -1711,6 +1856,25 @@ const QUESTIONS = {
       ]
     }
   }
+};
+
+function cloneQuestionTopicBank(topicBank = {}) {
+  return JSON.parse(JSON.stringify(topicBank && typeof topicBank === 'object' ? topicBank : {}));
+}
+
+QUESTIONS.mundo_cultura = {
+  curiosidades_mundo: cloneQuestionTopicBank(QUESTIONS.assuntos_gerais?.curiosidades_mundo),
+  geografia_culturas: cloneQuestionTopicBank(QUESTIONS.assuntos_gerais?.geografia_culturas)
+};
+
+QUESTIONS.historia_sociedade = {
+  historia_geral: cloneQuestionTopicBank(QUESTIONS.assuntos_gerais?.historia_geral),
+  cotidiano_sociedade: cloneQuestionTopicBank(QUESTIONS.assuntos_gerais?.cotidiano_sociedade)
+};
+
+QUESTIONS.ciencia_criatividade = {
+  ciencia_espaco: cloneQuestionTopicBank(QUESTIONS.assuntos_gerais?.ciencia_espaco),
+  artes_entretenimento: cloneQuestionTopicBank(QUESTIONS.assuntos_gerais?.artes_entretenimento)
 };
 
 const QUESTION_VARIANT_PREFIXES = [

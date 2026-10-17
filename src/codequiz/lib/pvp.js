@@ -24,11 +24,101 @@ export function getRoundDurationSeconds(difficulty) {
 function normalizeAnswer(answer) {
   const safe = answer && typeof answer === 'object' ? answer : {};
   const idx = Number(safe.answer_idx ?? -1);
+  const correctIdx = Number(safe.correct_answer_idx ?? -1);
   return {
     ...safe,
     answer_idx: Number.isFinite(idx) ? idx : -1,
+    correct_answer_idx: Number.isFinite(correctIdx) ? correctIdx : -1,
     answered_at_ms: Math.max(0, Number(safe.answered_at_ms || 0))
   };
+}
+
+function normalizeCorrectIndex(value) {
+  const numeric = Number(value ?? -1);
+  return Number.isFinite(numeric) && numeric >= 0 ? numeric : -1;
+}
+
+function readStoredCorrectFlag(value) {
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    if (value === 1) return true;
+    if (value === 0) return false;
+    return null;
+  }
+  const normalized = String(value || '').trim().toLowerCase();
+  if (!normalized) return null;
+  if (['true', '1', 'sim', 'yes'].includes(normalized)) return true;
+  if (['false', '0', 'nao', 'não', 'no'].includes(normalized)) return false;
+  return null;
+}
+
+export function isPvpAnswerCorrect(answerRow, correctIndex = -1) {
+  const safeAnswer = normalizeAnswer(answerRow);
+  const hasAnswer = safeAnswer.answer_idx >= 0;
+  if (!hasAnswer) return false;
+
+  const externalCorrectIndex = normalizeCorrectIndex(correctIndex);
+  const storedCorrectIndex = normalizeCorrectIndex(safeAnswer.correct_answer_idx);
+  const storedCorrect = readStoredCorrectFlag(safeAnswer.is_correct);
+
+  const signals = [];
+  if (externalCorrectIndex >= 0) {
+    signals.push({
+      source: 'external',
+      value: safeAnswer.answer_idx === externalCorrectIndex
+    });
+  }
+  if (storedCorrectIndex >= 0) {
+    signals.push({
+      source: 'stored_index',
+      value: safeAnswer.answer_idx === storedCorrectIndex
+    });
+  }
+
+  if (signals.length >= 2) {
+    const trueCount = signals.filter((signal) => signal.value).length;
+    const falseCount = signals.length - trueCount;
+    if (trueCount !== falseCount) return trueCount > falseCount;
+    if (storedCorrect !== null) return storedCorrect;
+    return signals.find((signal) => signal.source === 'stored_index')?.value ?? signals[0].value;
+  }
+
+  if (signals.length === 1) {
+    if (storedCorrect !== null && storedCorrect === signals[0].value) return storedCorrect;
+    return signals[0].value;
+  }
+
+  if (storedCorrect !== null) return storedCorrect;
+
+  return false;
+}
+
+export function resolvePvpCorrectIndex(answerRows = [], fallbackCorrectIndex = -1) {
+  const safeFallback = normalizeCorrectIndex(fallbackCorrectIndex);
+  const rows = Array.isArray(answerRows)
+    ? answerRows
+    : (answerRows && typeof answerRows === 'object' ? [answerRows] : []);
+  const candidates = rows
+    .map((row) => normalizeCorrectIndex(row?.correct_answer_idx))
+    .filter((value) => value >= 0);
+  if (!candidates.length) return safeFallback;
+
+  const frequency = new Map();
+  candidates.forEach((value) => {
+    frequency.set(value, (frequency.get(value) || 0) + 1);
+  });
+
+  let bestIndex = safeFallback;
+  let bestCount = bestIndex >= 0 ? (frequency.get(bestIndex) || 0) : 0;
+  candidates.forEach((value) => {
+    const count = frequency.get(value) || 0;
+    if (count > bestCount) {
+      bestIndex = value;
+      bestCount = count;
+    }
+  });
+
+  return bestIndex >= 0 ? bestIndex : candidates[0];
 }
 
 export function resolveRoundOutcome({
@@ -45,8 +135,8 @@ export function resolveRoundOutcome({
   const a1 = normalizeAnswer(answerPlayer1);
   const a2 = normalizeAnswer(answerPlayer2);
 
-  const p1Correct = a1.answer_idx >= 0 && a1.answer_idx === correctIndex;
-  const p2Correct = a2.answer_idx >= 0 && a2.answer_idx === correctIndex;
+  const p1Correct = isPvpAnswerCorrect(a1, correctIndex);
+  const p2Correct = isPvpAnswerCorrect(a2, correctIndex);
 
   // Score reflects individual correctness each round.
   const player1Delta = p1Correct ? 1 : 0;
@@ -142,30 +232,72 @@ export function getPvpPointsDeltaAdvanced(resultKey, context = {}) {
 
 export function getCategoryByPoints(pointsValue) {
   const points = Math.max(0, Number(pointsValue || 0));
-  if (points >= 400) {
+  if (points >= 110) {
     return {
-      key: 'hard',
-      label: 'Avancado'
+      key: 'diamond',
+      label: 'Diamante',
+      emblem: '💎',
+      minPoints: 110,
+      maxPoints: null,
+      rank: 4
     };
   }
-  if (points >= 200) {
+  if (points >= 90) {
     return {
-      key: 'medium',
-      label: 'Intermediario'
+      key: 'platinum',
+      label: 'Platina',
+      emblem: '✨',
+      minPoints: 90,
+      maxPoints: 109,
+      rank: 3
+    };
+  }
+  if (points >= 60) {
+    return {
+      key: 'gold',
+      label: 'Ouro',
+      emblem: '🏆',
+      minPoints: 60,
+      maxPoints: 89,
+      rank: 2
+    };
+  }
+  if (points >= 30) {
+    return {
+      key: 'silver',
+      label: 'Prata',
+      emblem: '🥈',
+      minPoints: 30,
+      maxPoints: 59,
+      rank: 1
     };
   }
   return {
-    key: 'easy',
-    label: 'Iniciante'
+    key: 'bronze',
+    label: 'Bronze',
+    emblem: '🥉',
+    minPoints: 0,
+    maxPoints: 29,
+    rank: 0
   };
 }
 
 export function getPvpResultForUser(matchRow, userId) {
   const row = matchRow && typeof matchRow === 'object' ? matchRow : {};
   const uid = String(userId || '').trim();
-  const winnerId = String(row.winner_user_id || '').trim();
+  const explicitWinnerId = String(row.winner_user_id || '').trim();
+  const byScoreWinnerId = resolveMatchWinner(row);
+  const endedReason = String(row.ended_reason || '').trim().toLowerCase();
+  const endedByUserId = String(row.ended_by_user_id || row.forfeit_by_user_id || '').trim();
+  const player1Id = String(row.player1_user_id || '').trim();
+  const player2Id = String(row.player2_user_id || '').trim();
+  const forfeitWinnerId = endedReason === 'forfeit' && endedByUserId
+    ? (endedByUserId === player1Id ? player2Id : player1Id)
+    : '';
+  const lastRoundWinnerId = String(row.last_round_winner_user_id || '').trim();
+  const winnerId = explicitWinnerId || byScoreWinnerId || forfeitWinnerId || lastRoundWinnerId;
   if (!uid) return 'loss';
-  if (!winnerId) return 'draw';
+  if (!winnerId) return 'loss';
   if (winnerId === uid) return 'win';
   return 'loss';
 }

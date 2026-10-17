@@ -1,0 +1,786 @@
+const DB_OPERATION_TIMEOUT_MS = Math.max(
+  1000,
+  Number(process.env.NEXT_PUBLIC_DB_OPERATION_TIMEOUT_MS || 12000)
+);
+const DB_POLL_INTERVAL_MS = Math.max(
+  400,
+  Number(process.env.NEXT_PUBLIC_DB_POLL_INTERVAL_MS || 1200)
+);
+const DB_TX_MAX_RETRIES = Math.max(
+  1,
+  Number(process.env.NEXT_PUBLIC_DB_TX_MAX_RETRIES || 12)
+);
+const DB_REQUEST_MAX_RETRIES = Math.max(
+  0,
+  Number(process.env.NEXT_PUBLIC_DB_REQUEST_MAX_RETRIES || 2)
+);
+const DB_REQUEST_RETRY_BASE_MS = Math.max(
+  120,
+  Number(process.env.NEXT_PUBLIC_DB_REQUEST_RETRY_BASE_MS || 260)
+);
+const DB_REQUEST_RETRY_MAX_MS = Math.max(
+  DB_REQUEST_RETRY_BASE_MS,
+  Number(process.env.NEXT_PUBLIC_DB_REQUEST_RETRY_MAX_MS || 1800)
+);
+const DB_REQUEST_RETRY_JITTER_MS = Math.max(
+  0,
+  Number(process.env.NEXT_PUBLIC_DB_REQUEST_RETRY_JITTER_MS || 180)
+);
+const DB_GET_CACHE_TTL_MS = Math.max(
+  0,
+  Number(process.env.NEXT_PUBLIC_DB_GET_CACHE_TTL_MS || 180)
+);
+const DB_SUBSCRIPTION_ERROR_BACKOFF_MAX_MS = Math.max(
+  DB_POLL_INTERVAL_MS,
+  Number(process.env.NEXT_PUBLIC_DB_SUBSCRIPTION_ERROR_BACKOFF_MAX_MS || 12000)
+);
+const DB_CONNECTED_PROBE_MIN_INTERVAL_MS = Math.max(
+  800,
+  Number(process.env.NEXT_PUBLIC_DB_CONNECTED_PROBE_MIN_INTERVAL_MS || 1800)
+);
+const DB_CONNECTED_PROBE_TIMEOUT_MS = Math.max(
+  900,
+  Number(process.env.NEXT_PUBLIC_DB_CONNECTED_PROBE_TIMEOUT_MS || 2800)
+);
+
+function normalizeBaseUrl(value) {
+  return String(value || '').trim().replace(/\/+$/, '');
+}
+
+const DB_WORKER_BASE_URL = normalizeBaseUrl(process.env.NEXT_PUBLIC_DB_WORKER_URL);
+const DB_WORKER_TOKEN = String(process.env.NEXT_PUBLIC_DB_WORKER_TOKEN || '').trim();
+const ENABLE_MEMORY_FALLBACK = (
+  String(process.env.NEXT_PUBLIC_DB_ALLOW_MEMORY_FALLBACK || '').trim() === '1'
+  || (!DB_WORKER_BASE_URL && process.env.NODE_ENV !== 'production')
+);
+
+let workerReachable = true;
+let warnedMissingWorkerUrl = false;
+const subscriptions = new Map();
+const getPathInflight = new Map();
+const getPathCache = new Map();
+let getCacheVersion = 1;
+let workerProbePromise = null;
+let workerProbeStartedAtMs = 0;
+
+const inMemoryState = {
+  data: {},
+  revisions: { '': 1 },
+  revisionCounter: 1
+};
+
+function deepClone(value) {
+  if (typeof structuredClone === 'function') {
+    return structuredClone(value);
+  }
+  if (value === undefined) return undefined;
+  return JSON.parse(JSON.stringify(value));
+}
+
+function isObjectLike(value) {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+function normalizePath(path = '') {
+  const safe = String(path || '').trim();
+  if (!safe || safe === '/') return '';
+  return safe.replace(/^\/+/, '').replace(/\/+$/, '');
+}
+
+function splitPath(path = '') {
+  const safe = normalizePath(path);
+  return safe ? safe.split('/').filter(Boolean) : [];
+}
+
+function joinPaths(basePath = '', childPath = '') {
+  const safeBase = normalizePath(basePath);
+  const safeChild = normalizePath(childPath);
+  if (!safeBase) return safeChild;
+  if (!safeChild) return safeBase;
+  return `${safeBase}/${safeChild}`;
+}
+
+function getAncestorPaths(path = '') {
+  const segments = splitPath(path);
+  const list = [''];
+  let cursor = '';
+  segments.forEach((segment) => {
+    cursor = cursor ? `${cursor}/${segment}` : segment;
+    list.push(cursor);
+  });
+  return list;
+}
+
+function pathsOverlap(pathA = '', pathB = '') {
+  const a = normalizePath(pathA);
+  const b = normalizePath(pathB);
+  if (!a || !b) return true;
+  if (a === b) return true;
+  return a.startsWith(`${b}/`) || b.startsWith(`${a}/`);
+}
+
+class DbSnapshot {
+  constructor(value) {
+    this._value = value === undefined ? null : deepClone(value);
+  }
+
+  exists() {
+    return this._value !== null && this._value !== undefined;
+  }
+
+  val() {
+    return deepClone(this._value);
+  }
+}
+
+function makeSnapshot(value) {
+  return new DbSnapshot(value);
+}
+
+function delay(ms = 0) {
+  const safeMs = Math.max(0, Number(ms || 0));
+  if (!safeMs) return Promise.resolve();
+  return new Promise((resolve) => {
+    setTimeout(resolve, safeMs);
+  });
+}
+
+function setWorkerReachable(nextValue) {
+  workerReachable = nextValue !== false;
+}
+
+function isRetryableHttpStatus(statusCode) {
+  const status = Number(statusCode || 0);
+  if (!status) return false;
+  if (status === 408 || status === 425 || status === 429) return true;
+  return status >= 500 && status <= 599;
+}
+
+function buildRetryDelayMs(attempt = 0) {
+  const safeAttempt = Math.max(0, Number(attempt || 0));
+  const growth = Math.min(DB_REQUEST_RETRY_MAX_MS, DB_REQUEST_RETRY_BASE_MS * (2 ** safeAttempt));
+  const jitter = DB_REQUEST_RETRY_JITTER_MS > 0
+    ? Math.floor(Math.random() * DB_REQUEST_RETRY_JITTER_MS)
+    : 0;
+  return growth + jitter;
+}
+
+function isRetryableWorkerError(error) {
+  if (!error) return false;
+  if (error.retryable === true) return true;
+
+  const status = Number(error.db_status || error.status || 0);
+  if (isRetryableHttpStatus(status)) return true;
+
+  const name = String(error.name || '').trim().toLowerCase();
+  if (name === 'aborterror') return true;
+
+  const message = String(error.message || '').trim().toLowerCase();
+  if (!message) return false;
+  if (message.includes('failed to fetch')) return true;
+  if (message.includes('networkerror')) return true;
+  if (message.includes('network request failed')) return true;
+  if (message.includes('load failed')) return true;
+  if (message.includes('timeout')) return true;
+  return false;
+}
+
+function getCachedPathEntry(path = '') {
+  if (DB_GET_CACHE_TTL_MS <= 0) return null;
+  const safePath = normalizePath(path);
+  const cached = getPathCache.get(safePath);
+  if (!cached) return null;
+  if (Date.now() > cached.expiresAtMs) {
+    getPathCache.delete(safePath);
+    return null;
+  }
+  return {
+    value: deepClone(cached.value),
+    rev: Math.max(0, Number(cached.rev || 0))
+  };
+}
+
+function setCachedPathEntry(path = '', value = null, rev = 0) {
+  if (DB_GET_CACHE_TTL_MS <= 0) return;
+  const safePath = normalizePath(path);
+  getPathCache.set(safePath, {
+    value: deepClone(value),
+    rev: Math.max(0, Number(rev || 0)),
+    expiresAtMs: Date.now() + DB_GET_CACHE_TTL_MS
+  });
+}
+
+function invalidatePathCache(path = '') {
+  const safePath = normalizePath(path);
+  getCacheVersion += 1;
+  if (!getPathCache.size) return;
+  Array.from(getPathCache.keys()).forEach((cachedPath) => {
+    if (!pathsOverlap(cachedPath, safePath)) return;
+    getPathCache.delete(cachedPath);
+  });
+  Array.from(getPathInflight.keys()).forEach((inflightPath) => {
+    if (!pathsOverlap(inflightPath, safePath)) return;
+    getPathInflight.delete(inflightPath);
+  });
+}
+
+function readNodeValue(root, path = '') {
+  const segments = splitPath(path);
+  if (!segments.length) return deepClone(root);
+  let cursor = root;
+  for (const segment of segments) {
+    if (!cursor || typeof cursor !== 'object' || !(segment in cursor)) return undefined;
+    cursor = cursor[segment];
+  }
+  return deepClone(cursor);
+}
+
+function writeNodeValue(root, path = '', value = null) {
+  const segments = splitPath(path);
+  if (!segments.length) {
+    if (value === null || value === undefined) return {};
+    return deepClone(value);
+  }
+
+  const nextRoot = (
+    root && typeof root === 'object' && !Array.isArray(root)
+      ? root
+      : {}
+  );
+
+  let cursor = nextRoot;
+  for (let index = 0; index < segments.length - 1; index += 1) {
+    const key = segments[index];
+    const current = cursor[key];
+    if (!current || typeof current !== 'object' || Array.isArray(current)) {
+      cursor[key] = {};
+    }
+    cursor = cursor[key];
+  }
+
+  const lastKey = segments[segments.length - 1];
+  if (value === null || value === undefined) {
+    delete cursor[lastKey];
+  } else {
+    cursor[lastKey] = deepClone(value);
+  }
+  return nextRoot;
+}
+
+function applyUpdateObject(root, basePath = '', patch = {}) {
+  const safePatch = isObjectLike(patch) ? patch : {};
+  let nextRoot = root;
+  const touchedPaths = [];
+  Object.entries(safePatch).forEach(([relativePath, value]) => {
+    const fullPath = joinPaths(basePath, relativePath);
+    nextRoot = writeNodeValue(nextRoot, fullPath, value);
+    touchedPaths.push(fullPath);
+  });
+  return { nextRoot, touchedPaths };
+}
+
+function bumpRevision(path = '') {
+  const safePath = normalizePath(path);
+  inMemoryState.revisionCounter += 1;
+  inMemoryState.revisions[safePath] = inMemoryState.revisionCounter;
+}
+
+function touchPathRevision(path = '') {
+  const safePath = normalizePath(path);
+  const ancestors = getAncestorPaths(safePath);
+  ancestors.forEach((ancestor) => bumpRevision(ancestor));
+
+  if (!safePath) {
+    Object.keys(inMemoryState.revisions).forEach((key) => {
+      if (!key) return;
+      bumpRevision(key);
+    });
+    return;
+  }
+
+  const prefix = `${safePath}/`;
+  Object.keys(inMemoryState.revisions).forEach((key) => {
+    if (key.startsWith(prefix)) {
+      bumpRevision(key);
+    }
+  });
+}
+
+function getEffectiveRevision(path = '') {
+  const safePath = normalizePath(path);
+  const ancestors = getAncestorPaths(safePath);
+  let maxRev = 0;
+  ancestors.forEach((ancestor) => {
+    const rev = Number(inMemoryState.revisions[ancestor] || 0);
+    if (rev > maxRev) maxRev = rev;
+  });
+  return maxRev;
+}
+
+async function requestInMemory(pathname, payload = {}) {
+  const body = payload && typeof payload === 'object' ? payload : {};
+  const path = normalizePath(body.path);
+
+  if (pathname === '/db/get') {
+    const value = readNodeValue(inMemoryState.data, path);
+    const rev = getEffectiveRevision(path);
+    return {
+      ok: true,
+      exists: value !== undefined && value !== null,
+      value: value === undefined ? null : value,
+      rev
+    };
+  }
+
+  if (pathname === '/db/set') {
+    inMemoryState.data = writeNodeValue(inMemoryState.data, path, body.value ?? null);
+    touchPathRevision(path);
+    return { ok: true, path };
+  }
+
+  if (pathname === '/db/update') {
+    if (!isObjectLike(body.patch)) {
+      throw new Error('Patch precisa ser um objeto para update().');
+    }
+    const { nextRoot, touchedPaths } = applyUpdateObject(inMemoryState.data, path, body.patch);
+    inMemoryState.data = nextRoot;
+    touchedPaths.forEach((touched) => touchPathRevision(touched));
+    return { ok: true, touched_paths: touchedPaths };
+  }
+
+  if (pathname === '/db/tx') {
+    const expectedRev = Number(body.expected_rev || 0);
+    const currentRev = getEffectiveRevision(path);
+    const currentValue = readNodeValue(inMemoryState.data, path);
+
+    if (currentRev !== expectedRev) {
+      return {
+        ok: true,
+        committed: false,
+        value: currentValue === undefined ? null : currentValue,
+        rev: currentRev
+      };
+    }
+
+    inMemoryState.data = writeNodeValue(inMemoryState.data, path, body.value ?? null);
+    touchPathRevision(path);
+    const nextValue = readNodeValue(inMemoryState.data, path);
+    return {
+      ok: true,
+      committed: true,
+      value: nextValue === undefined ? null : nextValue,
+      rev: getEffectiveRevision(path)
+    };
+  }
+
+  throw new Error(`Operacao de banco invalida: ${pathname}`);
+}
+
+async function requestWorker(pathname, payload = {}, options = {}) {
+  if (ENABLE_MEMORY_FALLBACK && !DB_WORKER_BASE_URL) {
+    if (!warnedMissingWorkerUrl) {
+      warnedMissingWorkerUrl = true;
+      if (typeof console !== 'undefined' && typeof console.warn === 'function') {
+        console.warn('[dbClient] NEXT_PUBLIC_DB_WORKER_URL ausente. Usando banco em memoria local.');
+      }
+    }
+    setWorkerReachable(true);
+    return requestInMemory(pathname, payload);
+  }
+
+  if (!DB_WORKER_BASE_URL) {
+    throw new Error(
+      'Banco remoto não configurado. Defina NEXT_PUBLIC_DB_WORKER_URL para usar Cloudflare Workers.'
+    );
+  }
+
+  const endpoint = `${DB_WORKER_BASE_URL}${pathname}`;
+  const headers = {
+    'Content-Type': 'application/json'
+  };
+  if (DB_WORKER_TOKEN) {
+    headers.Authorization = `Bearer ${DB_WORKER_TOKEN}`;
+  }
+  const safeTimeoutMs = Math.max(900, Number(options?.timeoutMs || DB_OPERATION_TIMEOUT_MS));
+  const maxRetries = Math.max(0, Number(options?.maxRetries ?? DB_REQUEST_MAX_RETRIES));
+  const markReachability = options?.markReachability !== false;
+  let attempt = 0;
+
+  while (attempt <= maxRetries) {
+    const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    const timeoutId = controller
+      ? setTimeout(() => controller.abort(), safeTimeoutMs)
+      : null;
+
+    try {
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(payload),
+        cache: 'no-store',
+        signal: controller ? controller.signal : undefined
+      });
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => '');
+        const requestError = new Error(
+          `DB request falhou (${response.status} ${response.statusText}): ${errorText || 'sem detalhes'}`
+        );
+        requestError.db_status = Number(response.status || 0);
+        requestError.retryable = isRetryableHttpStatus(response.status);
+        throw requestError;
+      }
+
+      const parsed = await response.json();
+      if (markReachability) setWorkerReachable(true);
+      return parsed;
+    } catch (error) {
+      const canRetry = attempt < maxRetries && isRetryableWorkerError(error);
+      if (!canRetry) {
+        if (markReachability) setWorkerReachable(false);
+        throw error;
+      }
+      await delay(buildRetryDelayMs(attempt));
+    } finally {
+      if (timeoutId) clearTimeout(timeoutId);
+    }
+
+    attempt += 1;
+  }
+
+  if (markReachability) setWorkerReachable(false);
+  throw new Error('DB request falhou apos retries.');
+}
+
+function probeWorkerReachability(force = false) {
+  if (ENABLE_MEMORY_FALLBACK && !DB_WORKER_BASE_URL) {
+    setWorkerReachable(true);
+    return Promise.resolve(true);
+  }
+  if (!DB_WORKER_BASE_URL) {
+    setWorkerReachable(false);
+    return Promise.resolve(false);
+  }
+  if (workerProbePromise) return workerProbePromise;
+
+  const nowMs = Date.now();
+  const recentProbe = (nowMs - workerProbeStartedAtMs) < DB_CONNECTED_PROBE_MIN_INTERVAL_MS;
+  if (!force && recentProbe) {
+    return Promise.resolve(workerReachable);
+  }
+
+  workerProbeStartedAtMs = nowMs;
+  workerProbePromise = requestWorker(
+    '/db/get',
+    { path: '' },
+    {
+      maxRetries: 0,
+      timeoutMs: Math.min(DB_CONNECTED_PROBE_TIMEOUT_MS, DB_OPERATION_TIMEOUT_MS),
+      markReachability: true
+    }
+  )
+    .then(() => {
+      setWorkerReachable(true);
+      return true;
+    })
+    .catch(() => false)
+    .finally(() => {
+      workerProbePromise = null;
+    });
+
+  return workerProbePromise;
+}
+
+async function fetchPathWithRevision(path = '', options = {}) {
+  const safePath = normalizePath(path);
+  const forceFresh = options?.forceFresh === true;
+  if (!forceFresh) {
+    const cached = getCachedPathEntry(safePath);
+    if (cached) return cached;
+  }
+
+  const inflight = getPathInflight.get(safePath);
+  if (inflight) return inflight;
+
+  const requestVersion = getCacheVersion;
+  const requestPromise = requestWorker('/db/get', { path: safePath })
+    .then((payload) => {
+      const next = {
+        value: payload?.value ?? null,
+        rev: Math.max(0, Number(payload?.rev || 0))
+      };
+      if (requestVersion === getCacheVersion) {
+        setCachedPathEntry(safePath, next.value, next.rev);
+      }
+      return next;
+    })
+    .finally(() => {
+      if (getPathInflight.get(safePath) === requestPromise) {
+        getPathInflight.delete(safePath);
+      }
+    });
+
+  getPathInflight.set(safePath, requestPromise);
+  return requestPromise;
+}
+
+function normalizeRefInput(target) {
+  if (!target || target.__kind !== 'cloudflare_db_ref') {
+    throw new Error('Referencia de banco invalida.');
+  }
+  return target;
+}
+
+function triggerSubscriptionRefresh(changedPath = '') {
+  const safePath = normalizePath(changedPath);
+  subscriptions.forEach((group) => {
+    if (!pathsOverlap(group.path, safePath)) return;
+    void pollSubscriptionGroup(group, true);
+  });
+}
+
+async function pollSubscriptionGroup(group, force = false) {
+  if (!group || group.destroyed || group.inFlight) return;
+  const nowMs = Date.now();
+  if (!force && nowMs < Math.max(0, Number(group.nextPollAtMs || 0))) return;
+  group.inFlight = true;
+  try {
+    const snapshot = await fetchPathWithRevision(group.path, {
+      forceFresh: force || Number(group.errorCount || 0) > 0
+    });
+    const currentValue = snapshot?.value ?? null;
+    const currentRev = Math.max(0, Number(snapshot?.rev || 0));
+    const changed = force || !group.hasValue || currentRev !== group.lastRev;
+    if (changed) {
+      group.hasValue = true;
+      group.lastRev = currentRev;
+      group.listeners.forEach((entry) => {
+        try {
+          entry.onNext(makeSnapshot(currentValue));
+        } catch (error) {
+          if (typeof entry.onError === 'function') entry.onError(error);
+        }
+      });
+    }
+    group.errorCount = 0;
+    group.nextPollAtMs = 0;
+  } catch (error) {
+    const nextErrorCount = Math.min(6, Math.max(0, Number(group.errorCount || 0)) + 1);
+    group.errorCount = nextErrorCount;
+    const backoffMs = Math.min(
+      DB_SUBSCRIPTION_ERROR_BACKOFF_MAX_MS,
+      DB_POLL_INTERVAL_MS * (2 ** Math.max(0, nextErrorCount - 1))
+    );
+    const jitterMs = backoffMs > 600 ? Math.floor(Math.random() * 280) : 0;
+    group.nextPollAtMs = Date.now() + backoffMs + jitterMs;
+    group.listeners.forEach((entry) => {
+      if (typeof entry.onError === 'function') entry.onError(error);
+    });
+  } finally {
+    group.inFlight = false;
+  }
+}
+
+function subscribeConnectedPath(onNext, onError) {
+  const emit = () => {
+    try {
+      onNext(makeSnapshot(resolveConnectionState()));
+    } catch (error) {
+      if (typeof onError === 'function') onError(error);
+    }
+  };
+
+  emit();
+
+  if (typeof window === 'undefined') {
+    return () => { };
+  }
+
+  const handleOnline = () => {
+    void probeWorkerReachability(true).catch(() => null);
+    emit();
+  };
+  const handleOffline = () => emit();
+  window.addEventListener('online', handleOnline);
+  window.addEventListener('offline', handleOffline);
+
+  const intervalId = setInterval(() => {
+    emit();
+  }, Math.max(1000, DB_POLL_INTERVAL_MS));
+
+  return () => {
+    window.removeEventListener('online', handleOnline);
+    window.removeEventListener('offline', handleOffline);
+    clearInterval(intervalId);
+  };
+}
+
+function resolveConnectionState() {
+  const browserOnline = typeof navigator === 'undefined'
+    ? true
+    : navigator.onLine !== false;
+  if (browserOnline && !workerReachable) {
+    void probeWorkerReachability(false).catch(() => null);
+  }
+  return browserOnline && workerReachable;
+}
+
+function createSubscriptionGroup(path = '') {
+  const safePath = normalizePath(path);
+  const group = {
+    path: safePath,
+    listeners: new Set(),
+    timerId: null,
+    lastRev: -1,
+    hasValue: false,
+    destroyed: false,
+    inFlight: false,
+    errorCount: 0,
+    nextPollAtMs: 0
+  };
+
+  group.timerId = setInterval(() => {
+    void pollSubscriptionGroup(group, false);
+  }, DB_POLL_INTERVAL_MS);
+  void pollSubscriptionGroup(group, true);
+  return group;
+}
+
+function teardownSubscriptionGroup(group) {
+  if (!group) return;
+  group.destroyed = true;
+  if (group.timerId) clearInterval(group.timerId);
+}
+
+export const firebaseDb = Object.freeze({
+  __kind: 'cloudflare_db',
+  baseUrl: DB_WORKER_BASE_URL || 'memory://local'
+});
+
+export function ref(database, path = '') {
+  return {
+    __kind: 'cloudflare_db_ref',
+    db: database || firebaseDb,
+    path: normalizePath(path)
+  };
+}
+
+export async function get(targetRef) {
+  const safeRef = normalizeRefInput(targetRef);
+  if (safeRef.path === '.info/connected') {
+    return makeSnapshot(resolveConnectionState());
+  }
+  const payload = await fetchPathWithRevision(safeRef.path);
+  return makeSnapshot(payload.value);
+}
+
+export async function set(targetRef, value) {
+  const safeRef = normalizeRefInput(targetRef);
+  if (safeRef.path === '.info/connected') return;
+  await requestWorker('/db/set', {
+    path: safeRef.path,
+    value: value ?? null
+  });
+  invalidatePathCache(safeRef.path);
+  triggerSubscriptionRefresh(safeRef.path);
+}
+
+export async function update(targetRef, patch) {
+  const safeRef = normalizeRefInput(targetRef);
+  if (safeRef.path === '.info/connected') return;
+  if (!isObjectLike(patch)) {
+    throw new Error('Patch invalido para update(); esperado objeto.');
+  }
+  await requestWorker('/db/update', {
+    path: safeRef.path,
+    patch
+  });
+
+  const touched = Object.keys(patch);
+  if (!touched.length) {
+    invalidatePathCache(safeRef.path);
+    triggerSubscriptionRefresh(safeRef.path);
+    return;
+  }
+  touched.forEach((relativePath) => {
+    const fullPath = joinPaths(safeRef.path, relativePath);
+    invalidatePathCache(fullPath);
+    triggerSubscriptionRefresh(fullPath);
+  });
+}
+
+export async function runTransaction(targetRef, updaterFn) {
+  const safeRef = normalizeRefInput(targetRef);
+  if (typeof updaterFn !== 'function') {
+    throw new Error('runTransaction precisa de uma funcao updater.');
+  }
+  if (safeRef.path === '.info/connected') {
+    return { committed: false, snapshot: makeSnapshot(resolveConnectionState()) };
+  }
+
+  let current = await fetchPathWithRevision(safeRef.path, { forceFresh: true });
+  let retries = 0;
+
+  while (retries < DB_TX_MAX_RETRIES) {
+    const nextInput = deepClone(current.value);
+    const nextValue = updaterFn(nextInput);
+
+    if (nextValue === undefined) {
+      return {
+        committed: false,
+        snapshot: makeSnapshot(current.value)
+      };
+    }
+
+    const response = await requestWorker('/db/tx', {
+      path: safeRef.path,
+      expected_rev: current.rev,
+      value: nextValue ?? null
+    });
+
+    if (response?.committed) {
+      invalidatePathCache(safeRef.path);
+      triggerSubscriptionRefresh(safeRef.path);
+      return {
+        committed: true,
+        snapshot: makeSnapshot(response.value)
+      };
+    }
+
+    current = {
+      value: response?.value ?? null,
+      rev: Math.max(0, Number(response?.rev || 0))
+    };
+    retries += 1;
+  }
+
+  throw new Error('Transacao falhou por alta contencao; tente novamente.');
+}
+
+export function onValue(targetRef, onNext, onError = null) {
+  const safeRef = normalizeRefInput(targetRef);
+  if (typeof onNext !== 'function') return () => { };
+
+  if (safeRef.path === '.info/connected') {
+    return subscribeConnectedPath(onNext, onError);
+  }
+
+  const key = safeRef.path;
+  const listener = { onNext, onError };
+  let group = subscriptions.get(key);
+  if (!group) {
+    group = createSubscriptionGroup(key);
+    subscriptions.set(key, group);
+  }
+
+  group.listeners.add(listener);
+  void pollSubscriptionGroup(group, true);
+
+  return () => {
+    const activeGroup = subscriptions.get(key);
+    if (!activeGroup) return;
+    activeGroup.listeners.delete(listener);
+    if (activeGroup.listeners.size > 0) return;
+    subscriptions.delete(key);
+    teardownSubscriptionGroup(activeGroup);
+  };
+}
