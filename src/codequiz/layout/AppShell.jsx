@@ -249,6 +249,11 @@ export default function AppShell({
     document.documentElement.dataset.shellMode = mode;
   }, [mode]);
 
+  // Fecha o menu do perfil ao trocar de aba ou de modo (ex.: entrar numa partida).
+  useEffect(() => {
+    setMenuPlacement('');
+  }, [activeTab, mode]);
+
   return (
     <div className={cx(styles.shell, className)} data-shell-mode={mode}>
       <div className={styles.backdrop} aria-hidden="true">
