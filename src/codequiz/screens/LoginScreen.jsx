@@ -112,6 +112,10 @@ export default function LoginScreen({ vm }) {
               Progresso, moedas e cosméticos sincronizados em qualquer aparelho.
             </span>
           </div>
+          <p className={styles.legal}>
+            Ao entrar, você concorda com os <a href="/termos">Termos de Uso</a> e a{' '}
+            <a href="/privacidade">Política de Privacidade</a>.
+          </p>
         </section>
         </div>
       </div>
