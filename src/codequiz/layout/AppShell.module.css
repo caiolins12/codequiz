@@ -186,6 +186,11 @@
   color: #fff;
 }
 
+.brandMark svg {
+  width: 26px;
+  height: 26px;
+}
+
 .brandText {
   display: grid;
   line-height: 1.05;
@@ -633,6 +638,11 @@
   font-weight: 600;
   color: #fff;
   animation: cq-float 2.6s ease-in-out infinite;
+}
+
+.splashMark svg {
+  width: 52px;
+  height: 52px;
 }
 
 .splashTitle {

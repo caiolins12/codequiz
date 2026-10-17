@@ -1,4 +1,4 @@
-import { Flame, LockKeyhole, RefreshCcw, Swords, Trophy, Zap, Route } from 'lucide-react';
+import { Brain, Flame, LockKeyhole, RefreshCcw, Swords, Trophy, Zap, Route } from 'lucide-react';
 import { cx } from '../ui';
 import styles from './LoginScreen.module.css';
 
@@ -55,8 +55,11 @@ export default function LoginScreen({ vm }) {
         <section className={styles.hero}>
           <div className={styles.heroTop}>
             <div className={styles.brand}>
-              <span className={styles.brandMark} aria-hidden="true">{'</>'}</span>
-              <span className={styles.brandName}>CodeQuiz</span>
+              <span className={styles.brandMark} aria-hidden="true"><Brain strokeWidth={2.4} /></span>
+              <span className={styles.brandText}>
+                <span className={styles.brandName}>Brain Versus Brain</span>
+                <span className={styles.brandTag}>BVB Game</span>
+              </span>
             </div>
             <HeroArt className={styles.artMobile} />
           </div>
@@ -67,7 +70,7 @@ export default function LoginScreen({ vm }) {
           <p className={styles.lead}>
             Quizzes por tema, batalhas em tempo real e um passe de evolução cheio de recompensas.
           </p>
-          <ul className={styles.features} aria-label="O que você encontra no CodeQuiz">
+          <ul className={styles.features} aria-label="O que você encontra no Brain Versus Brain">
             {FEATURES.map((feature) => {
               const Icon = feature.icon;
               return (
@@ -102,7 +105,7 @@ export default function LoginScreen({ vm }) {
           <div className={styles.trust}>
             <span className={styles.trustItem}>
               <LockKeyhole aria-hidden="true" strokeWidth={2.5} />
-              Login seguro pelo Google, sem senha no CodeQuiz.
+              Login seguro pelo Google, sem senha no BVB.
             </span>
             <span className={styles.trustItem}>
               <RefreshCcw aria-hidden="true" strokeWidth={2.5} />

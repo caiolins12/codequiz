@@ -1383,8 +1383,8 @@ function buildSystemBotUserPayload(
   return {
     id: def.id,
     auth_id: def.id,
-    full_name: String(def.full_name || def.nickname || 'CodeQuiz Bot'),
-    nickname: String(def.nickname || 'CodeQuizBot'),
+    full_name: String(def.full_name || def.nickname || 'BVB Bot'),
+    nickname: String(def.nickname || 'BVBBot'),
     avatar: String(avatarByEquippedEmoji || fallbackAvatar || SYSTEM_BOT_DEFAULT_AVATAR),
     equipped_frame: equippedFrame,
     equipped_background: equippedBackground,
@@ -1653,7 +1653,7 @@ function buildSystemBotConfigPayload(botDef, current, nowIso) {
   const strength = normalizeSystemBotStrength(def.default_strength ?? base.strength);
   return {
     bot_id: def.id,
-    nickname: String(def.nickname || 'CodeQuizBot'),
+    nickname: String(def.nickname || 'BVBBot'),
     personality,
     strength,
     gender: String(def.gender || 'neutral'),

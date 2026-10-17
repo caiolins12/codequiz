@@ -1,0 +1,7 @@
+# Fora do deploy: configuração/worktrees locais do Claude Code, export estático
+# antigo, migrações e cache do Supabase CLI e a arte-fonte dos ícones.
+.claude
+out
+supabase
+icons
+Arena

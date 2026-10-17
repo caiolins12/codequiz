@@ -1,4 +1,4 @@
-# Bot Creation Guide (CodeQuiz)
+# Bot Creation Guide (Brain Versus Brain)
 
 ## Objetivo
 Este documento define TODO o padrao para criar e manter bots que se passam por jogadores no app.

@@ -29,9 +29,9 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata = {
-  title: 'CodeQuiz — Aprenda programação jogando',
-  description: 'Quiz de programação com trilhas, ranking e batalhas PvP em tempo real.',
-  applicationName: 'CodeQuiz',
+  title: 'Brain Versus Brain — Quiz e batalhas de conhecimento',
+  description: 'Brain Versus Brain (BVB): quiz com trilhas de conhecimento, ranking e batalhas PvP em tempo real.',
+  applicationName: 'Brain Versus Brain',
   manifest: '/manifest.webmanifest',
   icons: {
     icon: '/favicon.ico',
@@ -39,7 +39,7 @@ export const metadata = {
   },
   appleWebApp: {
     capable: true,
-    title: 'CodeQuiz',
+    title: 'BVB Game',
     statusBarStyle: 'black-translucent'
   }
 };

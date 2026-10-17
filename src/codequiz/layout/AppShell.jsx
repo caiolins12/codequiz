@@ -1,16 +1,16 @@
 import { useEffect, useState } from 'react';
-import { History, Music, Music2, Settings, SkipForward, VolumeX } from 'lucide-react';
+import { Brain, History, Music, Music2, Settings, SkipForward, VolumeX } from 'lucide-react';
 import { Avatar, CoinIcon, IconButton, ProgressBar, StatPill, TierBadge, Toast, cx } from '../ui';
 import { NAV_TABS } from './nav';
 import styles from './AppShell.module.css';
 
 function Brand({ onClick }) {
   return (
-    <button type="button" className={styles.brand} onClick={onClick} aria-label="CodeQuiz — início">
-      <span className={styles.brandMark} aria-hidden="true">{'</>'}</span>
+    <button type="button" className={styles.brand} onClick={onClick} aria-label="Brain Versus Brain — início">
+      <span className={styles.brandMark} aria-hidden="true"><Brain strokeWidth={2.4} /></span>
       <span className={styles.brandText}>
-        <span className={styles.brandName}>CodeQuiz</span>
-        <span className={styles.brandTag}>Aprenda jogando</span>
+        <span className={styles.brandName}>BVB Game</span>
+        <span className={styles.brandTag}>Brain Versus Brain</span>
       </span>
     </button>
   );
@@ -216,8 +216,8 @@ export function SplashScreen({ message = 'Inicializando sua sessão...' }) {
   return (
     <div className={styles.splash} role="status" aria-live="polite">
       <div className={styles.splashCard}>
-        <span className={styles.splashMark} aria-hidden="true">{'</>'}</span>
-        <h1 className={styles.splashTitle}>CodeQuiz</h1>
+        <span className={styles.splashMark} aria-hidden="true"><Brain strokeWidth={2.2} /></span>
+        <h1 className={styles.splashTitle}>Brain Versus Brain</h1>
         <p className={styles.splashText}>{message}</p>
         <div className={styles.splashBar} aria-hidden="true">
           <div className={styles.splashBarFill} />

@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'codequiz-runtime-v42';
+const CACHE_VERSION = 'bvb-runtime-v43';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 
 const PRECACHE_ASSETS = [

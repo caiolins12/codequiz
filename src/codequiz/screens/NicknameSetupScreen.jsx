@@ -59,7 +59,7 @@ export default function NicknameSetupScreen({ vm }) {
           <span className={styles.welcomeIcon} aria-hidden="true">
             <PartyPopper strokeWidth={2.4} />
           </span>
-          <Badge tone="gold" upper>Boas-vindas ao CodeQuiz</Badge>
+          <Badge tone="gold" upper>Boas-vindas ao Brain Versus Brain</Badge>
           <h1 className={styles.title}>Escolha seu apelido</h1>
           <p className={styles.subtitle}>
             É assim que os outros jogadores vão te ver no ranking, nas partidas e nas recompensas.

@@ -151,9 +151,9 @@ max_indexes = 5
 enabled = true
 # The base URL of your website. Used as an allow-list for redirects and for constructing URLs used
 # in emails.
-site_url = "https://learnquiz.vercel.app"
+site_url = "https://bvb-game.vercel.app"
 # A list of *exact* URLs that auth providers are permitted to redirect to post authentication.
-additional_redirect_urls = ["https://learnquiz.vercel.app", "http://localhost:3000"]
+additional_redirect_urls = ["https://bvb-game.vercel.app", "https://learnquiz.vercel.app", "http://localhost:3000"]
 # How long tokens are valid for, in seconds. Defaults to 3600 (1 hour), maximum 604,800 (1 week).
 jwt_expiry = 3600
 # JWT issuer URL. If not set, defaults to the local API URL (http://127.0.0.1:<port>/auth/v1).
@@ -208,7 +208,7 @@ web3 = 30
 
 [auth.email]
 # Allow/disallow new user signups via email to your project.
-# CodeQuiz: login apenas via Google.
+# Brain Versus Brain: login apenas via Google.
 enable_signup = false
 # If enabled, a user will be required to confirm any email change on both the old, and new email
 # addresses. If disabled, only the new email is required to confirm.
@@ -325,7 +325,7 @@ skip_nonce_check = false
 # If enabled, it will allow the user to successfully authenticate when the provider does not return an email address.
 email_optional = false
 
-# CodeQuiz: login Google via ID token (Google Identity Services + signInWithIdToken).
+# Brain Versus Brain: login Google via ID token (Google Identity Services + signInWithIdToken).
 # Nao precisa de client secret nem de redirect URI no Google Cloud.
 [auth.external.google]
 enabled = true

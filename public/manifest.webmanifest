@@ -1,7 +1,7 @@
 {
-  "name": "CodeQuiz",
-  "short_name": "CodeQuiz",
-  "description": "Quiz de programação com trilhas, ranking e batalhas PvP em tempo real.",
+  "name": "Brain Versus Brain",
+  "short_name": "BVB Game",
+  "description": "Quiz com trilhas de conhecimento, ranking e batalhas PvP em tempo real.",
   "lang": "pt-BR",
   "start_url": "./?source=pwa",
   "scope": "./",

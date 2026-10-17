@@ -1,6 +1,8 @@
 # Deploy: Vercel + Supabase
 
-Frontend na Vercel (`learnquiz.vercel.app`), banco e login no Supabase
+Brain Versus Brain (BVB Game). Frontend na Vercel (projeto `bvb-game` em
+`caiolins12's projects`, `bvb-game.vercel.app`; o antigo `learnquiz.vercel.app` fica em
+outra conta e não recebe mais deploys), banco e login no Supabase
 (projeto `learnquiz`, ref `znfikxpmraklqrwqxepg`, região São Paulo).
 
 ## Como o banco funciona
