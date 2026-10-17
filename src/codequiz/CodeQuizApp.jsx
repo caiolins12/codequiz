@@ -1,10 +1,13 @@
 'use client';
 
+import './lib/storageReset';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   firebaseAuth,
   googleProvider,
+  isNativePromptUnavailableError,
   onAuthStateChanged,
+  renderGoogleSignInButton,
   signInWithPopup,
   signOut
 } from './lib/googleAuthClient';
@@ -26,7 +29,6 @@ import {
   cleanupStalePendingBotUserMatches,
   checkNicknameAvailability,
   cleanupStaleQueueEntries,
-  claimSeasonStartReward,
   clearQueueMatch,
   createPvpEliminationMatch,
   createPvpEliminationRoom,
@@ -173,6 +175,34 @@ import { getProgressTotalXp, getQuizKey, getXPForLevel, normalizeDifficulty } fr
 function isImageAvatarValue(value) {
   const safe = String(value || '').trim().toLowerCase();
   return safe.startsWith('http://') || safe.startsWith('https://') || safe.startsWith('data:image/');
+}
+
+const AVATAR_IMAGE_RETRY_DELAY_MS = 1800;
+
+// Foto de perfil remota (Google). O googleusercontent as vezes recusa a primeira
+// carga (ex.: logo apos o login); tenta mais uma vez e, se falhar de novo, mostra
+// o fallback em vez do icone de imagem quebrada.
+function AvatarImage({ src, fallback = null, className, alt = '' }) {
+  const [failure, setFailure] = useState({ src: '', count: 0 });
+  const failures = failure.src === src ? failure.count : 0;
+
+  useEffect(() => {
+    if (failures !== 1) return undefined;
+    const timer = setTimeout(() => setFailure({ src, count: 2 }), AVATAR_IMAGE_RETRY_DELAY_MS);
+    return () => clearTimeout(timer);
+  }, [failures, src]);
+
+  if (!src || failures === 1 || failures >= 3) return fallback;
+  return (
+    <img
+      key={failures === 2 ? 'retry' : 'first'}
+      className={className}
+      src={src}
+      alt={alt}
+      referrerPolicy="no-referrer"
+      onError={() => setFailure({ src, count: failures + 1 })}
+    />
+  );
 }
 
 function getBackgroundVisualMeta(shopData) {
@@ -3185,15 +3215,6 @@ const LEAGUE_TRANSITION_VISIBLE_MS = 4200;
 const LEAGUE_ORDER = Object.freeze(['bronze', 'silver', 'gold', 'platinum', 'diamond']);
 const PASS_CLAIM_FX_VISIBLE_MS = 2400;
 const PASS_CLAIM_STAGE_FLASH_MS = 1700;
-const SEASON_START_REWARD_LOCAL_PREFIX = 'codequiz_season_start_reward_v1';
-const CODEQUIZ_SEASON = Object.freeze({
-  id: 'codequiz_season_1',
-  shortLabel: 'Temporada 1',
-  title: '1a temporada do CodeQuiz',
-  startAtIso: '2026-02-26T00:00:00.000Z',
-  durationMonths: 3,
-  rewardCoins: 300
-});
 const THEME_INTRO_PVE_DURATION_MS = 3200;
 const THEME_INTRO_PVP_DURATION_MS = 2800;
 const THEME_INTRO_PVE_SELECTED_HOLD_MS = 1200;
@@ -3214,79 +3235,6 @@ const SHOP_CATEGORY_OPEN_DEFAULT = SHOP_RARITY_ORDER.reduce((acc, rarity) => {
   acc[rarity] = true;
   return acc;
 }, {});
-
-function addMonthsUtc(baseMs, months = 0) {
-  const date = new Date(Math.max(0, Number(baseMs || 0)));
-  const safeMonths = Math.max(0, Math.trunc(Number(months || 0)));
-  date.setUTCMonth(date.getUTCMonth() + safeMonths);
-  return date.getTime();
-}
-
-const CODEQUIZ_SEASON_START_MS = (() => {
-  const parsed = Date.parse(CODEQUIZ_SEASON.startAtIso);
-  return Number.isFinite(parsed) ? parsed : Date.now();
-})();
-const CODEQUIZ_SEASON_END_MS = addMonthsUtc(CODEQUIZ_SEASON_START_MS, CODEQUIZ_SEASON.durationMonths);
-
-function formatDatePtBr(value) {
-  const ms = Number(value);
-  if (!Number.isFinite(ms) || ms <= 0) return '--/--/----';
-  try {
-    return new Intl.DateTimeFormat('pt-BR', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric'
-    }).format(new Date(ms));
-  } catch {
-    const date = new Date(ms);
-    const day = String(date.getUTCDate()).padStart(2, '0');
-    const month = String(date.getUTCMonth() + 1).padStart(2, '0');
-    const year = String(date.getUTCFullYear());
-    return `${day}/${month}/${year}`;
-  }
-}
-
-function formatDatePtBrCompact(value) {
-  const ms = Number(value);
-  if (!Number.isFinite(ms) || ms <= 0) return '--/--';
-  try {
-    return new Intl.DateTimeFormat('pt-BR', {
-      day: '2-digit',
-      month: '2-digit'
-    }).format(new Date(ms));
-  } catch {
-    const date = new Date(ms);
-    const day = String(date.getUTCDate()).padStart(2, '0');
-    const month = String(date.getUTCMonth() + 1).padStart(2, '0');
-    return `${day}/${month}`;
-  }
-}
-
-function getSeasonRewardStorageKey(userId = '', seasonId = '') {
-  const safeUserId = String(userId || 'guest').trim() || 'guest';
-  const safeSeasonId = String(seasonId || '').trim() || 'unknown_season';
-  return `${SEASON_START_REWARD_LOCAL_PREFIX}_${safeUserId}_${safeSeasonId}`;
-}
-
-function readSeasonRewardClaimLocal(userId = '', seasonId = '') {
-  if (typeof window === 'undefined') return null;
-  try {
-    const key = getSeasonRewardStorageKey(userId, seasonId);
-    const raw = window.localStorage.getItem(key);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    if (!parsed || typeof parsed !== 'object') return null;
-    const claimedAt = String(parsed.claimed_at || '').trim();
-    if (!claimedAt) return null;
-    return {
-      season_id: String(parsed.season_id || seasonId || '').trim(),
-      claimed_at: claimedAt,
-      reward_coins: Math.max(0, Math.trunc(Number(parsed.reward_coins || 0)))
-    };
-  } catch {
-    return null;
-  }
-}
 
 function getHomeTourStorageKey(userId = '') {
   const safeUserId = String(userId || '').trim() || 'guest';
@@ -3312,23 +3260,6 @@ function writeHomeTourSeenLocal(userId = '', seen = true) {
     window.localStorage.setItem(getHomeTourStorageKey(userId), '1');
   } catch {
     // ignore storage failures
-  }
-}
-
-function writeSeasonRewardClaimLocal(userId = '', seasonId = '', claim = null) {
-  if (typeof window === 'undefined') return;
-  try {
-    const key = getSeasonRewardStorageKey(userId, seasonId);
-    const safeClaim = claim && typeof claim === 'object' ? claim : {};
-    const claimedAt = String(safeClaim.claimed_at || new Date().toISOString()).trim() || new Date().toISOString();
-    const payload = {
-      season_id: String(safeClaim.season_id || seasonId || '').trim() || seasonId,
-      claimed_at: claimedAt,
-      reward_coins: Math.max(0, Math.trunc(Number(safeClaim.reward_coins || 0)))
-    };
-    window.localStorage.setItem(key, JSON.stringify(payload));
-  } catch {
-    // ignore local storage write failures
   }
 }
 
@@ -4403,10 +4334,6 @@ export default function CodeQuizApp() {
   const [passRecentClaimStageId, setPassRecentClaimStageId] = useState('');
   const [passFocusedStageId, setPassFocusedStageId] = useState('');
   const [passDetailModal, setPassDetailModal] = useState(null);
-  const [seasonRewardModalVisible, setSeasonRewardModalVisible] = useState(false);
-  const [seasonRewardClaiming, setSeasonRewardClaiming] = useState(false);
-  const [seasonLocalClaim, setSeasonLocalClaim] = useState(null);
-  const [seasonNoticeIndex, setSeasonNoticeIndex] = useState(0);
 
   const [rankingsMode, setRankingsMode] = useState('pve');
   const [rankingsRows, setRankingsRows] = useState([]);
@@ -4688,6 +4615,7 @@ export default function CodeQuizApp() {
   const latestBuildShaRef = useRef('');
   const mobileSwCleanupDoneRef = useRef(false);
   const googleSignInRef = useRef(false);
+  const googleButtonContainerRef = useRef(null);
   const pvpQueueResumeRef = useRef({
     available: false,
     joinedAtMs: 0,
@@ -5830,70 +5758,6 @@ export default function CodeQuizApp() {
   }, [pvpEmojiCooldownUntilMs]);
 
   useEffect(() => {
-    const uid = String(authUser?.uid || '').trim();
-    if (!uid) {
-      setSeasonLocalClaim(null);
-      setSeasonRewardModalVisible(false);
-      setSeasonRewardClaiming(false);
-      return;
-    }
-    const localClaim = readSeasonRewardClaimLocal(uid, CODEQUIZ_SEASON.id);
-    setSeasonLocalClaim(localClaim);
-  }, [authUser?.uid]);
-
-  useEffect(() => {
-    const uid = String(authUser?.uid || '').trim();
-    if (!uid) return;
-    const claimsMap = profile?.season_claims && typeof profile.season_claims === 'object'
-      ? profile.season_claims
-      : {};
-    const remoteClaim = claimsMap[CODEQUIZ_SEASON.id] && typeof claimsMap[CODEQUIZ_SEASON.id] === 'object'
-      ? claimsMap[CODEQUIZ_SEASON.id]
-      : null;
-    const remoteClaimed = Boolean(String(remoteClaim?.claimed_at || '').trim());
-    const localClaimed = Boolean(String(seasonLocalClaim?.claimed_at || '').trim());
-    if (!remoteClaimed || localClaimed) return;
-    if (!remoteClaim) return;
-    setSeasonLocalClaim(remoteClaim);
-    writeSeasonRewardClaimLocal(uid, CODEQUIZ_SEASON.id, remoteClaim);
-  }, [authUser?.uid, profile?.season_claims, seasonLocalClaim]);
-
-  useEffect(() => {
-    const uid = String(authUser?.uid || '').trim();
-    const claimsMap = profile?.season_claims && typeof profile.season_claims === 'object'
-      ? profile.season_claims
-      : {};
-    const remoteClaim = claimsMap[CODEQUIZ_SEASON.id] && typeof claimsMap[CODEQUIZ_SEASON.id] === 'object'
-      ? claimsMap[CODEQUIZ_SEASON.id]
-      : null;
-    const remoteClaimed = Boolean(String(remoteClaim?.claimed_at || '').trim());
-    const localClaimed = Boolean(String(seasonLocalClaim?.claimed_at || '').trim());
-    const nowMs = Date.now();
-    const seasonActive = nowMs >= CODEQUIZ_SEASON_START_MS && nowMs < CODEQUIZ_SEASON_END_MS;
-    const shouldShow = Boolean(
-      uid
-      && screen !== 'login'
-      && seasonActive
-      && !remoteClaimed
-      && !localClaimed
-    );
-    if (!shouldShow) {
-      setSeasonRewardModalVisible(false);
-      return;
-    }
-    setSeasonRewardModalVisible(true);
-  }, [authUser?.uid, profile?.season_claims, seasonLocalClaim, screen]);
-
-  useEffect(() => {
-    const noticeCount = 3;
-    if (screen !== 'home' || noticeCount <= 1) return;
-    const timer = setInterval(() => {
-      setSeasonNoticeIndex((prev) => ((prev + 1) % noticeCount));
-    }, 4400);
-    return () => clearInterval(timer);
-  }, [screen]);
-
-  useEffect(() => {
     return () => {
       clearPvpRoundResultFeedbackTimer(true);
     };
@@ -6448,6 +6312,32 @@ export default function CodeQuizApp() {
     const immediateUser = firebaseAuth.currentUser;
     if (immediateUser) setAuthUser(immediateUser);
   }, [authUser]);
+
+  useEffect(() => {
+    // O container so existe depois do preload (as telas nao renderizam durante o boot).
+    if (screen !== 'login' || booting || authLoading || !progressReady || !shopReady) return undefined;
+    const container = googleButtonContainerRef.current;
+    if (!container) return undefined;
+    return renderGoogleSignInButton(container, {
+      onStart: () => {
+        googleSignInRef.current = true;
+        setGoogleSignInBusy(true);
+        setAuthTransition({
+          visible: true,
+          title: 'Entrando na sua conta',
+          subtitle: 'Estamos preparando o seu perfil...'
+        });
+      },
+      onError: (error) => {
+        console.error('sign in error:', error);
+        googleSignInRef.current = false;
+        setGoogleSignInBusy(false);
+        setAuthTransition({ visible: false, title: '', subtitle: '' });
+        showToast('Não foi possível entrar com Google.');
+        playSfx('error');
+      }
+    });
+  }, [screen, booting, authLoading, progressReady, shopReady]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -8938,93 +8828,6 @@ export default function CodeQuizApp() {
         playSfx('success');
       }
     });
-  }
-
-  async function collectSeasonStartReward(event) {
-    const uid = String(authUser?.uid || '').trim();
-    if (!uid || seasonRewardClaiming) return;
-
-    setSeasonRewardClaiming(true);
-    try {
-      const response = await claimSeasonStartReward(uid, {
-        seasonId: CODEQUIZ_SEASON.id,
-        rewardCoins: CODEQUIZ_SEASON.rewardCoins,
-        seasonStartAtMs: CODEQUIZ_SEASON_START_MS,
-        seasonEndAtMs: CODEQUIZ_SEASON_END_MS
-      });
-      const claim = response?.claim && typeof response.claim === 'object'
-        ? response.claim
-        : {
-          season_id: CODEQUIZ_SEASON.id,
-          claimed_at: new Date().toISOString(),
-          reward_coins: CODEQUIZ_SEASON.rewardCoins
-        };
-      setSeasonLocalClaim(claim);
-      writeSeasonRewardClaimLocal(uid, CODEQUIZ_SEASON.id, claim);
-      setProfile((prev) => {
-        if (!prev || typeof prev !== 'object') return prev;
-        const currentClaims = prev.season_claims && typeof prev.season_claims === 'object'
-          ? prev.season_claims
-          : {};
-        return {
-          ...prev,
-          season_claims: {
-            ...currentClaims,
-            [CODEQUIZ_SEASON.id]: claim
-          }
-        };
-      });
-
-      if (response?.claimed !== true) {
-        setSeasonRewardClaiming(false);
-        setSeasonRewardModalVisible(false);
-        showToast('Recompensa da temporada já coletada nesta conta.');
-        playSfx('notify');
-        return;
-      }
-
-      const grantedCoins = Math.max(0, Math.trunc(Number(response?.granted_coins || CODEQUIZ_SEASON.rewardCoins)));
-      const targetCoins = Math.max(
-        Math.max(0, Math.trunc(Number(progressRef.current?.coins || 0))) + grantedCoins,
-        Math.max(0, Math.trunc(Number(response?.total_coins || 0)))
-      );
-      const nextProgress = normalizeProgress({
-        ...progressRef.current,
-        coins: targetCoins,
-        updatedAt: Date.now()
-      });
-      setProgress(nextProgress);
-      try {
-        saveProgress(uid, nextProgress);
-      } catch {
-        // ignore local storage write failures
-      }
-
-      runRewardParticleSequence({
-        xp: 0,
-        coins: grantedCoins,
-        origin: getRewardEffectOrigin(event),
-        onDone: () => {
-          setSeasonRewardModalVisible(false);
-          setSeasonRewardClaiming(false);
-          playSfx('pass_claim');
-          showToast(`Temporada iniciada: +${grantedCoins} moedas coletadas.`);
-        }
-      });
-    } catch (error) {
-      console.error('season start reward claim failed:', error);
-      setSeasonRewardClaiming(false);
-      showToast('Falha ao coletar recompensa da temporada.');
-      setGoogleSignInBusy(false);
-      setAuthTransition({ visible: false, title: '', subtitle: '', mode: 'auth' });
-      playSfx('error');
-    } finally {
-      googleProvider.setCustomParameters({
-        prompt: 'select_account',
-        flowMode: 'signin',
-        preferNativePrompt: true
-      });
-    }
   }
 
   async function acceptPvpMatchInvite() {
@@ -13124,6 +12927,10 @@ export default function CodeQuizApp() {
       googleSignInRef.current = false;
       setGoogleSignInBusy(false);
       setAuthTransition({ visible: false, title: '', subtitle: '' });
+      if (isNativePromptUnavailableError(error)) {
+        showToast('Toque em "Continuar com Google" para escolher a conta.');
+        return;
+      }
       if (userClosedPopup) {
         showToast('Selecao de conta cancelada.');
       } else if (code.includes('popup-blocked')) {
@@ -18884,212 +18691,6 @@ export default function CodeQuizApp() {
   const pvpSelectedDifficulty = getPvpQueueDifficultyFromConfig(pvpConfig, progress);
   const homeAuthUser = activeAuthUser;
   const showHomeProfileHero = Boolean(homeAuthUser || profile?.id || profile?.nickname || profile?.avatar);
-  const seasonStartLabel = formatDatePtBr(CODEQUIZ_SEASON_START_MS);
-  const seasonEndLabel = formatDatePtBr(CODEQUIZ_SEASON_END_MS);
-  const seasonStartCompactLabel = formatDatePtBrCompact(CODEQUIZ_SEASON_START_MS);
-  const seasonEndCompactLabel = formatDatePtBrCompact(CODEQUIZ_SEASON_END_MS);
-  const seasonNowMs = Date.now();
-  const seasonIsActive = seasonNowMs >= CODEQUIZ_SEASON_START_MS && seasonNowMs < CODEQUIZ_SEASON_END_MS;
-  const seasonClaimsMap = profile?.season_claims && typeof profile.season_claims === 'object'
-    ? profile.season_claims
-    : {};
-  const seasonRemoteClaim = seasonClaimsMap[CODEQUIZ_SEASON.id] && typeof seasonClaimsMap[CODEQUIZ_SEASON.id] === 'object'
-    ? seasonClaimsMap[CODEQUIZ_SEASON.id]
-    : null;
-  const seasonRewardClaimed = Boolean(String(seasonRemoteClaim?.claimed_at || seasonLocalClaim?.claimed_at || '').trim());
-  const seasonTotalDurationMs = Math.max(1, CODEQUIZ_SEASON_END_MS - CODEQUIZ_SEASON_START_MS);
-  const seasonElapsedMs = Math.min(
-    seasonTotalDurationMs,
-    Math.max(0, seasonNowMs - CODEQUIZ_SEASON_START_MS)
-  );
-  const seasonProgressPct = seasonNowMs < CODEQUIZ_SEASON_START_MS
-    ? 0
-    : (seasonIsActive
-      ? Math.round((seasonElapsedMs / seasonTotalDurationMs) * 100)
-      : 100);
-  const seasonDaysRemaining = seasonIsActive
-    ? Math.max(1, Math.ceil((CODEQUIZ_SEASON_END_MS - seasonNowMs) / (1000 * 60 * 60 * 24)))
-    : 0;
-  const seasonStatusCompactLabel = seasonIsActive
-    ? `${seasonDaysRemaining} dias`
-    : 'Encerrada';
-  const seasonStatusLabel = seasonIsActive
-    ? `${seasonDaysRemaining} dias restantes`
-    : 'Temporada encerrada';
-  const seasonHeroTitle = seasonIsActive
-    ? `${CODEQUIZ_SEASON.shortLabel} em ritmo de disputa`
-    : `${CODEQUIZ_SEASON.shortLabel} encerrada`;
-  const seasonHeroLead = seasonIsActive
-    ? 'Passe e ranking em jogo.'
-    : 'Ciclo sazonal concluído.';
-  const seasonHeroBody = seasonIsActive
-    ? `${seasonRewardClaimed ? 'Bônus inicial coletado.' : 'Bônus inicial disponível.'} Vai até ${seasonEndLabel}.`
-    : `Confira o fechamento e prepare-se para a próxima temporada.`;
-  const seasonProgressLabel = seasonIsActive
-    ? `${seasonProgressPct}% da temporada`
-    : `Encerrada em ${seasonEndLabel}`;
-  const seasonOverviewNote = seasonIsActive
-    ? `Disputa aberta até ${seasonEndLabel}.`
-    : `Fechamento oficial em ${seasonEndLabel}.`;
-  const seasonStateChipLabel = seasonIsActive
-    ? 'Ranking ativo'
-    : 'Ciclo encerrado';
-  const seasonNoticeCards = useMemo(() => ([
-    {
-      id: 'season_launch',
-      icon: '🚀',
-      kicker: 'Abertura oficial',
-      badge: 'Destaque',
-      tone: 'is-highlight',
-      title: `${CODEQUIZ_SEASON.shortLabel} em andamento`,
-      emphasis: 'Janela competitiva aberta.',
-      text: `${seasonStartLabel} a ${seasonEndLabel}, com ranking e passe ativos.`
-    },
-    {
-      id: 'season_reward',
-      icon: '🪙',
-      kicker: 'Bônus de abertura',
-      badge: seasonRewardClaimed ? 'Coletado' : `+${CODEQUIZ_SEASON.rewardCoins} moedas`,
-      tone: 'is-reward',
-      title: seasonRewardClaimed ? 'Bônus já garantido' : 'Bônus de início',
-      emphasis: seasonRewardClaimed ? 'Recompensa inicial já recebida.' : 'Recompensa inicial pronta para coleta.',
-      text: seasonRewardClaimed
-        ? 'Use as moedas no passe, na loja e na progressão da conta.'
-        : `Entre com Google e colete ${CODEQUIZ_SEASON.rewardCoins} moedas.`
-    },
-    {
-      id: 'season_timer',
-      icon: seasonIsActive ? '📅' : '⏳',
-      kicker: 'Ritmo da temporada',
-      badge: seasonStatusLabel,
-      tone: 'is-timer',
-      title: seasonIsActive ? 'Temporada em andamento' : 'Temporada finalizada',
-      emphasis: seasonIsActive
-        ? 'Ainda dá tempo de subir.'
-        : 'O ciclo competitivo desta temporada terminou.',
-      text: seasonIsActive
-        ? 'Avance no passe e dispute o ranking até o encerramento.'
-        : `A temporada teve duração de ${CODEQUIZ_SEASON.durationMonths} meses e foi encerrada em ${seasonEndLabel}.`
-    }
-  ]), [seasonEndLabel, seasonIsActive, seasonRewardClaimed, seasonStartLabel, seasonStatusLabel]);
-  const seasonOverviewMeta = useMemo(() => ([
-    {
-      id: 'status',
-      label: seasonIsActive ? 'Status' : 'Fechamento',
-      value: seasonIsActive ? `${seasonDaysRemaining} dias` : 'Encerrada'
-    },
-    {
-      id: 'reward',
-      label: 'Bônus',
-      value: seasonRewardClaimed ? 'Coletado' : 'Pendente'
-    }
-  ]), [seasonDaysRemaining, seasonIsActive, seasonRewardClaimed]);
-  const seasonQuickStats = useMemo(() => ([
-    {
-      id: 'bonus',
-      icon: '🪙',
-      label: 'Bônus',
-      value: seasonRewardClaimed ? 'Coletado' : `+${CODEQUIZ_SEASON.rewardCoins} moedas`
-    },
-    {
-      id: 'timer',
-      icon: seasonIsActive ? '📅' : '🏁',
-      label: seasonIsActive ? 'Até' : 'Fim',
-      value: seasonEndLabel
-    },
-    {
-      id: 'focus',
-      icon: '🎯',
-      label: 'Foco',
-      value: seasonIsActive ? 'Passe + ranking' : 'Resumo final'
-    }
-  ]), [seasonEndLabel, seasonIsActive, seasonRewardClaimed]);
-  const seasonHeroLeadCompact = seasonIsActive
-    ? 'Passe e ranking em jogo.'
-    : 'Ciclo sazonal concluído.';
-  const seasonHeroBodyCompact = seasonIsActive
-    ? `${seasonRewardClaimed ? 'Bônus inicial coletado.' : 'Bônus inicial disponível.'} Até ${seasonEndCompactLabel}.`
-    : `Fechamento em ${seasonEndCompactLabel}.`;
-  const seasonProgressLabelCompact = seasonIsActive
-    ? `${seasonProgressPct}% do ciclo`
-    : `Encerrada em ${seasonEndCompactLabel}`;
-  const seasonOverviewNoteCompact = seasonIsActive
-    ? `Aberta até ${seasonEndCompactLabel}.`
-    : `Fechada em ${seasonEndCompactLabel}.`;
-  const seasonNoticeCardsCompact = useMemo(() => ([
-    {
-      id: 'season_launch',
-      icon: '🚀',
-      kicker: 'Competitivo',
-      badge: 'Ao vivo',
-      tone: 'is-highlight',
-      title: 'Janela competitiva aberta',
-      emphasis: 'Passe e ranking ativos.',
-      text: `Válida de ${seasonStartCompactLabel} a ${seasonEndCompactLabel}.`
-    },
-    {
-      id: 'season_reward',
-      icon: '🪙',
-      kicker: 'Bônus',
-      badge: seasonRewardClaimed ? 'Coletado' : `+${CODEQUIZ_SEASON.rewardCoins} moedas`,
-      tone: 'is-reward',
-      title: seasonRewardClaimed ? 'Bônus garantido' : 'Bônus de abertura',
-      emphasis: seasonRewardClaimed ? 'Recompensa inicial recebida.' : 'Recompensa inicial pronta.',
-      text: seasonRewardClaimed
-        ? 'Use as moedas no passe, na loja e na conta.'
-        : `Entre com Google e colete ${CODEQUIZ_SEASON.rewardCoins} moedas.`
-    },
-    {
-      id: 'season_timer',
-      icon: seasonIsActive ? '📅' : '⏳',
-      kicker: 'Tempo',
-      badge: seasonStatusCompactLabel,
-      tone: 'is-timer',
-      title: seasonIsActive ? 'Temporada em andamento' : 'Temporada encerrada',
-      emphasis: seasonIsActive
-        ? 'Ainda dá tempo de subir.'
-        : 'O ciclo competitivo foi concluído.',
-      text: seasonIsActive
-        ? `Avance no passe até ${seasonEndCompactLabel}.`
-        : `Temporada encerrada em ${seasonEndCompactLabel}.`
-    }
-  ]), [seasonEndCompactLabel, seasonIsActive, seasonRewardClaimed, seasonStartCompactLabel, seasonStatusCompactLabel]);
-  const seasonOverviewMetaCompact = useMemo(() => ([
-    {
-      id: 'status',
-      label: seasonIsActive ? 'Status' : 'Fechamento',
-      value: seasonStatusCompactLabel
-    },
-    {
-      id: 'reward',
-      label: 'Bônus',
-      value: seasonRewardClaimed ? 'Coletado' : 'Pendente'
-    }
-  ]), [seasonIsActive, seasonRewardClaimed, seasonStatusCompactLabel]);
-  const seasonQuickStatsCompact = useMemo(() => ([
-    {
-      id: 'bonus',
-      icon: '🪙',
-      label: 'Bônus',
-      value: seasonRewardClaimed ? 'Coletado' : `+${CODEQUIZ_SEASON.rewardCoins} moedas`
-    },
-    {
-      id: 'timer',
-      icon: seasonIsActive ? '📅' : '🏁',
-      label: seasonIsActive ? 'Até' : 'Fim',
-      value: seasonEndCompactLabel
-    },
-    {
-      id: 'focus',
-      icon: '🎯',
-      label: 'Foco',
-      value: seasonIsActive ? 'Passe + ranking' : 'Resumo final'
-    }
-  ]), [seasonEndCompactLabel, seasonIsActive, seasonRewardClaimed]);
-  const safeSeasonNoticeIndex = seasonNoticeCardsCompact.length
-    ? Math.min(seasonNoticeCardsCompact.length - 1, Math.max(0, seasonNoticeIndex))
-    : 0;
-  const activeSeasonNotice = seasonNoticeCardsCompact[safeSeasonNoticeIndex] || null;
 
   const safeShopTab = normalizeShopTab(shopTab);
   const safeShopOwnershipFilter = normalizeShopOwnershipFilter(shopOwnershipFilter);
@@ -19188,13 +18789,7 @@ export default function CodeQuizApp() {
       anchor: 'home-tools',
       kicker: 'Atalhos principais',
       title: 'Esses botões organizam as funções mais importantes',
-      description: 'Abra Rankings, Loja, Passe de Temporada e Configurações com um toque.'
-    },
-    {
-      anchor: 'home-season',
-      kicker: 'Central sazonal',
-      title: 'Aqui ficam os avisos e recompensas da temporada',
-      description: 'Acompanhe calendário, bônus ativos e notícias oficiais da temporada atual.'
+      description: 'Abra Rankings, Loja, Passe de Evolução e Configurações com um toque.'
     }
   ]), []);
   const currentHomeTourStep = homeTourSteps[homeTourStepIndex] || null;
@@ -19353,7 +18948,7 @@ export default function CodeQuizApp() {
                 <div className="hero-avatar-wrap">
                   <span className={`hero-avatar ${avatarFrameClass}`} style={avatarFrameStyle}>
                     {isImageAvatarValue(displayAvatar) ? (
-                      <img className="hero-avatar-image" src={displayAvatar} alt="Avatar do jogador" referrerPolicy="no-referrer" />
+                      <AvatarImage className="hero-avatar-image" src={displayAvatar} alt="Avatar do jogador" fallback="🙂" />
                     ) : displayAvatar}
                   </span>
                   <div className="hero-avatar-glow" />
@@ -19459,7 +19054,7 @@ export default function CodeQuizApp() {
               </button>
               <button className="btn btn-secondary btn-modern home-tool-btn home-tool-btn-pass" onClick={() => setScreen('achievements')}>
                 <span className="btn-icon">🎟️</span>
-                <span className="btn-text">Passe de Temporada</span>
+                <span className="btn-text">Passe de Evolução</span>
               </button>
               <button
                 className="btn btn-secondary btn-modern home-tool-btn home-tool-btn-settings"
@@ -19470,107 +19065,6 @@ export default function CodeQuizApp() {
               </button>
             </div>
           </div>
-
-          <section className="season-news-panel" data-tour-anchor="home-season" role="region" aria-label="Avisos da temporada">
-            <div className="season-news-aurora" aria-hidden="true" />
-            <div className="season-news-header">
-              <span className="season-news-eyebrow">Radar da temporada</span>
-              <span className="season-news-season-chip">{CODEQUIZ_SEASON.shortLabel}</span>
-              <span className={`season-news-state-chip ${seasonIsActive ? 'is-live' : 'is-closed'}`}>
-                {seasonStateChipLabel}
-              </span>
-            </div>
-
-            <div className="season-news-main">
-              <article className="season-news-overview-card">
-                <div className="season-news-overview-head">
-                  <div className="season-news-meter" style={{ '--season-progress': `${seasonProgressPct}%` }} aria-hidden="true">
-                    <span>{seasonProgressPct}%</span>
-                  </div>
-                  <div className="season-news-overview-copy">
-                    <span className="season-news-progress-kicker">
-                      {seasonIsActive ? 'Janela competitiva' : 'Ciclo sazonal'}
-                    </span>
-                    <h3 className="season-news-overview-title">{seasonProgressLabelCompact}</h3>
-                    <p className="season-news-overview-note">{seasonOverviewNoteCompact}</p>
-                  </div>
-                </div>
-
-                <div className="season-news-overview-meta">
-                  {seasonOverviewMetaCompact.map((item) => (
-                    <div key={item.id} className="season-news-overview-pill">
-                      <span className="season-news-overview-pill-label">{item.label}</span>
-                      <strong className="season-news-overview-pill-value">{item.value}</strong>
-                    </div>
-                  ))}
-                </div>
-
-                <div className="season-news-progress-bar" aria-hidden="true">
-                  <span style={{ width: `${seasonProgressPct}%` }} />
-                </div>
-                <div className="season-news-progress-foot">
-                  <span>{seasonStartCompactLabel}</span>
-                  <span>{seasonEndCompactLabel}</span>
-                </div>
-              </article>
-
-              {activeSeasonNotice ? (
-                <article className={`season-news-spotlight-card ${activeSeasonNotice.tone || ''}`.trim()} aria-live="polite">
-                  <div className="season-news-spotlight-head">
-                    <span className="season-news-card-icon" aria-hidden="true">{activeSeasonNotice.icon}</span>
-                    <div className="season-news-spotlight-copy">
-                      <div className="season-news-card-top">
-                        <span className="season-news-kicker">{activeSeasonNotice.kicker}</span>
-                        <span className="season-news-badge">{activeSeasonNotice.badge}</span>
-                      </div>
-                      <h3>{activeSeasonNotice.title}</h3>
-                    </div>
-                  </div>
-                  <p className="season-news-card-copy">
-                    {activeSeasonNotice.emphasis ? <strong>{activeSeasonNotice.emphasis}</strong> : null}
-                    <span>{activeSeasonNotice.text}</span>
-                  </p>
-                  <div className="season-news-indicator-bar" aria-label="Controle de avisos da temporada">
-                    <div className="season-news-indicator-copy">
-                      <span className="season-news-indicator-label">Avisos em destaque</span>
-                      <strong className="season-news-indicator-value">
-                        {safeSeasonNoticeIndex + 1} de {seasonNoticeCardsCompact.length}
-                      </strong>
-                    </div>
-                    <div className="season-news-dots" aria-label="Selecionar aviso da temporada">
-                      {seasonNoticeCardsCompact.map((notice, idx) => (
-                        <button
-                          key={`home_notice_dot_${notice.id}`}
-                          type="button"
-                          aria-pressed={idx === safeSeasonNoticeIndex}
-                          aria-label={`Mostrar aviso ${idx + 1}`}
-                          className={`season-news-dot ${idx === safeSeasonNoticeIndex ? 'active' : ''}`}
-                          onClick={() => {
-                            if (idx === safeSeasonNoticeIndex) return;
-                            setSeasonNoticeIndex(idx);
-                            playSfx('click');
-                          }}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                </article>
-              ) : null}
-            </div>
-
-            <div className="season-news-summary-grid">
-              {seasonQuickStatsCompact.map((item) => (
-                <article key={item.id} className="season-news-summary-card">
-                  <div className="season-news-summary-head">
-                    <span className="season-news-summary-icon" aria-hidden="true">{item.icon}</span>
-                    <span className="season-news-summary-label">{item.label}</span>
-                  </div>
-                  <strong className="season-news-summary-value">{item.value}</strong>
-                </article>
-              ))}
-            </div>
-
-          </section>
         </div>
 
         <div className={`screen ${screen === 'play-mode' ? 'active' : ''}`}>
@@ -20878,21 +20372,11 @@ export default function CodeQuizApp() {
 
               <div className="login-auth-panel">
                 <div className="login-auth-label">Entrar com Google</div>
-                <button
-                  className="btn btn-google btn-lg login-google-btn"
-                  onClick={() => handleSignIn('signin')}
-                  disabled={googleSignInBusy}
-                >
-                  <span className="google-mark" aria-hidden="true">
-                    <svg viewBox="0 0 24 24" focusable="false" aria-hidden="true">
-                      <path fill="#EA4335" d="M12.24 10.285v3.84h5.445c-.24 1.285-.975 2.375-2.055 3.105l3.33 2.58c1.935-1.785 3.06-4.41 3.06-7.53 0-.735-.066-1.44-.19-2.115z" />
-                      <path fill="#34A853" d="M12 22c2.7 0 4.965-.894 6.62-2.42l-3.33-2.58c-.924.62-2.106.99-3.29.99-2.53 0-4.674-1.71-5.44-4.01l-3.44 2.65C4.76 19.87 8.13 22 12 22z" />
-                      <path fill="#4A90E2" d="M6.56 13.98c-.19-.57-.3-1.18-.3-1.8s.11-1.23.3-1.8l-3.44-2.65A10 10 0 0 0 2 12.18c0 1.62.39 3.15 1.12 4.45z" />
-                      <path fill="#FBBC05" d="M12 6.37c1.47 0 2.79.51 3.82 1.51l2.87-2.87C16.96 3.37 14.7 2.37 12 2.37c-3.87 0-7.24 2.13-8.88 5.26l3.44 2.65c.77-2.3 2.91-4.01 5.44-4.01z" />
-                    </svg>
-                  </span>
-                  <span>{googleSignInBusy ? 'Conectando com Google...' : 'Continuar com Google'}</span>
-                </button>
+                <div
+                  ref={googleButtonContainerRef}
+                  className={`login-google-gsi ${googleSignInBusy ? 'is-busy' : ''}`}
+                  aria-busy={googleSignInBusy}
+                />
                 <p className="login-auth-note">
                   Autenticação segura via Google com sincronização automática de progresso no banco remoto.
                 </p>
@@ -20913,13 +20397,13 @@ export default function CodeQuizApp() {
                 <div className="nickname-setup-kicker">Boas-vindas ao Code Quiz</div>
                 <h2 className="nickname-setup-title">Escolha seu apelido antes de entrar</h2>
                 <p className="nickname-setup-subtitle">
-                  Esse nome ser? exibido para outros jogadores em rankings, partidas e recompensas.
+                  Esse nome será exibido para outros jogadores em rankings, partidas e recompensas.
                 </p>
 
                 <div className="nickname-setup-account">
                   <div className="settings-account-avatar" aria-hidden="true">
                     {isImageAvatarValue(googleAccountAvatar) ? (
-                      <img src={googleAccountAvatar} alt="" />
+                      <AvatarImage src={googleAccountAvatar} fallback={<span>{googleAccountInitial}</span>} />
                     ) : (
                       <span>{googleAccountInitial}</span>
                     )}
@@ -21013,7 +20497,7 @@ export default function CodeQuizApp() {
                     <div className="settings-account-card">
                       <div className="settings-account-avatar" aria-hidden="true">
                         {isImageAvatarValue(googleAccountAvatar) ? (
-                          <img src={googleAccountAvatar} alt="" />
+                          <AvatarImage src={googleAccountAvatar} fallback={<span>{googleAccountInitial}</span>} />
                         ) : (
                           <span>{googleAccountInitial}</span>
                         )}
@@ -23014,7 +22498,7 @@ export default function CodeQuizApp() {
               <div className="shop-modal-profile-content">
                 <span className={`hero-avatar shop-modal-avatar ${shopModalPreviewFrameClass}`} style={shopModalPreviewFrameStyle}>
                   {isImageAvatarValue(shopModalPreviewAvatar) ? (
-                    <img className="hero-avatar-image" src={shopModalPreviewAvatar} alt="Avatar da pre-visualizacao" referrerPolicy="no-referrer" />
+                    <AvatarImage className="hero-avatar-image" src={shopModalPreviewAvatar} alt="Avatar da pre-visualizacao" fallback="🙂" />
                   ) : shopModalPreviewAvatar}
                 </span>
                 <div className="shop-modal-profile-info">
@@ -23316,54 +22800,6 @@ export default function CodeQuizApp() {
         </div>
       ) : null}
 
-      {seasonRewardModalVisible ? (
-        <div className="reset-modal season-launch-modal" role="dialog" aria-live="polite" aria-label="Início da temporada">
-          <div className="reset-modal-card season-launch-card">
-            <div className="season-launch-bg-grid" aria-hidden="true" />
-            <div className="season-launch-glow" aria-hidden="true" />
-
-            <div className="season-launch-head">
-              <span className="season-launch-kicker">{CODEQUIZ_SEASON.shortLabel}</span>
-              <h3 className="season-launch-title">{CODEQUIZ_SEASON.title} iniciada</h3>
-              <p className="season-launch-subtitle">
-                Novas disputas de ranking já estão valendo. Colete agora a recompensa de abertura da temporada.
-              </p>
-            </div>
-
-            <div className="season-launch-meta">
-              <span className="season-launch-meta-chip">
-                <span className="season-launch-meta-label">Início</span>
-                <strong className="season-launch-meta-value">{seasonStartLabel}</strong>
-              </span>
-              <span className="season-launch-meta-chip">
-                <span className="season-launch-meta-label">Término</span>
-                <strong className="season-launch-meta-value">{seasonEndLabel}</strong>
-              </span>
-              <span className="season-launch-meta-chip">
-                <span className="season-launch-meta-label">Duração</span>
-                <strong className="season-launch-meta-value">{CODEQUIZ_SEASON.durationMonths} meses</strong>
-              </span>
-            </div>
-
-            <div className="season-launch-reward">
-              <span className="season-launch-reward-icon" aria-hidden="true">🪙</span>
-              <div className="season-launch-reward-copy">
-                <span>Recompensa de início da temporada</span>
-                <strong>+{CODEQUIZ_SEASON.rewardCoins} moedas</strong>
-              </div>
-            </div>
-
-            <button
-              className="reward-collect-btn season-launch-collect-btn"
-              disabled={seasonRewardClaiming}
-              onClick={(event) => collectSeasonStartReward(event)}
-            >
-              {seasonRewardClaiming ? 'Coletando...' : 'Coletar recompensa'}
-            </button>
-          </div>
-        </div>
-      ) : null}
-
       {screen === 'home' && homeTourOpen && currentHomeTourStep ? (
         <div className="home-tour-overlay" role="dialog" aria-modal="true" aria-label="Tour guiado da tela inicial">
           {homeTourHighlight ? (
@@ -23454,7 +22890,7 @@ export default function CodeQuizApp() {
             <div className="settings-signout-account">
               <div className="settings-account-avatar" aria-hidden="true">
                 {isImageAvatarValue(googleAccountAvatar) ? (
-                  <img src={googleAccountAvatar} alt="" />
+                  <AvatarImage src={googleAccountAvatar} fallback={<span>{googleAccountInitial}</span>} />
                 ) : (
                   <span>{googleAccountInitial}</span>
                 )}

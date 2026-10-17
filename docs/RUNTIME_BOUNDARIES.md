@@ -10,7 +10,8 @@ Este documento evita regressões por lógica duplicada em arquivos diferentes.
 
 ## Backend (runtime ativo)
 
-- Banco remoto: `workers/durable-db/`
+- Banco remoto: Supabase (Postgres). Schema e regras em `supabase/migrations/`.
+- Login: Supabase Auth com Google (`src/codequiz/lib/googleAuthClient.js`).
 - Cliente de acesso ao banco: `src/codequiz/lib/dbClient.js`
 
 ## Estrutura única
@@ -20,11 +21,11 @@ Este documento evita regressões por lógica duplicada em arquivos diferentes.
 
 ## Bot automation
 
-- A automação atual fica no cliente/repositório, com a persistência remota atendida pelo Worker.
+- A automação atual fica no cliente/repositório, com a persistência remota atendida pelas funções RPC do Supabase.
 - `runBotArenaAutomationTick` continua sendo a rotina central do app para esse fluxo.
 
 ## Classes/força dos bots
 
 - Fonte frontend/repository: `src/codequiz/lib/repository.js` (`SYSTEM_BOT_ROSTER`).
-- Não existe mais cópia paralela em Firebase Functions.
+- Não existe cópia paralela no backend.
 - A fonte de verdade deve permanecer concentrada no frontend/repository.

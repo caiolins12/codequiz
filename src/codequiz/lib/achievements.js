@@ -131,7 +131,7 @@ export const EVOLUTION_PASS_STAGES = [
     id: 'pass_lvl_04',
     level: 4,
     name: 'Primeiros Duelos',
-    desc: 'Entre de vez no ritmo da temporada.',
+    desc: 'Entre de vez no ritmo das partidas.',
     icon: '⚔️',
     hint: 'Cada trilha leva ao mesmo nível seguinte.',
     reward: { xp: 40, coins: 14 },
@@ -418,7 +418,7 @@ export const EVOLUTION_PASS_STAGES = [
     name: 'Mestre do Passe',
     desc: 'Feche o passe inteiro pela rota que mais combina com você.',
     icon: '🏆',
-    hint: 'Conclua a trilha PVE ou a trilha PVP para encerrar a temporada do passe.',
+    hint: 'Conclua a trilha PVE ou a trilha PVP para completar o passe.',
     reward: { xp: 236, coins: 58 },
     paths: buildDualPassPaths(
       [

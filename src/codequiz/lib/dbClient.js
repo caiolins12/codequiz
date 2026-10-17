@@ -1,3 +1,5 @@
+import { getSupabase, isSupabaseConfigured } from './supabaseClient';
+
 const DB_OPERATION_TIMEOUT_MS = Math.max(
   1000,
   Number(process.env.NEXT_PUBLIC_DB_OPERATION_TIMEOUT_MS || 12000)
@@ -43,16 +45,30 @@ const DB_CONNECTED_PROBE_TIMEOUT_MS = Math.max(
   Number(process.env.NEXT_PUBLIC_DB_CONNECTED_PROBE_TIMEOUT_MS || 2800)
 );
 
-function normalizeBaseUrl(value) {
-  return String(value || '').trim().replace(/\/+$/, '');
-}
+const DB_HIDDEN_POLL_INTERVAL_MS = Math.max(
+  DB_POLL_INTERVAL_MS,
+  Number(process.env.NEXT_PUBLIC_DB_HIDDEN_POLL_INTERVAL_MS || 5000)
+);
 
-const DB_WORKER_BASE_URL = normalizeBaseUrl(process.env.NEXT_PUBLIC_DB_WORKER_URL);
-const DB_WORKER_TOKEN = String(process.env.NEXT_PUBLIC_DB_WORKER_TOKEN || '').trim();
+const SUPABASE_CONFIGURED = isSupabaseConfigured();
 const ENABLE_MEMORY_FALLBACK = (
   String(process.env.NEXT_PUBLIC_DB_ALLOW_MEMORY_FALLBACK || '').trim() === '1'
-  || (!DB_WORKER_BASE_URL && process.env.NODE_ENV !== 'production')
+  || (!SUPABASE_CONFIGURED && process.env.NODE_ENV !== 'production')
 );
+
+// Operacoes do banco -> funcoes RPC do Supabase (supabase/migrations/*_codequiz_tree_db.sql).
+const DB_RPC_BY_OPERATION = Object.freeze({
+  '/db/get': (payload) => ['db_get', { p_path: normalizePath(payload.path) }],
+  '/db/set': (payload) => ['db_set', { p_path: normalizePath(payload.path), p_value: payload.value ?? null }],
+  '/db/update': (payload) => ['db_update', { p_path: normalizePath(payload.path), p_patch: payload.patch }],
+  '/db/tx': (payload) => ['db_tx', {
+    p_path: normalizePath(payload.path),
+    p_expected_rev: Math.max(0, Number(payload.expected_rev || 0)),
+    p_value: payload.value ?? null
+  }],
+  '/db/revs': (payload) => ['db_revs', { p_paths: (payload.paths || []).map((path) => normalizePath(path)) }],
+  '/db/ping': () => ['db_ping', {}]
+});
 
 let workerReachable = true;
 let warnedMissingWorkerUrl = false;
@@ -62,6 +78,9 @@ const getPathCache = new Map();
 let getCacheVersion = 1;
 let workerProbePromise = null;
 let workerProbeStartedAtMs = 0;
+let pollLoopTimerId = null;
+let pollLoopInFlight = false;
+let lastHiddenPollAtMs = 0;
 
 const inMemoryState = {
   data: {},
@@ -373,34 +392,46 @@ async function requestInMemory(pathname, payload = {}) {
     };
   }
 
+  if (pathname === '/db/revs') {
+    const revs = {};
+    (Array.isArray(body.paths) ? body.paths : []).forEach((rawPath) => {
+      const safePath = normalizePath(rawPath);
+      revs[safePath] = getEffectiveRevision(safePath);
+    });
+    return revs;
+  }
+
+  if (pathname === '/db/ping') {
+    return { ok: true, now_ms: Date.now() };
+  }
+
   throw new Error(`Operacao de banco invalida: ${pathname}`);
 }
 
 async function requestWorker(pathname, payload = {}, options = {}) {
-  if (ENABLE_MEMORY_FALLBACK && !DB_WORKER_BASE_URL) {
+  if (ENABLE_MEMORY_FALLBACK && !SUPABASE_CONFIGURED) {
     if (!warnedMissingWorkerUrl) {
       warnedMissingWorkerUrl = true;
       if (typeof console !== 'undefined' && typeof console.warn === 'function') {
-        console.warn('[dbClient] NEXT_PUBLIC_DB_WORKER_URL ausente. Usando banco em memoria local.');
+        console.warn('[dbClient] NEXT_PUBLIC_SUPABASE_URL ausente. Usando banco em memoria local.');
       }
     }
     setWorkerReachable(true);
     return requestInMemory(pathname, payload);
   }
 
-  if (!DB_WORKER_BASE_URL) {
+  const supabase = getSupabase();
+  if (!supabase) {
     throw new Error(
-      'Banco remoto não configurado. Defina NEXT_PUBLIC_DB_WORKER_URL para usar Cloudflare Workers.'
+      'Banco remoto não configurado. Defina NEXT_PUBLIC_SUPABASE_URL e NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY.'
     );
   }
 
-  const endpoint = `${DB_WORKER_BASE_URL}${pathname}`;
-  const headers = {
-    'Content-Type': 'application/json'
-  };
-  if (DB_WORKER_TOKEN) {
-    headers.Authorization = `Bearer ${DB_WORKER_TOKEN}`;
+  const buildRpc = DB_RPC_BY_OPERATION[pathname];
+  if (!buildRpc) {
+    throw new Error(`Operacao de banco invalida: ${pathname}`);
   }
+  const [rpcName, rpcArgs] = buildRpc(payload && typeof payload === 'object' ? payload : {});
   const safeTimeoutMs = Math.max(900, Number(options?.timeoutMs || DB_OPERATION_TIMEOUT_MS));
   const maxRetries = Math.max(0, Number(options?.maxRetries ?? DB_REQUEST_MAX_RETRIES));
   const markReachability = options?.markReachability !== false;
@@ -413,26 +444,22 @@ async function requestWorker(pathname, payload = {}, options = {}) {
       : null;
 
     try {
-      const response = await fetch(endpoint, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(payload),
-        cache: 'no-store',
-        signal: controller ? controller.signal : undefined
-      });
-      if (!response.ok) {
-        const errorText = await response.text().catch(() => '');
+      let rpcQuery = supabase.rpc(rpcName, rpcArgs);
+      if (controller) rpcQuery = rpcQuery.abortSignal(controller.signal);
+      const { data, error, status, statusText } = await rpcQuery;
+      if (error) {
+        const statusCode = Number(status || 0);
         const requestError = new Error(
-          `DB request falhou (${response.status} ${response.statusText}): ${errorText || 'sem detalhes'}`
+          `DB request falhou (${statusCode} ${statusText || ''}): ${error.message || 'sem detalhes'}`
         );
-        requestError.db_status = Number(response.status || 0);
-        requestError.retryable = isRetryableHttpStatus(response.status);
+        requestError.db_status = statusCode;
+        requestError.db_code = String(error.code || '');
+        requestError.retryable = statusCode === 0 || isRetryableHttpStatus(statusCode);
         throw requestError;
       }
 
-      const parsed = await response.json();
       if (markReachability) setWorkerReachable(true);
-      return parsed;
+      return data;
     } catch (error) {
       const canRetry = attempt < maxRetries && isRetryableWorkerError(error);
       if (!canRetry) {
@@ -452,11 +479,11 @@ async function requestWorker(pathname, payload = {}, options = {}) {
 }
 
 function probeWorkerReachability(force = false) {
-  if (ENABLE_MEMORY_FALLBACK && !DB_WORKER_BASE_URL) {
+  if (ENABLE_MEMORY_FALLBACK && !SUPABASE_CONFIGURED) {
     setWorkerReachable(true);
     return Promise.resolve(true);
   }
-  if (!DB_WORKER_BASE_URL) {
+  if (!SUPABASE_CONFIGURED) {
     setWorkerReachable(false);
     return Promise.resolve(false);
   }
@@ -470,8 +497,8 @@ function probeWorkerReachability(force = false) {
 
   workerProbeStartedAtMs = nowMs;
   workerProbePromise = requestWorker(
-    '/db/get',
-    { path: '' },
+    '/db/ping',
+    {},
     {
       maxRetries: 0,
       timeoutMs: Math.min(DB_CONNECTED_PROBE_TIMEOUT_MS, DB_OPERATION_TIMEOUT_MS),
@@ -524,7 +551,7 @@ async function fetchPathWithRevision(path = '', options = {}) {
 }
 
 function normalizeRefInput(target) {
-  if (!target || target.__kind !== 'cloudflare_db_ref') {
+  if (!target || target.__kind !== 'codequiz_db_ref') {
     throw new Error('Referencia de banco invalida.');
   }
   return target;
@@ -538,14 +565,81 @@ function triggerSubscriptionRefresh(changedPath = '') {
   });
 }
 
-async function pollSubscriptionGroup(group, force = false) {
+function markSubscriptionGroupError(group, error) {
+  const nextErrorCount = Math.min(6, Math.max(0, Number(group.errorCount || 0)) + 1);
+  group.errorCount = nextErrorCount;
+  const backoffMs = Math.min(
+    DB_SUBSCRIPTION_ERROR_BACKOFF_MAX_MS,
+    DB_POLL_INTERVAL_MS * (2 ** Math.max(0, nextErrorCount - 1))
+  );
+  const jitterMs = backoffMs > 600 ? Math.floor(Math.random() * 280) : 0;
+  group.nextPollAtMs = Date.now() + backoffMs + jitterMs;
+  group.listeners.forEach((entry) => {
+    if (typeof entry.onError === 'function') entry.onError(error);
+  });
+}
+
+// Um unico ciclo de polling para todas as assinaturas: busca so as revisoes
+// (db_revs, uma requisicao) e baixa o valor apenas dos caminhos que mudaram.
+async function pollAllSubscriptionGroups() {
+  if (pollLoopInFlight || !subscriptions.size) return;
+  const nowMs = Date.now();
+  const pageHidden = typeof document !== 'undefined' && document.visibilityState === 'hidden';
+  if (pageHidden) {
+    if ((nowMs - lastHiddenPollAtMs) < DB_HIDDEN_POLL_INTERVAL_MS) return;
+    lastHiddenPollAtMs = nowMs;
+  }
+
+  const dueGroups = Array.from(subscriptions.values()).filter((group) => (
+    !group.destroyed
+    && !group.inFlight
+    && nowMs >= Math.max(0, Number(group.nextPollAtMs || 0))
+  ));
+  if (!dueGroups.length) return;
+
+  pollLoopInFlight = true;
+  try {
+    const revs = await requestWorker('/db/revs', { paths: dueGroups.map((group) => group.path) });
+    const safeRevs = revs && typeof revs === 'object' ? revs : {};
+    dueGroups.forEach((group) => {
+      if (group.destroyed) return;
+      const hasRev = Object.prototype.hasOwnProperty.call(safeRevs, group.path);
+      const remoteRev = hasRev ? Math.max(0, Number(safeRevs[group.path] || 0)) : null;
+      if (!group.hasValue || remoteRev === null || remoteRev !== group.lastRev) {
+        void pollSubscriptionGroup(group, false, { fresh: true });
+        return;
+      }
+      group.errorCount = 0;
+      group.nextPollAtMs = 0;
+    });
+  } catch (error) {
+    dueGroups.forEach((group) => markSubscriptionGroupError(group, error));
+  } finally {
+    pollLoopInFlight = false;
+  }
+}
+
+function ensurePollLoop() {
+  if (pollLoopTimerId || typeof setInterval === 'undefined') return;
+  pollLoopTimerId = setInterval(() => {
+    void pollAllSubscriptionGroups();
+  }, DB_POLL_INTERVAL_MS);
+}
+
+function stopPollLoopIfIdle() {
+  if (subscriptions.size || !pollLoopTimerId) return;
+  clearInterval(pollLoopTimerId);
+  pollLoopTimerId = null;
+}
+
+async function pollSubscriptionGroup(group, force = false, options = {}) {
   if (!group || group.destroyed || group.inFlight) return;
   const nowMs = Date.now();
-  if (!force && nowMs < Math.max(0, Number(group.nextPollAtMs || 0))) return;
+  if (!force && options?.fresh !== true && nowMs < Math.max(0, Number(group.nextPollAtMs || 0))) return;
   group.inFlight = true;
   try {
     const snapshot = await fetchPathWithRevision(group.path, {
-      forceFresh: force || Number(group.errorCount || 0) > 0
+      forceFresh: force || options?.fresh === true || Number(group.errorCount || 0) > 0
     });
     const currentValue = snapshot?.value ?? null;
     const currentRev = Math.max(0, Number(snapshot?.rev || 0));
@@ -564,32 +658,28 @@ async function pollSubscriptionGroup(group, force = false) {
     group.errorCount = 0;
     group.nextPollAtMs = 0;
   } catch (error) {
-    const nextErrorCount = Math.min(6, Math.max(0, Number(group.errorCount || 0)) + 1);
-    group.errorCount = nextErrorCount;
-    const backoffMs = Math.min(
-      DB_SUBSCRIPTION_ERROR_BACKOFF_MAX_MS,
-      DB_POLL_INTERVAL_MS * (2 ** Math.max(0, nextErrorCount - 1))
-    );
-    const jitterMs = backoffMs > 600 ? Math.floor(Math.random() * 280) : 0;
-    group.nextPollAtMs = Date.now() + backoffMs + jitterMs;
-    group.listeners.forEach((entry) => {
-      if (typeof entry.onError === 'function') entry.onError(error);
-    });
+    markSubscriptionGroupError(group, error);
   } finally {
     group.inFlight = false;
   }
 }
 
 function subscribeConnectedPath(onNext, onError) {
-  const emit = () => {
+  // Emite so quando o estado muda: cada emissao vira setState no app, e
+  // re-renderizar a tela inteira a cada ciclo deixa a interface travando.
+  let lastEmitted = null;
+  const emit = (force = false) => {
     try {
-      onNext(makeSnapshot(resolveConnectionState()));
+      const connected = resolveConnectionState();
+      if (!force && connected === lastEmitted) return;
+      lastEmitted = connected;
+      onNext(makeSnapshot(connected));
     } catch (error) {
       if (typeof onError === 'function') onError(error);
     }
   };
 
-  emit();
+  emit(true);
 
   if (typeof window === 'undefined') {
     return () => { };
@@ -629,7 +719,6 @@ function createSubscriptionGroup(path = '') {
   const group = {
     path: safePath,
     listeners: new Set(),
-    timerId: null,
     lastRev: -1,
     hasValue: false,
     destroyed: false,
@@ -638,9 +727,7 @@ function createSubscriptionGroup(path = '') {
     nextPollAtMs: 0
   };
 
-  group.timerId = setInterval(() => {
-    void pollSubscriptionGroup(group, false);
-  }, DB_POLL_INTERVAL_MS);
+  ensurePollLoop();
   void pollSubscriptionGroup(group, true);
   return group;
 }
@@ -648,17 +735,17 @@ function createSubscriptionGroup(path = '') {
 function teardownSubscriptionGroup(group) {
   if (!group) return;
   group.destroyed = true;
-  if (group.timerId) clearInterval(group.timerId);
+  stopPollLoopIfIdle();
 }
 
 export const firebaseDb = Object.freeze({
-  __kind: 'cloudflare_db',
-  baseUrl: DB_WORKER_BASE_URL || 'memory://local'
+  __kind: 'codequiz_db',
+  baseUrl: SUPABASE_CONFIGURED ? 'supabase' : 'memory://local'
 });
 
 export function ref(database, path = '') {
   return {
-    __kind: 'cloudflare_db_ref',
+    __kind: 'codequiz_db_ref',
     db: database || firebaseDb,
     path: normalizePath(path)
   };

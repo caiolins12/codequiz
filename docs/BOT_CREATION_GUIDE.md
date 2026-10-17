@@ -147,7 +147,7 @@ O bot deve obedecer as mesmas regras de dados, ranking e partida que um usuario 
 - Bot participa de `user_stats` e aparece em ranking global.
 - `pvp_points`, `pvp_wins`, `pvp_battles`, `total_xp` e demais campos sao atualizados apos cada partida.
 
-## Estrutura de dados no banco remoto (Cloudflare Durable DB)
+## Estrutura de dados no banco remoto (Supabase)
 
 ### users/<botId>
 - `id`, `auth_id`
@@ -186,7 +186,9 @@ O bot deve obedecer as mesmas regras de dados, ranking e partida que um usuario 
 
 ## Controle de escrita
 - O frontend grava no banco remoto por meio de `src/codequiz/lib/dbClient.js`.
-- A proteção de escrita fica concentrada no Worker e nas variáveis de ambiente dele.
+- As regras de escrita ficam nas funções RPC do Supabase (`supabase/migrations/*_codequiz_tree_db.sql`):
+  `users/<id>` e `user_stats/<id>` aceitam o próprio usuário ou ids `bot_sys_codequiz_*`.
+- Para criar/atualizar os bots no banco: `npm run seed:bots` (usa a chave service_role de `.env.supabase.local`).
 
 ## Fluxo de criacao de novo bot (checklist completo)
 1. Definir entrada no roster (`src/codequiz/lib/repository.js`):
@@ -205,8 +207,8 @@ O bot deve obedecer as mesmas regras de dados, ranking e partida que um usuario 
    - resposta automatica, reacoes por emoji, e finalizacao de rodada.
 8. Confirmar economia/ranking:
    - ganhos/perdas de PVP, XP e moedas aplicados ao bot.
-9. Confirmar regras do Worker:
-   - o ambiente remoto continua aceitando as rotas e autenticação esperadas pelo app.
+9. Semear o banco:
+   - rodar `npm run seed:bots` para gravar perfil, stats e config do bot novo.
 10. Validar build e fluxo real:
    - login -> fila -> partida com bot -> resultado -> ranking.
 
@@ -215,7 +217,9 @@ O bot deve obedecer as mesmas regras de dados, ranking e partida que um usuario 
 - `src/codequiz/CodeQuizApp.jsx`
 - `src/codequiz/lib/pvp.js`
 - `src/codequiz/lib/constants.js`
-- `workers/durable-db/src/index.js`
+- `src/codequiz/lib/dbClient.js`
+- `supabase/migrations/20261017000000_codequiz_tree_db.sql`
+- `scripts/seed-bots.mjs`
 
 ## Observacoes operacionais
 - Bots oficiais foram desenhados para parecer jogadores reais:

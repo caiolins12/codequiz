@@ -113,7 +113,7 @@ async function main() {
   const applyArg = process.argv.includes('--apply');
   const db = createDbApiClient();
 
-  console.log('[recalc] Fonte: Cloudflare Durable DB');
+  console.log('[recalc] Fonte: Supabase');
   const userStatsRaw = await db.get('/user_stats');
   const pvpMatchesRaw = await db.get('/pvp_matches');
   const userStatsMap = userStatsRaw && typeof userStatsRaw === 'object' ? userStatsRaw : {};
@@ -231,7 +231,7 @@ async function main() {
   console.log(`[recalc] Partidas com patch de anulacao/limpeza: ${matchesToPatchCount}`);
 
   if (!applyArg) {
-    console.log('[recalc] Modo dry-run. Use --apply para gravar no banco Cloudflare.');
+    console.log('[recalc] Modo dry-run. Use --apply para gravar no banco (Supabase).');
     return;
   }
 

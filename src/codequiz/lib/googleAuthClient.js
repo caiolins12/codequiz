@@ -1,12 +1,11 @@
+import { getSupabase } from './supabaseClient';
+
 const GOOGLE_OAUTH_CLIENT_ID = String(
   process.env.NEXT_PUBLIC_GOOGLE_OAUTH_CLIENT_ID
   || '953175707283-btrfi33piiigrc5o1hthhcn9fumtsqm3.apps.googleusercontent.com'
 ).trim();
 
-const GOOGLE_OAUTH_SCOPE = 'openid email profile';
 const GOOGLE_GSI_SCRIPT_SRC = 'https://accounts.google.com/gsi/client';
-const AUTH_SESSION_STORAGE_KEY = 'codequiz_google_auth_session_v1';
-const AUTH_REDIRECT_PENDING_KEY = 'codequiz_auth_redirect_pending_v1';
 const AUTH_PROVIDER_ID = 'google.com';
 const NATIVE_PROMPT_ERROR_CODES = new Set([
   'auth/native-prompt-not-displayed',
@@ -16,7 +15,23 @@ const NATIVE_PROMPT_ERROR_CODES = new Set([
 
 let gsiScriptPromise = null;
 let authHydrated = false;
+let resolveInitialSession = null;
+const initialSessionPromise = new Promise((resolve) => {
+  resolveInitialSession = resolve;
+});
 const authListeners = new Set();
+
+// Estado do Google Identity Services. O nonce (hash no Google, valor bruto no
+// Supabase) e trocado a cada credencial usada, por isso o initialize() e
+// refeito e os botoes renderizados de novo.
+const gsiState = {
+  initialized: false,
+  rawNonce: '',
+  hashedNonce: '',
+  preparePromise: null,
+  pendingPrompt: null,
+  buttons: new Set()
+};
 
 function createAuthError(code, message) {
   const error = new Error(message || 'Google auth failed');
@@ -24,17 +39,13 @@ function createAuthError(code, message) {
   return error;
 }
 
-function canUseBrowserStorage() {
-  return typeof window !== 'undefined' && !!window.localStorage;
-}
-
-function normalizeAuthUser(raw = {}) {
-  const safe = raw && typeof raw === 'object' ? raw : {};
-  const uid = String(safe.uid || '').trim();
+function normalizeSupabaseUser(user = null) {
+  const uid = String(user?.id || '').trim();
   if (!uid) return null;
-  const displayName = String(safe.displayName || '').trim();
-  const email = String(safe.email || '').trim();
-  const photoURL = String(safe.photoURL || '').trim();
+  const meta = user?.user_metadata && typeof user.user_metadata === 'object' ? user.user_metadata : {};
+  const displayName = String(meta.full_name || meta.name || '').trim();
+  const email = String(user?.email || meta.email || '').trim();
+  const photoURL = String(meta.avatar_url || meta.picture || '').trim();
   return {
     uid,
     displayName: displayName || null,
@@ -52,82 +63,8 @@ function normalizeAuthUser(raw = {}) {
   };
 }
 
-function readPersistedUser() {
-  if (!canUseBrowserStorage()) return null;
-  try {
-    const raw = window.localStorage.getItem(AUTH_SESSION_STORAGE_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    return normalizeAuthUser(parsed?.user || null);
-  } catch {
-    return null;
-  }
-}
-
-function persistUser(user = null) {
-  if (!canUseBrowserStorage()) return;
-  try {
-    if (!user) {
-      window.localStorage.removeItem(AUTH_SESSION_STORAGE_KEY);
-      return;
-    }
-    window.localStorage.setItem(
-      AUTH_SESSION_STORAGE_KEY,
-      JSON.stringify({
-        user: normalizeAuthUser(user),
-        updated_at_ms: Date.now()
-      })
-    );
-  } catch {
-    // ignore persistence failures
-  }
-}
-
-function normalizeUserInfoResponse(profile = {}) {
-  const safe = profile && typeof profile === 'object' ? profile : {};
-  const uid = String(safe.sub || safe.id || '').trim();
-  const displayName = String(safe.name || safe.given_name || '').trim();
-  const email = String(safe.email || '').trim();
-  const photoURL = String(safe.picture || '').trim();
-  if (!uid) throw createAuthError('auth/invalid-user-info', 'Google user profile missing sub');
-  return normalizeAuthUser({
-    uid,
-    displayName,
-    email,
-    photoURL
-  });
-}
-
-function decodeGoogleCredentialPayload(credential = '') {
-  const safeCredential = String(credential || '').trim();
-  const [, payloadSegment = ''] = safeCredential.split('.');
-  if (!payloadSegment) {
-    throw createAuthError('auth/invalid-credential', 'Missing Google credential payload');
-  }
-
-  const normalizedBase64 = payloadSegment
-    .replace(/-/g, '+')
-    .replace(/_/g, '/')
-    .padEnd(Math.ceil(payloadSegment.length / 4) * 4, '=');
-
-  try {
-    const binary = window.atob(normalizedBase64);
-    const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
-    const json = new TextDecoder().decode(bytes);
-    return JSON.parse(json);
-  } catch {
-    throw createAuthError('auth/invalid-credential', 'Failed to decode Google credential');
-  }
-}
-
-function normalizeGoogleCredentialResponse(response = {}) {
-  const safe = response && typeof response === 'object' ? response : {};
-  const payload = decodeGoogleCredentialPayload(safe.credential || '');
-  return normalizeUserInfoResponse(payload);
-}
-
 function emitAuthState(user = null) {
-  firebaseAuth.currentUser = normalizeAuthUser(user);
+  firebaseAuth.currentUser = user;
   authListeners.forEach((listener) => {
     try {
       listener(firebaseAuth.currentUser);
@@ -140,42 +77,49 @@ function emitAuthState(user = null) {
 function hydrateAuthState() {
   if (authHydrated) return;
   authHydrated = true;
-  emitAuthState(readPersistedUser());
+
+  const supabase = getSupabase();
+  if (!supabase) {
+    resolveInitialSession();
+    return;
+  }
+
+  supabase.auth.onAuthStateChange((event, session) => {
+    const nextUser = normalizeSupabaseUser(session?.user || null);
+    if (event === 'INITIAL_SESSION') {
+      firebaseAuth.currentUser = nextUser;
+      resolveInitialSession();
+      return;
+    }
+    // TOKEN_REFRESHED/USER_UPDATED nao trocam de usuario: o app so precisa
+    // ser avisado quando alguem entra ou sai.
+    if (String(firebaseAuth.currentUser?.uid || '') === String(nextUser?.uid || '')) return;
+    emitAuthState(nextUser);
+  });
 }
 
-function normalizeGoogleOAuthError(rawError = null) {
-  const safe = rawError && typeof rawError === 'object' ? rawError : {};
-  const errorCode = String(safe.error || safe.code || safe.type || '').trim().toLowerCase();
-  const errorDescription = String(safe.error_description || safe.message || '').trim();
+function bytesToBase64Url(bytes) {
+  let binary = '';
+  bytes.forEach((byte) => {
+    binary += String.fromCharCode(byte);
+  });
+  return window.btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
 
-  if (
-    errorCode.includes('popup_closed')
-    || errorCode.includes('popup-closed')
-    || errorCode === 'access_denied'
-  ) {
-    return createAuthError('auth/popup-closed-by-user', errorDescription || 'Popup closed by user');
-  }
-  if (
-    errorCode.includes('popup_failed_to_open')
-    || errorCode.includes('popup-blocked')
-  ) {
-    return createAuthError('auth/popup-blocked', errorDescription || 'Popup blocked');
-  }
-  if (errorCode.includes('network')) {
-    return createAuthError('auth/network-request-failed', errorDescription || 'Network error');
-  }
-  if (errorCode.includes('invalid_client')) {
-    return createAuthError('auth/operation-not-supported', errorDescription || 'Invalid OAuth client');
-  }
-
-  return createAuthError('auth/internal-error', errorDescription || 'Google sign in failed');
+async function createNoncePair() {
+  const rawNonce = bytesToBase64Url(window.crypto.getRandomValues(new Uint8Array(32)));
+  const digest = await window.crypto.subtle.digest('SHA-256', new TextEncoder().encode(rawNonce));
+  const hashedNonce = Array.from(new Uint8Array(digest))
+    .map((byte) => byte.toString(16).padStart(2, '0'))
+    .join('');
+  return { rawNonce, hashedNonce };
 }
 
 function loadGoogleGsiScript() {
   if (typeof window === 'undefined') {
     return Promise.reject(createAuthError('auth/operation-not-supported', 'Browser environment required'));
   }
-  if (window.google?.accounts?.oauth2) return Promise.resolve();
+  if (window.google?.accounts?.id) return Promise.resolve();
   if (gsiScriptPromise) return gsiScriptPromise;
 
   gsiScriptPromise = new Promise((resolve, reject) => {
@@ -204,132 +148,130 @@ function loadGoogleGsiScript() {
   return gsiScriptPromise;
 }
 
-async function fetchGoogleUserInfo(accessToken = '') {
-  const safeToken = String(accessToken || '').trim();
-  if (!safeToken) throw createAuthError('auth/internal-error', 'Missing access token');
-
-  const response = await fetch('https://openidconnect.googleapis.com/v1/userinfo', {
-    headers: {
-      Authorization: `Bearer ${safeToken}`
-    },
-    cache: 'no-store'
-  }).catch(() => {
-    throw createAuthError('auth/network-request-failed', 'Failed to fetch Google user profile');
-  });
-
-  if (!response.ok) {
-    throw createAuthError('auth/network-request-failed', 'Google user profile request failed');
-  }
-
-  const payload = await response.json().catch(() => null);
-  return normalizeUserInfoResponse(payload || {});
-}
-
-async function requestAccessTokenWithPopup(prompt = 'select_account') {
-  if (!GOOGLE_OAUTH_CLIENT_ID) {
-    throw createAuthError('auth/operation-not-supported', 'Missing NEXT_PUBLIC_GOOGLE_OAUTH_CLIENT_ID');
-  }
-
-  await loadGoogleGsiScript();
-
-  return new Promise((resolve, reject) => {
-    const googleApi = window.google?.accounts?.oauth2;
-    if (!googleApi?.initTokenClient) {
-      reject(createAuthError('auth/operation-not-supported', 'Google OAuth API unavailable'));
-      return;
-    }
-
-    const client = googleApi.initTokenClient({
-      client_id: GOOGLE_OAUTH_CLIENT_ID,
-      scope: GOOGLE_OAUTH_SCOPE,
-      callback: (response) => {
-        if (!response || response.error) {
-          reject(normalizeGoogleOAuthError(response));
-          return;
-        }
-        resolve(response);
-      },
-      error_callback: (error) => {
-        reject(normalizeGoogleOAuthError(error));
-      }
-    });
-
-    try {
-      client.requestAccessToken({
-        prompt: String(prompt || 'select_account').trim() || 'select_account'
-      });
-    } catch (error) {
-      reject(normalizeGoogleOAuthError(error));
-    }
+function renderButtonInto(entry) {
+  const googleId = window.google?.accounts?.id;
+  if (!googleId?.renderButton || !entry?.container?.isConnected) return;
+  entry.container.innerHTML = '';
+  const measuredWidth = Math.floor(Number(entry.container.clientWidth || 0));
+  googleId.renderButton(entry.container, {
+    type: 'standard',
+    theme: 'outline',
+    size: 'large',
+    text: 'continue_with',
+    shape: 'pill',
+    logo_alignment: 'left',
+    locale: 'pt-BR',
+    width: Math.max(200, Math.min(400, measuredWidth || Number(entry.width || 320)))
   });
 }
 
-async function requestGoogleCredentialWithNativePrompt(mode = 'signin') {
-  if (!GOOGLE_OAUTH_CLIENT_ID) {
-    throw createAuthError('auth/operation-not-supported', 'Missing NEXT_PUBLIC_GOOGLE_OAUTH_CLIENT_ID');
-  }
+async function prepareGsi(forceNewNonce = false) {
+  if (gsiState.preparePromise) return gsiState.preparePromise;
+  if (gsiState.initialized && gsiState.rawNonce && !forceNewNonce) return undefined;
 
-  await loadGoogleGsiScript();
-
-  return new Promise((resolve, reject) => {
+  gsiState.preparePromise = (async () => {
+    if (!GOOGLE_OAUTH_CLIENT_ID) {
+      throw createAuthError('auth/operation-not-supported', 'Missing NEXT_PUBLIC_GOOGLE_OAUTH_CLIENT_ID');
+    }
+    await loadGoogleGsiScript();
     const googleId = window.google?.accounts?.id;
-    if (!googleId?.initialize || !googleId?.prompt) {
-      reject(createAuthError('auth/operation-not-supported', 'Google Identity prompt unavailable'));
-      return;
+    if (!googleId?.initialize) {
+      throw createAuthError('auth/operation-not-supported', 'Google Identity unavailable');
     }
 
-    let settled = false;
-    const finish = (resolver) => {
-      if (settled) return;
-      settled = true;
-      resolver();
-    };
-
-    try {
-      googleId.cancel?.();
-      googleId.disableAutoSelect?.();
-    } catch {
-      // ignore Google prompt cleanup issues
-    }
-
+    const { rawNonce, hashedNonce } = await createNoncePair();
+    gsiState.rawNonce = rawNonce;
+    gsiState.hashedNonce = hashedNonce;
     googleId.initialize({
       client_id: GOOGLE_OAUTH_CLIENT_ID,
+      nonce: hashedNonce,
       auto_select: false,
       cancel_on_tap_outside: false,
-      context: mode === 'switch' ? 'use' : 'signin',
       itp_support: true,
       use_fedcm_for_prompt: true,
+      // O botao usa o popup classico do Google: o modo FedCM do botao falha em
+      // navegadores/webviews sem suporte completo ("Error retrieving a token").
+      use_fedcm_for_button: false,
+      ux_mode: 'popup',
       callback: (response) => {
-        if (!response?.credential) {
-          finish(() => reject(createAuthError('auth/internal-error', 'Google credential missing')));
-          return;
-        }
-        finish(() => resolve(response));
+        void handleGoogleCredential(response);
       }
     });
-
-    googleId.prompt((notification) => {
-      if (settled || !notification) return;
-
-      if (notification.isNotDisplayed?.()) {
-        const reason = String(notification.getNotDisplayedReason?.() || '').trim();
-        finish(() => reject(createAuthError('auth/native-prompt-not-displayed', reason || 'Google prompt not displayed')));
-        return;
-      }
-
-      if (notification.isSkippedMoment?.()) {
-        const reason = String(notification.getSkippedReason?.() || '').trim();
-        finish(() => reject(createAuthError('auth/native-prompt-skipped', reason || 'Google prompt skipped')));
-        return;
-      }
-
-      if (notification.isDismissedMoment?.()) {
-        const reason = String(notification.getDismissedReason?.() || '').trim().toLowerCase();
-        if (reason === 'credential_returned') return;
-        finish(() => reject(createAuthError('auth/popup-closed-by-user', reason || 'Google prompt dismissed')));
-      }
-    });
+    gsiState.initialized = true;
+    gsiState.buttons.forEach((entry) => renderButtonInto(entry));
+  })().finally(() => {
+    gsiState.preparePromise = null;
   });
+
+  return gsiState.preparePromise;
+}
+
+async function exchangeGoogleCredential(credential = '', rawNonce = '') {
+  const supabase = getSupabase();
+  if (!supabase) {
+    throw createAuthError('auth/operation-not-supported', 'Supabase nao configurado');
+  }
+  const token = String(credential || '').trim();
+  if (!token) {
+    throw createAuthError('auth/invalid-credential', 'Google credential missing');
+  }
+  const { data, error } = await supabase.auth.signInWithIdToken({
+    provider: 'google',
+    token,
+    nonce: rawNonce || undefined
+  });
+  if (error) {
+    throw createAuthError('auth/internal-error', error.message || 'Supabase sign in failed');
+  }
+  const user = normalizeSupabaseUser(data?.user || data?.session?.user || null);
+  if (!user) {
+    throw createAuthError('auth/internal-error', 'Supabase session missing user');
+  }
+  // Garante que o app receba o usuario mesmo se o evento SIGNED_IN chegar depois.
+  if (String(firebaseAuth.currentUser?.uid || '') !== user.uid) {
+    emitAuthState(user);
+  }
+  return user;
+}
+
+async function handleGoogleCredential(response = {}) {
+  const credential = String(response?.credential || '').trim();
+  const rawNonce = gsiState.rawNonce;
+  const pendingPrompt = gsiState.pendingPrompt;
+  gsiState.pendingPrompt = null;
+  const buttonEntries = pendingPrompt ? [] : Array.from(gsiState.buttons);
+
+  buttonEntries.forEach((entry) => {
+    try {
+      entry.onStart?.();
+    } catch {
+      // ignore UI callback errors
+    }
+  });
+
+  try {
+    const user = await exchangeGoogleCredential(credential, rawNonce);
+    pendingPrompt?.resolve({
+      user,
+      providerId: AUTH_PROVIDER_ID,
+      operationType: 'signIn'
+    });
+  } catch (error) {
+    if (pendingPrompt) {
+      pendingPrompt.reject(error);
+    } else {
+      buttonEntries.forEach((entry) => {
+        try {
+          entry.onError?.(error);
+        } catch {
+          // ignore UI callback errors
+        }
+      });
+    }
+  } finally {
+    // Cada nonce vale para uma unica credencial.
+    void prepareGsi(true).catch(() => null);
+  }
 }
 
 class GoogleProviderCompat {
@@ -353,80 +295,121 @@ export const firebaseAuth = {
 };
 
 googleProvider.setCustomParameters({ prompt: 'select_account' });
-hydrateAuthState();
+if (typeof window !== 'undefined') {
+  hydrateAuthState();
+}
 
 export function onAuthStateChanged(_auth, callback) {
   if (typeof callback !== 'function') return () => { };
   hydrateAuthState();
-  authListeners.add(callback);
-  queueMicrotask(() => callback(firebaseAuth.currentUser));
+  let active = true;
+  const listener = (user) => {
+    if (active) callback(user);
+  };
+  initialSessionPromise.then(() => {
+    if (!active) return;
+    authListeners.add(listener);
+    callback(firebaseAuth.currentUser);
+  });
   return () => {
-    authListeners.delete(callback);
+    active = false;
+    authListeners.delete(listener);
   };
 }
 
-export async function signInWithPopup(_auth, provider = googleProvider) {
+// Abre o One Tap (FedCM) do Google. Se o navegador nao exibir o prompt
+// (cooldown, bloqueio etc.), o erro auth/native-prompt-* indica que o usuario
+// deve usar o botao oficial renderizado por renderGoogleSignInButton().
+export async function signInWithPopup() {
   hydrateAuthState();
-  const prompt = String(provider?.customParameters?.prompt || 'select_account').trim() || 'select_account';
-  const mode = String(provider?.customParameters?.flowMode || 'signin').trim() || 'signin';
-  const preferNativePrompt = provider?.customParameters?.preferNativePrompt !== false;
-  let nativeError = null;
-
-  if (preferNativePrompt) {
-    try {
-      const credentialResponse = await requestGoogleCredentialWithNativePrompt(mode);
-      const user = normalizeGoogleCredentialResponse(credentialResponse);
-      persistUser(user);
-      emitAuthState(user);
-      return {
-        user,
-        providerId: AUTH_PROVIDER_ID,
-        operationType: 'signIn',
-        credential: {
-          idToken: String(credentialResponse.credential || '')
-        }
-      };
-    } catch (error) {
-      nativeError = error;
-      const code = String(error?.code || '').trim().toLowerCase();
-      if (!NATIVE_PROMPT_ERROR_CODES.has(code)) {
-        throw error;
-      }
-    }
+  await prepareGsi();
+  const googleId = window.google?.accounts?.id;
+  if (!googleId?.prompt) {
+    throw createAuthError('auth/operation-not-supported', 'Google Identity prompt unavailable');
   }
 
-  const tokenResponse = await requestAccessTokenWithPopup(prompt).catch((error) => {
-    if (nativeError && NATIVE_PROMPT_ERROR_CODES.has(String(nativeError?.code || '').trim().toLowerCase())) {
-      throw error;
-    }
-    throw error;
-  });
-  const user = await fetchGoogleUserInfo(tokenResponse.access_token);
-  persistUser(user);
-  emitAuthState(user);
+  if (gsiState.pendingPrompt) {
+    gsiState.pendingPrompt.reject(createAuthError('auth/popup-closed-by-user', 'Prompt replaced'));
+    gsiState.pendingPrompt = null;
+  }
 
-  return {
-    user,
-    providerId: AUTH_PROVIDER_ID,
-    operationType: 'signIn',
-    credential: {
-      accessToken: String(tokenResponse.access_token || ''),
-      tokenType: String(tokenResponse.token_type || 'Bearer'),
-      expiresIn: Math.max(0, Number(tokenResponse.expires_in || 0))
+  return new Promise((resolve, reject) => {
+    const token = Symbol('prompt');
+    let settled = false;
+    const finish = (fn, value) => {
+      if (settled) return;
+      settled = true;
+      if (gsiState.pendingPrompt?.token === token) gsiState.pendingPrompt = null;
+      fn(value);
+    };
+    gsiState.pendingPrompt = {
+      token,
+      resolve: (value) => finish(resolve, value),
+      reject: (error) => finish(reject, error)
+    };
+
+    try {
+      googleId.cancel?.();
+    } catch {
+      // ignore Google prompt cleanup issues
     }
+
+    googleId.prompt((notification) => {
+      if (settled || !notification) return;
+
+      if (notification.isNotDisplayed?.()) {
+        const reason = String(notification.getNotDisplayedReason?.() || '').trim();
+        finish(reject, createAuthError('auth/native-prompt-not-displayed', reason || 'Google prompt not displayed'));
+        return;
+      }
+
+      if (notification.isSkippedMoment?.()) {
+        const reason = String(notification.getSkippedReason?.() || '').trim();
+        finish(reject, createAuthError('auth/native-prompt-skipped', reason || 'Google prompt skipped'));
+        return;
+      }
+
+      if (notification.isDismissedMoment?.()) {
+        const reason = String(notification.getDismissedReason?.() || '').trim().toLowerCase();
+        if (reason === 'credential_returned') return;
+        finish(reject, createAuthError('auth/popup-closed-by-user', reason || 'Google prompt dismissed'));
+      }
+    });
+  });
+}
+
+export function isNativePromptUnavailableError(error) {
+  return NATIVE_PROMPT_ERROR_CODES.has(String(error?.code || '').trim().toLowerCase());
+}
+
+// Renderiza o botao oficial "Continuar com Google" dentro de container.
+// onStart: credencial recebida, login em andamento. onError: falha no login.
+export function renderGoogleSignInButton(container, handlers = {}) {
+  if (typeof window === 'undefined' || !container) return () => { };
+  hydrateAuthState();
+  const entry = {
+    container,
+    width: handlers.width,
+    onStart: handlers.onStart,
+    onError: handlers.onError
+  };
+  gsiState.buttons.add(entry);
+  prepareGsi()
+    .then(() => renderButtonInto(entry))
+    .catch((error) => {
+      try {
+        entry.onError?.(error);
+      } catch {
+        // ignore UI callback errors
+      }
+    });
+  return () => {
+    gsiState.buttons.delete(entry);
   };
 }
 
 export async function signInWithRedirect(auth, provider = googleProvider) {
-  const result = await signInWithPopup(auth, provider);
-  if (canUseBrowserStorage()) {
-    try {
-      window.localStorage.removeItem(AUTH_REDIRECT_PENDING_KEY);
-    } catch {
-      // ignore storage failures
-    }
-  }
-  return result;
+  return signInWithPopup(auth, provider);
 }
 
 export async function getRedirectResult() {
@@ -441,6 +424,11 @@ export async function signOut() {
   } catch {
     // ignore Google prompt cleanup issues
   }
-  persistUser(null);
-  emitAuthState(null);
+  const supabase = getSupabase();
+  if (supabase) {
+    await supabase.auth.signOut().catch(() => null);
+  }
+  if (firebaseAuth.currentUser) {
+    emitAuthState(null);
+  }
 }

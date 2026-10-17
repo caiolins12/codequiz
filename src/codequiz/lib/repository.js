@@ -1699,33 +1699,6 @@ function normalizeQuizRewardedMap(value) {
   return next;
 }
 
-function normalizeSeasonClaimRow(value, fallbackSeasonId = '') {
-  const safe = value && typeof value === 'object' ? value : {};
-  const seasonId = String(safe.season_id || fallbackSeasonId || '').trim();
-  if (!seasonId) return null;
-  const claimedAt = String(safe.claimed_at || '').trim();
-  return {
-    season_id: seasonId,
-    claimed_at: claimedAt || null,
-    reward_coins: Math.max(0, Math.trunc(Number(safe.reward_coins || 0))),
-    season_start_at_ms: Math.max(0, Math.trunc(Number(safe.season_start_at_ms || 0))),
-    season_end_at_ms: Math.max(0, Math.trunc(Number(safe.season_end_at_ms || 0)))
-  };
-}
-
-function normalizeSeasonClaimsMap(value) {
-  if (!value || typeof value !== 'object') return {};
-  const next = {};
-  Object.entries(value).forEach(([seasonId, rawRow]) => {
-    const safeSeasonId = String(seasonId || '').trim();
-    if (!safeSeasonId || !rawRow || typeof rawRow !== 'object') return;
-    const normalized = normalizeSeasonClaimRow(rawRow, safeSeasonId);
-    if (!normalized) return;
-    next[safeSeasonId] = normalized;
-  });
-  return next;
-}
-
 function buildSystemBotStatsPayload(botDef, current, nowIso) {
   const base = current && typeof current === 'object' ? current : {};
   const def = botDef && typeof botDef === 'object' ? botDef : getSystemBotDefinition();
@@ -4511,7 +4484,6 @@ export async function getUserProfile(userId) {
   const onboardingCompleted = row.onboarding_completed === true || !onboardingRequired;
   const rawNickname = String(row.nickname || '').trim();
   const rawFullName = String(row.full_name || row.name || '').trim();
-  const seasonClaims = normalizeSeasonClaimsMap(row.season_claims);
   return {
     id: userId,
     auth_id: userId,
@@ -4523,7 +4495,6 @@ export async function getUserProfile(userId) {
     equipped_emoji: row.equipped_emoji || 'emoji_profile',
     onboarding_required: onboardingRequired,
     onboarding_completed: onboardingCompleted,
-    season_claims: seasonClaims,
     created_at: row.created_at || null,
     updated_at: row.updated_at || null
   };
@@ -4638,7 +4609,6 @@ export async function ensureUserProfile(authUser) {
     onboarding_required: true,
     onboarding_completed: false,
     reset_ack_version: 0,
-    season_claims: {},
     created_at: nowIso,
     updated_at: nowIso
   });
@@ -4729,144 +4699,12 @@ export async function updateUserProfile(userId, updates) {
     onboarding_required: shouldCompleteOnboarding ? false : requiresOnboarding,
     onboarding_completed: shouldCompleteOnboarding || current?.onboarding_completed === true || !requiresOnboarding,
     reset_ack_version: Number(current?.reset_ack_version || 0),
-    season_claims: normalizeSeasonClaimsMap(current?.season_claims),
     created_at: current?.created_at || nowIso,
     updated_at: nowIso
   };
 
   await set(ref(firebaseDb, `users/${userId}`), payload);
   return getUserProfile(userId);
-}
-
-export async function claimSeasonStartReward(userId, payload = {}) {
-  const uid = String(userId || '').trim();
-  if (!uid) {
-    return { ok: false, claimed: false, reason: 'invalid_user' };
-  }
-
-  const seasonId = String(payload?.seasonId || '').trim();
-  if (!seasonId) {
-    return { ok: false, claimed: false, reason: 'invalid_season' };
-  }
-
-  const rewardCoins = Math.max(0, Math.trunc(Number(payload?.rewardCoins || 0)));
-  const seasonStartAtMs = Math.max(0, Math.trunc(Number(payload?.seasonStartAtMs || 0)));
-  const seasonEndAtMs = Math.max(0, Math.trunc(Number(payload?.seasonEndAtMs || 0)));
-  const nowIso = new Date().toISOString();
-
-  let rewardGranted = false;
-  let claimRow = null;
-
-  const userTx = await runTransaction(ref(firebaseDb, `users/${uid}`), (current) => {
-    const prev = current && typeof current === 'object'
-      ? current
-      : {
-        id: uid,
-        auth_id: uid,
-        full_name: '',
-        nickname: 'Jogador',
-        avatar: '🙂',
-        equipped_frame: 'frame_default',
-        equipped_background: 'bg_default',
-        equipped_emoji: 'emoji_profile',
-        onboarding_required: false,
-        onboarding_completed: true,
-        reset_ack_version: 0,
-        season_claims: {},
-        created_at: nowIso
-      };
-    const seasonClaims = normalizeSeasonClaimsMap(prev.season_claims);
-    const existingClaim = normalizeSeasonClaimRow(seasonClaims[seasonId], seasonId);
-    if (existingClaim && existingClaim.claimed_at) {
-      rewardGranted = false;
-      return {
-        ...prev,
-        season_claims: seasonClaims,
-        updated_at: nowIso
-      };
-    }
-
-    rewardGranted = true;
-    const nextClaim = normalizeSeasonClaimRow({
-      season_id: seasonId,
-      claimed_at: nowIso,
-      reward_coins: rewardCoins,
-      season_start_at_ms: seasonStartAtMs,
-      season_end_at_ms: seasonEndAtMs
-    }, seasonId);
-    const nextSeasonClaims = {
-      ...seasonClaims,
-      [seasonId]: nextClaim
-    };
-    return {
-      ...prev,
-      season_claims: nextSeasonClaims,
-      updated_at: nowIso
-    };
-  });
-
-  const userNext = userTx?.snapshot?.val();
-  const normalizedClaims = normalizeSeasonClaimsMap(userNext?.season_claims);
-  claimRow = normalizeSeasonClaimRow(normalizedClaims[seasonId], seasonId);
-
-  if (!rewardGranted) {
-    const stats = await getUserStats(uid).catch(() => null);
-    return {
-      ok: true,
-      claimed: false,
-      already_claimed: true,
-      claim: claimRow,
-      granted_coins: 0,
-      total_coins: Math.max(0, Math.trunc(Number(stats?.coins || 0)))
-    };
-  }
-
-  let totalCoins = 0;
-  await runTransaction(ref(firebaseDb, `user_stats/${uid}`), (current) => {
-    const prev = current && typeof current === 'object'
-      ? current
-      : {
-        user_id: uid,
-        total_xp: 0,
-        level: 1,
-        ranking_points: 0,
-        pvp_points: 0,
-        coins: 20,
-        pvp_battles: 0,
-        pvp_wins: 0,
-        pvp_losses: 0,
-        pvp_processed_matches: {},
-        pvp_recalculated_at_ms: 0,
-        best_streak: 0,
-        total_correct: 0,
-        total_answered: 0,
-        quizzes_completed: 0,
-        topic_progress: {},
-        quiz_best_scores: {},
-        quiz_best_stars: {},
-        achievement_ids: [],
-        quiz_rewarded: {}
-      };
-    const prevCoins = Math.max(0, Math.trunc(Number(prev.coins || 20)));
-    totalCoins = prevCoins + rewardCoins;
-    return {
-      ...prev,
-      user_id: uid,
-      coins: totalCoins,
-      is_system_bot: prev.is_system_bot === true || isSystemBotUserId(uid),
-      progress_updated_at_ms: Math.max(0, Number(prev.progress_updated_at_ms || Date.now())),
-      updated_at: nowIso
-    };
-  });
-
-  return {
-    ok: true,
-    claimed: true,
-    already_claimed: false,
-    claim: claimRow,
-    granted_coins: rewardCoins,
-    total_coins: totalCoins
-  };
 }
 
 export async function upsertStatsFromProgress(userId, progress) {
