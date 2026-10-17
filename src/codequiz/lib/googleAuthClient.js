@@ -7,6 +7,10 @@ const GOOGLE_OAUTH_CLIENT_ID = String(
 
 const GOOGLE_GSI_SCRIPT_SRC = 'https://accounts.google.com/gsi/client';
 const AUTH_PROVIDER_ID = 'google.com';
+const FEDCM_BUTTON_OFF_STORAGE_KEY = 'codequiz_gsi_fedcm_button_off_v1';
+// Sem interface de FedCM (webviews, navegador embutido do app Claude) o get()
+// e rejeitado em poucos ms; o usuario fechando o seletor leva bem mais que isso.
+const FEDCM_NO_UI_REJECT_MS = 1000;
 const NATIVE_PROMPT_ERROR_CODES = new Set([
   'auth/native-prompt-not-displayed',
   'auth/native-prompt-skipped',
@@ -30,8 +34,61 @@ const gsiState = {
   hashedNonce: '',
   preparePromise: null,
   pendingPrompt: null,
-  buttons: new Set()
+  buttons: new Set(),
+  fedcmButton: true,
+  fedcmWatcherInstalled: false
 };
+
+function readFedcmButtonOff() {
+  try {
+    return window.localStorage.getItem(FEDCM_BUTTON_OFF_STORAGE_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function persistFedcmButtonOff() {
+  try {
+    window.localStorage.setItem(FEDCM_BUTTON_OFF_STORAGE_KEY, '1');
+  } catch {
+    // ignore persistence failures
+  }
+}
+
+// O GSI nao volta para o popup quando o FedCM do botao falha: o clique
+// simplesmente nao faz nada. Observa as chamadas FedCM do botao (mode
+// "active") e, se forem rejeitadas sem ter mostrado o seletor, passa os
+// botoes para o popup classico e avisa a tela para pedir um novo toque.
+function installFedcmButtonWatcher() {
+  if (gsiState.fedcmWatcherInstalled) return;
+  const credentials = window.navigator?.credentials;
+  if (typeof credentials?.get !== 'function') return;
+  gsiState.fedcmWatcherInstalled = true;
+  const originalGet = credentials.get.bind(credentials);
+  credentials.get = (options, ...rest) => {
+    const request = originalGet(options, ...rest);
+    const mode = String(options?.identity?.mode || '');
+    if (mode !== 'active' && mode !== 'button') return request;
+    const startedAt = Date.now();
+    request.catch(() => {
+      if (!gsiState.fedcmButton || Date.now() - startedAt > FEDCM_NO_UI_REJECT_MS) return;
+      gsiState.fedcmButton = false;
+      persistFedcmButtonOff();
+      void prepareGsi(true)
+        .then(() => {
+          gsiState.buttons.forEach((entry) => {
+            try {
+              entry.onFallback?.();
+            } catch {
+              // ignore UI callback errors
+            }
+          });
+        })
+        .catch(() => null);
+    });
+    return request;
+  };
+}
 
 function createAuthError(code, message) {
   const error = new Error(message || 'Google auth failed');
@@ -179,6 +236,9 @@ async function prepareGsi(forceNewNonce = false) {
       throw createAuthError('auth/operation-not-supported', 'Google Identity unavailable');
     }
 
+    if (gsiState.fedcmButton && readFedcmButtonOff()) gsiState.fedcmButton = false;
+    if (gsiState.fedcmButton) installFedcmButtonWatcher();
+
     const { rawNonce, hashedNonce } = await createNoncePair();
     gsiState.rawNonce = rawNonce;
     gsiState.hashedNonce = hashedNonce;
@@ -192,7 +252,8 @@ async function prepareGsi(forceNewNonce = false) {
       // No Chrome/Edge o botao abre o seletor de conta nativo (FedCM) por cima
       // do app, sem nova aba. O GSI so usa FedCM quando o navegador suporta o
       // modo botao; nos demais (Safari, Firefox) cai no popup classico abaixo.
-      use_fedcm_for_button: true,
+      // Onde o FedCM existe mas falha, installFedcmButtonWatcher() desliga.
+      use_fedcm_for_button: gsiState.fedcmButton,
       ux_mode: 'popup',
       callback: (response) => {
         void handleGoogleCredential(response);
@@ -385,6 +446,8 @@ export function isNativePromptUnavailableError(error) {
 
 // Renderiza o botao oficial "Continuar com Google" dentro de container.
 // onStart: credencial recebida, login em andamento. onError: falha no login.
+// onFallback: o seletor nativo falhou e o botao passou para o popup; o usuario
+// precisa tocar de novo.
 export function renderGoogleSignInButton(container, handlers = {}) {
   if (typeof window === 'undefined' || !container) return () => { };
   hydrateAuthState();
@@ -392,7 +455,8 @@ export function renderGoogleSignInButton(container, handlers = {}) {
     container,
     width: handlers.width,
     onStart: handlers.onStart,
-    onError: handlers.onError
+    onError: handlers.onError,
+    onFallback: handlers.onFallback
   };
   gsiState.buttons.add(entry);
   prepareGsi()

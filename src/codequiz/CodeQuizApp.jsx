@@ -2656,6 +2656,9 @@ export default function CodeQuizApp() {
         setAuthTransition({ visible: false, title: '', subtitle: '' });
         showToast('Não foi possível entrar com Google.');
         playSfx('error');
+      },
+      onFallback: () => {
+        showToast('Toque de novo em "Continuar com o Google" para entrar.');
       }
     });
   }, [screen, booting, authLoading, progressReady, shopReady]);
