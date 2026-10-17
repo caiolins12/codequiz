@@ -11,7 +11,7 @@ import {
   signInWithPopup,
   signOut
 } from './lib/googleAuthClient';
-import { firebaseDb, onValue, ref } from './lib/dbClient';
+import { firebaseDb, isCurrentUserAdmin, onValue, ref } from './lib/dbClient';
 import { LANGUAGES, QUESTIONS, TOPICS } from './data/questions-data';
 import { buildEvolutionPassSnapshot, EVOLUTION_PASS_STAGES } from './lib/achievements';
 import { DIFFICULTY_LABELS, PVE_QUESTIONS_PER_ROUND, QUESTIONS_PER_ROUND } from './lib/constants';
@@ -158,7 +158,6 @@ import {
 } from './lib/pvp';
 import { getQuizKey, getXPForLevel, normalizeDifficulty } from './lib/utils';
 import {
-  ADMIN_PANEL_PASSWORD,
   AUDIO_DEFAULTS,
   AUDIO_STORAGE_KEY,
   AUTH_BOOTSTRAP_GUARD_MS,
@@ -419,7 +418,6 @@ import EliminationRoomNoticeModal from './overlays/EliminationRoomNoticeModal';
 import EliminationExitPromptModal from './overlays/EliminationExitPromptModal';
 import ShopItemPreviewModal from './overlays/ShopItemPreviewModal';
 import PlayerHistoryModal from './overlays/PlayerHistoryModal';
-import AdminAuthModal from './overlays/AdminAuthModal';
 import UpdateNoticeBar from './overlays/UpdateNoticeBar';
 import CookieConsentBanner from './overlays/CookieConsentBanner';
 import HomeTourOverlay from './overlays/HomeTourOverlay';
@@ -488,9 +486,8 @@ export default function CodeQuizApp() {
   const [menuTrackIndex, setMenuTrackIndex] = useState(0);
   const [battleTrackIndex, setBattleTrackIndex] = useState(0);
   const [adminBusy, setAdminBusy] = useState(false);
-  const [adminAuthOpen, setAdminAuthOpen] = useState(false);
-  const [adminPassword, setAdminPassword] = useState('');
-  const [adminAuthError, setAdminAuthError] = useState('');
+  const [isAdminUser, setIsAdminUser] = useState(false);
+  const [adminAccessBusy, setAdminAccessBusy] = useState(false);
   const [adminAuthorized, setAdminAuthorized] = useState(false);
   const [adminMatches, setAdminMatches] = useState([]);
   const [adminMatchesLoading, setAdminMatchesLoading] = useState(false);
@@ -3447,6 +3444,22 @@ export default function CodeQuizApp() {
   }, [screen, adminAuthorized]);
 
   useEffect(() => {
+    // O papel de admin é do servidor (private.db_admins); trocar de conta fecha o painel.
+    setIsAdminUser(false);
+    setAdminAuthorized(false);
+    if (!authUser?.uid) return;
+    let cancelled = false;
+    isCurrentUserAdmin()
+      .then((isAdmin) => {
+        if (!cancelled) setIsAdminUser(isAdmin);
+      })
+      .catch(() => null);
+    return () => {
+      cancelled = true;
+    };
+  }, [authUser?.uid]);
+
+  useEffect(() => {
     const shouldLoad = adminAuthorized && (screen === 'admin-monitor' || screen === 'admin-live' || screen === 'admin-history');
     if (!shouldLoad) return;
     cleanupDrawFinishedMatches(300).catch(() => null);
@@ -5177,36 +5190,25 @@ export default function CodeQuizApp() {
     }
   }
 
-  function openAdminScreen() {
-    setAdminPassword('');
-    setAdminAuthError('');
-    setAdminAuthOpen(true);
-  }
-
-  function closeAdminAuthModal() {
-    setAdminAuthOpen(false);
-    setAdminPassword('');
-    setAdminAuthError('');
-  }
-
-  function submitAdminAuth() {
-    const safePassword = String(adminPassword || '').trim();
-    if (!safePassword) {
-      setAdminAuthError('Informe a senha do admin.');
-      return;
+  async function openAdminScreen() {
+    if (adminAccessBusy) return;
+    setAdminAccessBusy(true);
+    try {
+      const isAdmin = await isCurrentUserAdmin().catch(() => false);
+      setIsAdminUser(isAdmin);
+      if (!isAdmin) {
+        setAdminAuthorized(false);
+        showToast('Acesso restrito ao administrador.');
+        playSfx('error');
+        return;
+      }
+      setAdminAuthorized(true);
+      setScreen('admin-monitor');
+      refreshAdminMetrics().catch(() => null);
+      playSfx('success');
+    } finally {
+      setAdminAccessBusy(false);
     }
-    if (safePassword !== ADMIN_PANEL_PASSWORD) {
-      setAdminAuthError('Senha incorreta.');
-      playSfx('error');
-      return;
-    }
-    setAdminAuthOpen(false);
-    setAdminPassword('');
-    setAdminAuthError('');
-    setAdminAuthorized(true);
-    setScreen('admin-monitor');
-    refreshAdminMetrics().catch(() => null);
-    playSfx('success');
   }
 
   function readCookieConsentFromDocument() {
@@ -5704,7 +5706,7 @@ export default function CodeQuizApp() {
       window.removeEventListener('touchcancel', onTouchCancel);
       window.removeEventListener('popstate', onPopState);
     };
-  }, [screen, pvpEmojiPickerOpen, quizMenuOpen, adminAuthOpen]);
+  }, [screen, pvpEmojiPickerOpen, quizMenuOpen]);
 
   useEffect(() => {
     const handleBeforeUnload = (event) => {
@@ -8412,10 +8414,6 @@ export default function CodeQuizApp() {
       closeQuizMenu();
       return true;
     }
-    if (adminAuthOpen) {
-      closeAdminAuthModal();
-      return true;
-    }
     if (pvpEliminationExitPrompt?.matchId) {
       keepWatchingPvpElimination();
       return true;
@@ -8964,9 +8962,7 @@ export default function CodeQuizApp() {
     resetQuizFlow();
     resetPvpState();
     setAdminAuthorized(false);
-    setAdminAuthOpen(false);
-    setAdminPassword('');
-    setAdminAuthError('');
+    setIsAdminUser(false);
     setOnboardingRequired(false);
     googleSignInRef.current = false;
     setGoogleSignInBusy(false);
@@ -15149,7 +15145,7 @@ export default function CodeQuizApp() {
           }} />
         ) : null}
 
-        {screen === 'admin-monitor' ? (
+        {screen === 'admin-monitor' && adminAuthorized ? (
           <AdminMonitorScreen vm={{
             adminBotDaemonBusy,
             adminBusy,
@@ -15169,7 +15165,7 @@ export default function CodeQuizApp() {
           }} />
         ) : null}
 
-        {screen === 'admin-live' ? (
+        {screen === 'admin-live' && adminAuthorized ? (
           <AdminLiveScreen vm={{
             adminLiveMatches,
             adminMatchCodeById,
@@ -15178,7 +15174,7 @@ export default function CodeQuizApp() {
           }} />
         ) : null}
 
-        {screen === 'admin-history' ? (
+        {screen === 'admin-history' && adminAuthorized ? (
           <AdminHistoryScreen vm={{
             adminHistoryDateLabel,
             adminHistoryFilter,
@@ -15221,6 +15217,7 @@ export default function CodeQuizApp() {
 
         {screen === 'settings' ? (
           <SettingsScreen vm={{
+            adminAccessBusy,
             audioSettings,
             buildBadgeValue,
             googleAccountAvatar,
@@ -15230,6 +15227,7 @@ export default function CodeQuizApp() {
             googleSignInBusy,
             handleSwitchGoogleAccount,
             homeAuthUser,
+            isAdminUser,
             nicknameCanSave,
             nicknameHintClass,
             nicknameHintText,
@@ -15605,17 +15603,6 @@ export default function CodeQuizApp() {
           playerHistoryItems,
           playerHistoryLoading,
           setPlayerHistoryFilter
-        }} />
-      ) : null}
-
-      {adminAuthOpen ? (
-        <AdminAuthModal vm={{
-          adminAuthError,
-          adminPassword,
-          closeAdminAuthModal,
-          setAdminAuthError,
-          setAdminPassword,
-          submitAdminAuth
         }} />
       ) : null}
 

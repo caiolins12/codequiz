@@ -67,7 +67,8 @@ const DB_RPC_BY_OPERATION = Object.freeze({
     p_value: payload.value ?? null
   }],
   '/db/revs': (payload) => ['db_revs', { p_paths: (payload.paths || []).map((path) => normalizePath(path)) }],
-  '/db/ping': () => ['db_ping', {}]
+  '/db/ping': () => ['db_ping', {}],
+  '/db/is_admin': () => ['db_is_admin', {}]
 });
 
 let workerReachable = true;
@@ -403,6 +404,10 @@ async function requestInMemory(pathname, payload = {}) {
 
   if (pathname === '/db/ping') {
     return { ok: true, now_ms: Date.now() };
+  }
+
+  if (pathname === '/db/is_admin') {
+    return false;
   }
 
   throw new Error(`Operacao de banco invalida: ${pathname}`);
@@ -761,6 +766,12 @@ export async function get(targetRef) {
   }
   const payload = await fetchPathWithRevision(safeRef.path);
   return makeSnapshot(payload.value);
+}
+
+// Papel de admin vem do servidor (private.db_admins); o banco em memoria nunca e admin.
+export async function isCurrentUserAdmin() {
+  const result = await requestWorker('/db/is_admin', {}, { maxRetries: 1, markReachability: false });
+  return result === true;
 }
 
 export async function set(targetRef, value) {

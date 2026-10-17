@@ -31,6 +31,7 @@ function AudioSetting({ icon: Icon, title, desc, enabled, volume, onToggle, onVo
 
 export default function SettingsScreen({ vm }) {
   const {
+    adminAccessBusy,
     audioSettings,
     buildBadgeValue,
     googleAccountAvatar,
@@ -40,6 +41,7 @@ export default function SettingsScreen({ vm }) {
     googleSignInBusy,
     handleSwitchGoogleAccount,
     homeAuthUser,
+    isAdminUser,
     nicknameCanSave,
     nicknameHintClass,
     nicknameHintText,
@@ -176,9 +178,11 @@ export default function SettingsScreen({ vm }) {
               <span className={styles.versionLabel}>Versão em uso</span>
               <span>{buildBadgeValue}</span>
             </p>
-            <Button variant="ghost" icon={ShieldCheck} onClick={openAdminScreen}>
-              Monitoramento (admin)
-            </Button>
+            {isAdminUser ? (
+              <Button variant="ghost" icon={ShieldCheck} onClick={openAdminScreen} disabled={adminAccessBusy}>
+                Monitoramento (admin)
+              </Button>
+            ) : null}
           </Card>
         </div>
       </div>
