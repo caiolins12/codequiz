@@ -1,0 +1,81 @@
+/* Tour guiado: destaque do elemento + cartão com os passos */
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: var(--cq-z-modal);
+}
+
+.dim {
+  position: absolute;
+  inset: 0;
+  background: rgba(8, 5, 26, 0.72);
+}
+
+.spotlight {
+  position: fixed;
+  border-radius: var(--cq-radius-xl);
+  box-shadow: 0 0 0 9999px rgba(8, 5, 26, 0.72), 0 0 0 3px var(--cq-violet-light), 0 0 30px rgba(166, 144, 255, 0.55);
+  transition: top var(--cq-dur-slow) var(--cq-ease-out), left var(--cq-dur-slow) var(--cq-ease-out), width var(--cq-dur-slow) var(--cq-ease-out), height var(--cq-dur-slow) var(--cq-ease-out);
+  pointer-events: none;
+}
+
+.card {
+  position: fixed;
+  left: 50%;
+  display: grid;
+  gap: var(--cq-space-3);
+  width: min(calc(100% - 32px), 420px);
+  padding: var(--cq-space-5);
+  border-radius: var(--cq-radius-xl);
+  background: var(--cq-bg-2);
+  box-shadow: var(--cq-shadow-pop), inset 0 0 0 1px var(--cq-border-strong);
+  transform: translateX(-50%);
+  animation: cq-fade-in var(--cq-dur-slow) var(--cq-ease-out);
+}
+
+.bottom {
+  bottom: calc(var(--cq-safe-bottom) + 24px);
+}
+
+.top {
+  top: calc(var(--cq-safe-top) + 24px);
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--cq-space-3);
+}
+
+.kicker {
+  color: var(--cq-violet-light);
+  font-size: var(--cq-text-xs);
+  font-weight: 900;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.step {
+  color: var(--cq-text-3);
+  font-size: var(--cq-text-sm);
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.title {
+  font-size: var(--cq-text-xl);
+}
+
+.text {
+  color: var(--cq-text-2);
+  font-weight: 600;
+  line-height: 1.5;
+}
+
+.actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--cq-space-2);
+  margin-top: var(--cq-space-1);
+}

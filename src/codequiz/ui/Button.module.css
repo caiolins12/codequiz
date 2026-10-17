@@ -58,8 +58,7 @@
 }
 
 .label {
-  display: inline-flex;
-  align-items: center;
+  display: block;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;

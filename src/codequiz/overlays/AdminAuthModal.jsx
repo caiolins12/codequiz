@@ -1,3 +1,6 @@
+import { ShieldCheck } from 'lucide-react';
+import { Button, Modal, TextField } from '../ui';
+
 export default function AdminAuthModal({ vm }) {
   const {
     adminAuthError,
@@ -9,30 +12,42 @@ export default function AdminAuthModal({ vm }) {
   } = vm;
 
   return (
-    <div className="reset-modal admin-auth-modal" onClick={closeAdminAuthModal}>
-      <div className="reset-modal-card admin-auth-card" onClick={(event) => event.stopPropagation()}>
-        <h3>Acesso administrativo</h3>
-        <p>Digite a senha para abrir o monitoramento.</p>
-        <input
+    <Modal
+      title="Acesso administrativo"
+      subtitle="Digite a senha para abrir o monitoramento."
+      icon={ShieldCheck}
+      tone="violet"
+      size="sm"
+      onClose={closeAdminAuthModal}
+      footer={(
+        <>
+          <Button variant="secondary" onClick={closeAdminAuthModal}>Cancelar</Button>
+          <Button variant="primary" type="submit" form="cq-admin-auth">Entrar</Button>
+        </>
+      )}
+    >
+      <form
+        id="cq-admin-auth"
+        onSubmit={(event) => {
+          event.preventDefault();
+          submitAdminAuth();
+        }}
+      >
+        <TextField
+          label="Senha"
           type="password"
-          className="profile-input settings-input admin-auth-input"
-          placeholder="Senha"
+          autoComplete="current-password"
+          placeholder="Senha do admin"
           value={adminPassword}
+          status={adminAuthError ? 'error' : ''}
+          hint={adminAuthError}
+          autoFocus
           onChange={(event) => {
             setAdminPassword(event.target.value);
             if (adminAuthError) setAdminAuthError('');
           }}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter') submitAdminAuth();
-          }}
-          autoFocus
         />
-        {adminAuthError ? <div className="admin-auth-error">{adminAuthError}</div> : null}
-        <div className="match-accept-actions">
-          <button className="btn btn-primary btn-lg" onClick={submitAdminAuth}>Entrar</button>
-          <button className="btn btn-secondary btn-lg" onClick={closeAdminAuthModal}>Cancelar</button>
-        </div>
-      </div>
-    </div>
+      </form>
+    </Modal>
   );
 }

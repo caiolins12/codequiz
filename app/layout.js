@@ -1,7 +1,5 @@
 import Script from 'next/script';
 import { Fredoka, JetBrains_Mono, Nunito } from 'next/font/google';
-import './globals.css';
-import './mobile-responsive.css';
 import '../src/codequiz/styles/tokens.css';
 import '../src/codequiz/styles/base.css';
 import '../src/codequiz/styles/animations.css';
@@ -31,8 +29,8 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata = {
-  title: 'CodeQuiz - Aprenda Programacao',
-  description: 'CodeQuiz - Quiz de programacao',
+  title: 'CodeQuiz — Aprenda programação jogando',
+  description: 'Quiz de programação com trilhas, ranking e batalhas PvP em tempo real.',
   applicationName: 'CodeQuiz',
   manifest: '/manifest.webmanifest',
   icons: {

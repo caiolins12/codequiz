@@ -164,6 +164,7 @@
   display: grid;
   gap: var(--cq-space-4);
   align-content: start;
+  min-width: 0;
 }
 
 .stars {
@@ -285,6 +286,7 @@
 
 /* Revisão */
 .review {
+  min-width: 0;
   border-radius: var(--cq-radius-md);
   background: rgba(8, 5, 30, 0.35);
   box-shadow: inset 0 0 0 1px var(--cq-border);

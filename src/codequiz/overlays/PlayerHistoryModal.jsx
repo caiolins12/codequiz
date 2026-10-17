@@ -1,3 +1,58 @@
+import { History, Swords, Target } from 'lucide-react';
+import { Badge, EmptyState, Modal, Tabs, cx } from '../ui';
+import styles from './History.module.css';
+
+const CHIP_TONES = {
+  rounds: 'neutral',
+  win: 'lime',
+  loss: 'red',
+  area: 'violet',
+  xp: 'blue',
+  coins: 'gold',
+  score: 'violet',
+  'difficulty-easy': 'lime',
+  'difficulty-medium': 'orange',
+  'difficulty-hard': 'pink'
+};
+
+function HistoryEntry({ item }) {
+  const isPvp = item.type === 'pvp';
+  const chips = Array.isArray(item.metaChips) ? item.metaChips : [];
+  const winnerSide = item.titleParts?.winnerSide;
+  return (
+    <li className={styles.entry}>
+      <span className={cx(styles.typeIcon, isPvp ? styles.typePvp : '')} aria-label={isPvp ? 'PvP' : 'PvE'}>
+        {isPvp ? <Swords strokeWidth={2.4} aria-hidden="true" /> : <Target strokeWidth={2.4} aria-hidden="true" />}
+      </span>
+      <span className={styles.main}>
+        <span className={styles.title}>
+          {isPvp ? (
+            <>
+              <span className={winnerSide === 'player1' ? styles.winner : ''}>{item.titleParts?.player1 || item.title}</span>
+              <span className={styles.versus}>×</span>
+              <span className={winnerSide === 'player2' ? styles.winner : ''}>{item.titleParts?.player2 || ''}</span>
+            </>
+          ) : item.title}
+        </span>
+        <span className={styles.sub}>{item.subtitle ? `${item.subtitle} · ` : ''}{item.timestampLabel}</span>
+      </span>
+      <span className={styles.score}>
+        {isPvp && item.scoreParts ? `${item.scoreParts.player1} × ${item.scoreParts.player2}` : (item.resultLabel || item.scoreLabel)}
+        {!isPvp && item.resultLabel ? <Badge tone="neutral" size="sm">{item.scoreLabel}</Badge> : null}
+      </span>
+      {chips.length ? (
+        <span className={styles.chips}>
+          {chips.map((chip) => {
+            const label = typeof chip === 'string' ? chip : chip?.label;
+            const tone = typeof chip === 'string' ? 'neutral' : (CHIP_TONES[chip?.tone] || 'neutral');
+            return <Badge key={`${item.id}_${label}`} tone={tone} size="sm">{label}</Badge>;
+          })}
+        </span>
+      ) : null}
+    </li>
+  );
+}
+
 export default function PlayerHistoryModal({ vm }) {
   const {
     closePlayerHistoryPanel,
@@ -11,108 +66,39 @@ export default function PlayerHistoryModal({ vm }) {
     setPlayerHistoryFilter
   } = vm;
 
+  const tabs = (Array.isArray(playerHistoryFilterOptions) ? playerHistoryFilterOptions : []).map((filter) => ({
+    value: filter.id,
+    label: filter.label,
+    count: playerHistoryCountByType?.[filter.id] || 0
+  }));
+  const items = Array.isArray(playerHistoryItems) ? playerHistoryItems : [];
+
   return (
-    <div className="reset-modal player-history-modal" onClick={closePlayerHistoryPanel}>
-      <div className="reset-modal-card player-history-card" onClick={(event) => event.stopPropagation()}>
-        <div className="player-history-head">
-          <div>
-            <div className="player-history-kicker">Perfil do jogador</div>
-            <h3>Historico de partidas</h3>
-          </div>
-          <button type="button" className="player-history-close" onClick={closePlayerHistoryPanel} aria-label="Fechar historico">
-            x
-          </button>
-        </div>
-        <div className="player-history-subtitle">
-          Revise suas ultimas partidas de PVP e seus quizzes PVE mais recentes em um unico painel.
-        </div>
-        <div className="player-history-filters">
-          {playerHistoryFilterOptions.map((filter) => (
-            <button
-              key={`player_history_filter_${filter.id}`}
-              type="button"
-              className={`player-history-filter-btn ${playerHistoryFilter === filter.id ? 'active' : ''}`}
-              onClick={() => setPlayerHistoryFilter(filter.id)}
-            >
-              {filter.label}
-              <span>{playerHistoryCountByType[filter.id] || 0}</span>
-            </button>
-          ))}
-        </div>
-        {playerHistoryError ? (
-          <div className="player-history-alert">{playerHistoryError}</div>
-        ) : null}
+    <Modal
+      title="Histórico de partidas"
+      subtitle="Suas partidas PvP e quizzes PvE mais recentes."
+      icon={History}
+      tone="violet"
+      size="lg"
+      onClose={closePlayerHistoryPanel}
+    >
+      <div className={styles.body}>
+        <Tabs items={tabs} value={playerHistoryFilter} onChange={setPlayerHistoryFilter} block size="sm" ariaLabel="Filtrar histórico" />
+        {playerHistoryError ? <p className={styles.alert} role="alert">{playerHistoryError}</p> : null}
         {playerHistoryLoading ? (
-          <div className="player-history-syncing">Atualizando partidas PVP...</div>
+          <span className={styles.syncing} role="status">
+            <span className={styles.spinner} aria-hidden="true" />
+            Atualizando partidas...
+          </span>
         ) : null}
-        <div className="player-history-list">
-          {playerHistoryItems.length ? playerHistoryItems.map((item) => (
-            <div
-              key={item.id}
-              className={`player-history-entry type-${item.type}`}
-            >
-              {item.type !== 'pvp' ? (
-                <div className="player-history-entry-head">
-                  <span className={`player-history-type type-${item.type}`}>{item.type === 'pvp' ? 'PVP' : 'PVE'}</span>
-                  <span className="player-history-time">{item.timestampLabel}</span>
-                </div>
-              ) : null}
-              <div className={`player-history-title-row type-${item.type}`}>
-                {item.type === 'pvp' ? (
-                  <>
-                    <span className={`player-history-type type-${item.type}`}>PVP</span>
-                    <strong className="player-history-versus">
-                      <span className={`player-history-versus-name ${item.titleParts?.winnerSide === 'player1' ? 'is-winner' : 'is-loser'}`}>
-                        {item.titleParts?.player1 || item.title}
-                      </span>
-                      <span className="player-history-versus-divider">x</span>
-                      <span className={`player-history-versus-name ${item.titleParts?.winnerSide === 'player2' ? 'is-winner' : 'is-loser'}`}>
-                        {item.titleParts?.player2 || ''}
-                      </span>
-                    </strong>
-                    <span className="player-history-time">{item.timestampLabel}</span>
-                  </>
-                ) : (
-                  <strong>{item.title}</strong>
-                )}
-                {item.resultLabel ? (
-                  <span className={`player-history-result tone-${item.resultTone || 'default'}`}>{item.resultLabel}</span>
-                ) : null}
-              </div>
-              {item.type !== 'pvp' && item.subtitle ? (
-                <div className="player-history-subline">{item.subtitle}</div>
-              ) : null}
-              <div className={`player-history-score type-${item.type}`}>
-                {item.type === 'pvp' && item.scoreParts ? (
-                  <>
-                    <span className={`player-history-score-value ${item.scoreParts.winnerSide === 'player1' ? 'is-winner' : 'is-loser'}`}>
-                      {item.scoreParts.player1}
-                    </span>
-                    <span className="player-history-score-divider">x</span>
-                    <span className={`player-history-score-value ${item.scoreParts.winnerSide === 'player2' ? 'is-winner' : 'is-loser'}`}>
-                      {item.scoreParts.player2}
-                    </span>
-                  </>
-                ) : item.scoreLabel}
-              </div>
-              <div className="player-history-chip-row">
-                {(Array.isArray(item.metaChips) ? item.metaChips : []).map((chip) => (
-                  <span
-                    key={`${item.id}_${typeof chip === 'string' ? chip : chip?.label}`}
-                    className={`player-history-chip tone-${typeof chip === 'string' ? 'default' : (chip?.tone || 'default')}`}
-                  >
-                    {typeof chip === 'string' ? chip : chip?.label}
-                  </span>
-                ))}
-              </div>
-            </div>
-          )) : (
-            <div className="player-history-empty">
-              {playerHistoryLoading ? 'Atualizando historico...' : playerHistoryEmptyText}
-            </div>
-          )}
-        </div>
+        {items.length ? (
+          <ul className={styles.list}>
+            {items.map((item) => <HistoryEntry key={item.id} item={item} />)}
+          </ul>
+        ) : (
+          <EmptyState icon={History} title="Nada por aqui ainda" text={playerHistoryLoading ? 'Carregando seu histórico...' : playerHistoryEmptyText} />
+        )}
       </div>
-    </div>
+    </Modal>
   );
 }

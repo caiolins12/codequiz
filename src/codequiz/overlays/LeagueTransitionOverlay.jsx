@@ -1,48 +1,39 @@
+import { ArrowRight, TrendingDown, TrendingUp } from 'lucide-react';
+import { Button, Modal, TierBadge, cx } from '../ui';
+import styles from './Overlays.module.css';
+
 export default function LeagueTransitionOverlay({ vm }) {
-  const {
-    closeLeagueTransition,
-    leagueTransition
-  } = vm;
+  const { closeLeagueTransition, leagueTransition } = vm;
+  const changes = Array.isArray(leagueTransition?.changes) ? leagueTransition.changes : [];
+  const allDown = changes.length > 0 && changes.every((change) => change.direction === 'down');
 
   return (
-    <div
-      className="league-transition-overlay"
-      role="dialog"
-      aria-modal="true"
-      aria-label="Mudança de liga"
-      onClick={closeLeagueTransition}
+    <Modal
+      title={leagueTransition?.title || 'Classificação atualizada'}
+      subtitle={leagueTransition?.subtitle || 'Seu perfil mudou de liga.'}
+      icon={allDown ? TrendingDown : TrendingUp}
+      tone={allDown ? 'red' : 'gold'}
+      size="sm"
+      centered
+      onClose={closeLeagueTransition}
+      footer={<Button variant={allDown ? 'primary' : 'warning'} block onClick={closeLeagueTransition}>Continuar</Button>}
     >
-      <div className="league-transition-backdrop" />
-      <div className="league-transition-card" onClick={(event) => event.stopPropagation()}>
-        <div className="league-transition-glow" aria-hidden="true" />
-        <div className="league-transition-kicker">Mudança de liga</div>
-        <div className="league-transition-title">{leagueTransition.title || 'Classificação atualizada'}</div>
-        <div className="league-transition-subtitle">{leagueTransition.subtitle || 'Seu perfil acabou de mudar de liga.'}</div>
-        <div className="league-transition-list">
-          {(Array.isArray(leagueTransition.changes) ? leagueTransition.changes : []).map((change) => (
-            <div
-              key={`league_transition_${change.mode}_${change.from?.key || 'from'}_${change.to?.key || 'to'}`}
-              className={`league-transition-row is-${change.direction || 'up'}`}
-            >
-              <div className="league-transition-mode">{change.modeLabel}</div>
-              <div className="league-transition-track">
-                <span className={`tier-badge league-transition-badge tier-${change.from?.key || 'bronze'}`}>
-                  <span className="tier-emblem" aria-hidden="true">{change.from?.emblem || '🥉'}</span>
-                  <span>{change.from?.label || 'Bronze'}</span>
-                </span>
-                <span className="league-transition-arrow" aria-hidden="true">→</span>
-                <span className={`tier-badge league-transition-badge tier-${change.to?.key || 'bronze'}`}>
-                  <span className="tier-emblem" aria-hidden="true">{change.to?.emblem || '🥉'}</span>
-                  <span>{change.to?.label || 'Bronze'}</span>
-                </span>
-              </div>
-            </div>
-          ))}
-        </div>
-        <button type="button" className="btn btn-primary league-transition-btn" onClick={closeLeagueTransition}>
-          Continuar
-        </button>
-      </div>
-    </div>
+      <ul className={styles.list}>
+        {changes.map((change) => (
+          <li
+            key={`league_${change.mode}_${change.from?.key || 'from'}_${change.to?.key || 'to'}`}
+            className={cx(styles.row, change.direction === 'down' ? styles.rowDanger : styles.rowSelf)}
+          >
+            <span className={styles.rowMain}>
+              <span className={styles.rowTitle}>{change.modeLabel}</span>
+              <span className={styles.rowSub}>{change.direction === 'down' ? 'Caiu de liga' : 'Subiu de liga'}</span>
+            </span>
+            <TierBadge tierKey={change.from?.key} label={change.from?.label || 'Bronze'} size="sm" />
+            <ArrowRight size={16} strokeWidth={2.8} aria-hidden="true" />
+            <TierBadge tierKey={change.to?.key} label={change.to?.label || 'Bronze'} variant="solid" size="sm" />
+          </li>
+        ))}
+      </ul>
+    </Modal>
   );
 }

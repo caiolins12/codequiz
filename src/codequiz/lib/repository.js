@@ -6785,7 +6785,7 @@ function sanitizePvpEliminationRoomRow(row, options = {}) {
   const passwordHash = String(safe.password_hash || '').trim();
   return stripUndefinedDeep({
     ...safe,
-    name: normalizePvpEliminationRoomNameValue(safe.name || 'Sala eliminatoria') || 'Sala eliminatoria',
+    name: normalizePvpEliminationRoomNameValue(safe.name || 'Sala eliminatória') || 'Sala eliminatória',
     status: normalizePvpEliminationRoomStatus(safe.status),
     visibility: String(safe.visibility || (passwordHash ? 'password' : 'open')).trim().toLowerCase() === 'password'
       ? 'password'

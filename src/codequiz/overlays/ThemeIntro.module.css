@@ -1,0 +1,176 @@
+/* Roleta do tema da rodada. A geometria (chip 72px + gap 12px = passo 84px,
+   centro em 36px) precisa bater com THEME_INTRO_ROULETTE_* em helpers.js. */
+.overlay {
+  --intro-accent: var(--cq-violet-light);
+  --intro-accent-2: var(--cq-cyan);
+  position: fixed;
+  inset: 0;
+  z-index: var(--cq-z-modal);
+  display: grid;
+  place-items: center;
+  padding: var(--cq-space-4);
+  background: rgba(8, 5, 26, 0.82);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  animation: cq-fade-in 0.2s ease both;
+}
+
+.pvp {
+  --intro-accent: var(--cq-orange);
+  --intro-accent-2: var(--cq-pink);
+}
+
+.card {
+  display: grid;
+  justify-items: center;
+  gap: var(--cq-space-3);
+  width: min(100%, 460px);
+  padding: var(--cq-space-6) var(--cq-space-5) var(--cq-space-5);
+  border-radius: var(--cq-radius-xl);
+  background:
+    radial-gradient(circle at 50% 0%, color-mix(in srgb, var(--intro-accent) 30%, transparent), transparent 60%),
+    var(--cq-bg-2);
+  box-shadow: var(--cq-shadow-pop), inset 0 0 0 1px color-mix(in srgb, var(--intro-accent) 45%, transparent);
+  text-align: center;
+  animation: cq-pop-in 0.34s var(--cq-ease-bounce) both;
+}
+
+.kicker {
+  color: var(--intro-accent);
+  font-size: var(--cq-text-xs);
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.roulette {
+  position: relative;
+  width: 100%;
+  height: 76px;
+  border-radius: var(--cq-radius-lg);
+  background: rgba(8, 5, 30, 0.65);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1);
+  overflow: hidden;
+}
+
+.vignette {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  background: linear-gradient(90deg, rgba(10, 6, 34, 0.92), rgba(10, 6, 34, 0) 28%, rgba(10, 6, 34, 0) 72%, rgba(10, 6, 34, 0.92));
+  pointer-events: none;
+}
+
+.track {
+  position: absolute;
+  top: 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  will-change: transform;
+}
+
+.rolling {
+  animation: intro-roll var(--theme-intro-roll-duration-ms, 900ms) cubic-bezier(0.16, 0.76, 0.24, 1) both;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 72px;
+  height: 56px;
+  border-radius: 14px;
+  background: var(--cq-surface-2);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1), 0 6px 14px rgba(5, 2, 28, 0.45);
+  font-size: 28px;
+}
+
+.chipLocked {
+  background: linear-gradient(135deg, var(--intro-accent), var(--intro-accent-2));
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.7), 0 10px 24px color-mix(in srgb, var(--intro-accent) 45%, transparent);
+  animation: intro-lock 0.54s var(--cq-ease-bounce) both;
+}
+
+.marker {
+  position: absolute;
+  top: 6px;
+  bottom: 6px;
+  left: 50%;
+  z-index: 4;
+  width: 3px;
+  border-radius: 3px;
+  background: linear-gradient(180deg, var(--intro-accent), var(--intro-accent-2));
+  box-shadow: 0 0 16px var(--intro-accent);
+  transform: translateX(-50%);
+}
+
+.titleRow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--cq-space-2);
+  margin-top: var(--cq-space-2);
+  animation: cq-slide-up 0.3s var(--cq-ease-out) 0.08s both;
+}
+
+.titleIcon {
+  font-size: 30px;
+}
+
+.title {
+  font-size: var(--cq-text-2xl);
+}
+
+.subtitle {
+  color: var(--cq-text-2);
+  font-weight: 700;
+  animation: cq-slide-up 0.32s var(--cq-ease-out) 0.12s both;
+}
+
+.progress {
+  width: 100%;
+  height: 6px;
+  margin-top: var(--cq-space-2);
+  border-radius: var(--cq-radius-pill);
+  background: rgba(255, 255, 255, 0.12);
+  overflow: hidden;
+}
+
+.progressFill {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--intro-accent), var(--intro-accent-2));
+  transform-origin: left center;
+  animation: intro-progress var(--theme-intro-duration-ms, 1400ms) linear both;
+}
+
+@keyframes intro-roll {
+  0% { transform: translate3d(var(--theme-intro-roulette-start-offset-px, 260px), 0, 0); }
+  66% { transform: translate3d(-128px, 0, 0); }
+  82% { transform: translate3d(34px, 0, 0); }
+  93% { transform: translate3d(-10px, 0, 0); }
+  100% { transform: translate3d(0, 0, 0); }
+}
+
+@keyframes intro-lock {
+  0% { transform: scale(1); }
+  45% { transform: translateY(-2px) scale(1.12); }
+  100% { transform: scale(1.06); }
+}
+
+@keyframes intro-progress {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rolling,
+  .chipLocked,
+  .progressFill {
+    animation: none;
+  }
+}

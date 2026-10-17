@@ -1,4 +1,7 @@
+import { Smile, X } from 'lucide-react';
 import { normalizeEmojiDraftSlots } from '../app/helpers';
+import { Button, Modal, cx } from '../ui';
+import styles from './EmojiPicker.module.css';
 
 export default function PvpEmojiPickerModal({ vm }) {
   const {
@@ -13,69 +16,78 @@ export default function PvpEmojiPickerModal({ vm }) {
     togglePvpEmojiDraft
   } = vm;
 
-  return (
-    <div className="reset-modal" onClick={closePvpEmojiPicker}>
-      <div className="reset-modal-card pvp-emoji-editor-card" onClick={(event) => event.stopPropagation()}>
-        <h3>Emojis da Partida</h3>
-        <p className="pvp-emoji-editor-hint">Selecione os 6 emojis pelos slots abaixo para salvar.</p>
-        {pvpEmojiDraftWarning ? (
-          <p className="pvp-emoji-editor-warning">{pvpEmojiDraftWarning}</p>
-        ) : null}
+  const slots = normalizeEmojiDraftSlots(pvpEmojiDraft);
+  const options = Array.isArray(activePvpEmojiOptions) ? activePvpEmojiOptions : [];
 
-        <div className="pvp-emoji-slots-wrap">
-          <div className="pvp-emoji-section-title">Selecionados</div>
-          <div className="pvp-emoji-slots">
-            {Array.from({ length: 6 }).map((_, index) => {
-              const selected = normalizeEmojiDraftSlots(pvpEmojiDraft)[index] || '';
-              const activeSlot = index === pvpEmojiSlotFocus;
-              return (
+  return (
+    <Modal
+      title="Emojis da partida"
+      subtitle="Escolha 6 emojis para reagir durante as batalhas."
+      icon={Smile}
+      tone="pink"
+      size="md"
+      onClose={closePvpEmojiPicker}
+      footer={(
+        <>
+          <Button variant="secondary" onClick={closePvpEmojiPicker}>Cancelar</Button>
+          <Button variant="primary" onClick={savePvpEmojiDraft}>Salvar</Button>
+        </>
+      )}
+    >
+      <div className={styles.body}>
+        {pvpEmojiDraftWarning ? <p className={styles.warning} role="alert">{pvpEmojiDraftWarning}</p> : null}
+
+        <span className={styles.sectionTitle}>Selecionados</span>
+        <div className={styles.slots}>
+          {Array.from({ length: 6 }).map((_, index) => {
+            const selected = slots[index] || '';
+            const active = index === pvpEmojiSlotFocus;
+            return (
+              <div key={`emoji_slot_${index}`} className={styles.slot}>
                 <button
-                  key={`emoji_slot_${index}`}
                   type="button"
-                  className={`pvp-emoji-slot ${activeSlot ? 'active' : ''}`}
+                  className={cx(styles.slotButton, active ? styles.slotActive : '')}
                   onClick={() => selectPvpEmojiSlot(index)}
+                  aria-pressed={active}
+                  aria-label={selected ? `Espaço ${index + 1}: ${selected}` : `Espaço ${index + 1}: vazio`}
                 >
-                  <span className="pvp-emoji-slot-index">{index + 1}</span>
-                  <span className="pvp-emoji-slot-value">{selected || '+'}</span>
-                  {selected ? (
-                    <span
-                      className="pvp-emoji-slot-remove"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        removePvpEmojiAt(index);
-                      }}
-                    >
-                      ×
-                    </span>
-                  ) : null}
+                  <span className={styles.slotIndex} aria-hidden="true">{index + 1}</span>
+                  <span aria-hidden="true">{selected || '+'}</span>
                 </button>
-              );
-            })}
-          </div>
+                {selected ? (
+                  <button
+                    type="button"
+                    className={styles.slotRemove}
+                    onClick={() => removePvpEmojiAt(index)}
+                    aria-label={`Remover ${selected} do espaço ${index + 1}`}
+                  >
+                    <X strokeWidth={3} aria-hidden="true" />
+                  </button>
+                ) : null}
+              </div>
+            );
+          })}
         </div>
 
-        <div className="pvp-emoji-divider" aria-hidden="true" />
-        <div className="pvp-emoji-section-title pvp-emoji-section-title-options">Galeria de emojis</div>
-        <div className="pvp-emoji-editor-list">
-          {activePvpEmojiOptions.map((emoji, index) => {
-            const active = normalizeEmojiDraftSlots(pvpEmojiDraft).includes(emoji);
+        <span className={styles.sectionTitle}>Galeria</span>
+        <div className={styles.gallery}>
+          {options.map((emoji, index) => {
+            const active = slots.includes(emoji);
             return (
               <button
                 type="button"
-                key={`emoji_pick_all_${emoji}_${index}`}
-                className={`pvp-emoji-option ${active ? 'active' : ''}`}
+                key={`emoji_pick_${emoji}_${index}`}
+                className={cx(styles.option, active ? styles.optionActive : '')}
                 onClick={() => togglePvpEmojiDraft(emoji)}
+                aria-pressed={active}
+                aria-label={emoji}
               >
                 {emoji}
               </button>
             );
           })}
         </div>
-        <div className="match-accept-actions pvp-emoji-picker-actions">
-          <button className="btn btn-primary btn-lg" onClick={savePvpEmojiDraft}>Salvar</button>
-          <button className="btn btn-secondary btn-lg" onClick={closePvpEmojiPicker}>Cancelar</button>
-        </div>
       </div>
-    </div>
+    </Modal>
   );
 }

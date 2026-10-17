@@ -1,27 +1,30 @@
+import { Eye, Gift, Skull } from 'lucide-react';
+import { Button, Modal } from '../ui';
+import styles from './Overlays.module.css';
+
 export default function EliminationExitPromptModal({ vm }) {
-  const {
-    exitPvpEliminationWithPlacement,
-    keepWatchingPvpElimination,
-    pvpEliminationExitPrompt
-  } = vm;
+  const { exitPvpEliminationWithPlacement, keepWatchingPvpElimination, pvpEliminationExitPrompt } = vm;
 
   return (
-    <div className="reset-modal" onClick={keepWatchingPvpElimination}>
-      <div className="reset-modal-card pvp-team-modal-card" onClick={(event) => event.stopPropagation()}>
-        <h3>Voce foi eliminado</h3>
-        <p>{pvpEliminationExitPrompt.nickname || 'Jogador'}, sua colocacao parcial e {pvpEliminationExitPrompt.placementLabel || '4o lugar'}.</p>
-        <div className="challenge-status pvp-team-join-confirm">
-          Deseja continuar assistindo ou sair agora para receber as recompensas da colocacao?
-        </div>
-        <div className="match-accept-actions">
-          <button className="btn btn-secondary" onClick={keepWatchingPvpElimination}>
-            Continuar assistindo
-          </button>
-          <button className="btn btn-primary" onClick={() => exitPvpEliminationWithPlacement()}>
-            Sair e receber
-          </button>
-        </div>
-      </div>
-    </div>
+    <Modal
+      title="Você foi eliminado"
+      subtitle={`Colocação parcial: ${pvpEliminationExitPrompt?.placementLabel || '4º lugar'}`}
+      icon={Skull}
+      tone="red"
+      size="sm"
+      centered
+      onClose={keepWatchingPvpElimination}
+      footer={(
+        <>
+          <Button variant="secondary" icon={Eye} onClick={keepWatchingPvpElimination}>Assistir</Button>
+          <Button variant="warning" icon={Gift} onClick={() => exitPvpEliminationWithPlacement()}>Sair e receber</Button>
+        </>
+      )}
+    >
+      <p className={styles.text}>
+        {pvpEliminationExitPrompt?.nickname || 'Jogador'}, você pode continuar assistindo aos confrontos
+        ou sair agora e receber as recompensas da sua colocação.
+      </p>
+    </Modal>
   );
 }

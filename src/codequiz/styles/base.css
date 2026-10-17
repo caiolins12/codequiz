@@ -6,6 +6,12 @@
   box-sizing: border-box;
 }
 
+/* Reset de espaçamento: os componentes definem margens e recuos explicitamente. */
+* {
+  margin: 0;
+  padding: 0;
+}
+
 html {
   height: auto;
   overflow-x: hidden;
@@ -46,8 +52,45 @@ h4 {
   letter-spacing: 0.005em;
 }
 
-p {
+p,
+dl,
+dd,
+figure,
+blockquote {
   margin: 0;
+}
+
+/* Listas com classe são componentes: sem marcadores nem recuo. */
+ul[class],
+ol[class] {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* Itens de listas em grid/flex podem encolher (evita estouro com textos longos). */
+ul[class] > li,
+ol[class] > li {
+  min-width: 0;
+}
+
+fieldset {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+/* Jogo: evita seleção acidental de texto em toques longos (campos continuam selecionáveis). */
+body {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+input,
+textarea,
+[contenteditable='true'] {
+  -webkit-user-select: text;
+  user-select: text;
 }
 
 button,

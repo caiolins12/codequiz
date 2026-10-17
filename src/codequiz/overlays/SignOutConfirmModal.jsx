@@ -1,4 +1,7 @@
+import { LogOut } from 'lucide-react';
 import { AvatarImage, isImageAvatarValue } from '../app/helpers';
+import { Button, Modal } from '../ui';
+import styles from './Overlays.module.css';
 
 export default function SignOutConfirmModal({ vm }) {
   const {
@@ -12,42 +15,36 @@ export default function SignOutConfirmModal({ vm }) {
   } = vm;
 
   return (
-    <div
-      className="reset-modal settings-signout-modal"
-      role="dialog"
-      aria-modal="true"
-      aria-label="Confirmar saída da conta"
-      onClick={closeSettingsSignOutConfirm}
+    <Modal
+      title="Sair da conta?"
+      subtitle="Você volta para a tela de login."
+      icon={LogOut}
+      tone="red"
+      size="sm"
+      onClose={googleSignInBusy ? null : closeSettingsSignOutConfirm}
+      footer={(
+        <>
+          <Button variant="secondary" onClick={closeSettingsSignOutConfirm} disabled={googleSignInBusy}>Cancelar</Button>
+          <Button variant="danger" icon={LogOut} onClick={confirmSettingsSignOut} loading={googleSignInBusy}>Sair</Button>
+        </>
+      )}
     >
-      <div className="reset-modal-card settings-signout-card" onClick={(event) => event.stopPropagation()}>
-        <div className="settings-signout-glow" aria-hidden="true" />
-        <div className="settings-signout-kicker">Conta Google</div>
-        <h3>Deseja sair da conta?</h3>
-        <p>
-          Você vai encerrar a sessão de <strong>{settingsSignOutAccountLabel}</strong> e retornar para a tela de login.
-        </p>
-        <div className="settings-signout-account">
-          <div className="settings-account-avatar" aria-hidden="true">
+      <div className={styles.stack}>
+        <div className={styles.account}>
+          <span className={styles.accountAvatar} aria-hidden="true">
             {isImageAvatarValue(googleAccountAvatar) ? (
               <AvatarImage src={googleAccountAvatar} fallback={<span>{googleAccountInitial}</span>} />
             ) : (
               <span>{googleAccountInitial}</span>
             )}
-          </div>
-          <div className="settings-signout-account-copy">
-            <strong>{settingsSignOutAccountLabel}</strong>
-            <span>{googleAccountEmail || 'E-mail Google indisponivel.'}</span>
-          </div>
+          </span>
+          <span className={styles.rowMain}>
+            <span className={styles.rowTitle}>{settingsSignOutAccountLabel}</span>
+            <span className={styles.rowSub}>{googleAccountEmail || 'E-mail Google indisponível'}</span>
+          </span>
         </div>
-        <div className="settings-signout-actions">
-          <button className="btn btn-secondary" onClick={closeSettingsSignOutConfirm} disabled={googleSignInBusy}>
-            Cancelar
-          </button>
-          <button className="btn btn-primary settings-signout-confirm-btn" onClick={confirmSettingsSignOut} disabled={googleSignInBusy}>
-            Confirmar saída
-          </button>
-        </div>
+        <p className={styles.text}>Seu progresso fica salvo na nuvem. É só entrar de novo com a mesma conta Google.</p>
       </div>
-    </div>
+    </Modal>
   );
 }

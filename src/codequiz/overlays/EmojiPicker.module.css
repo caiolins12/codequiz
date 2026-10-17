@@ -1,0 +1,126 @@
+/* Seletor dos 6 emojis da partida */
+.body {
+  display: grid;
+  gap: var(--cq-space-4);
+}
+
+.warning {
+  padding: var(--cq-space-3);
+  border-radius: var(--cq-radius-md);
+  background: rgba(255, 210, 74, 0.12);
+  box-shadow: inset 0 0 0 1px rgba(255, 210, 74, 0.4);
+  color: #ffe7a3;
+  font-size: var(--cq-text-sm);
+  font-weight: 700;
+}
+
+.sectionTitle {
+  color: var(--cq-text-3);
+  font-size: var(--cq-text-xs);
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.slots {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: var(--cq-space-2);
+}
+
+.slot {
+  position: relative;
+}
+
+.slotButton {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 100%;
+  aspect-ratio: 1;
+  border: 0;
+  border-radius: var(--cq-radius-md);
+  background: rgba(8, 5, 30, 0.45);
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.1);
+  color: var(--cq-text-3);
+  font-size: 26px;
+  cursor: pointer;
+  transition: box-shadow var(--cq-dur-fast) var(--cq-ease-out), transform var(--cq-dur-fast) var(--cq-ease-out);
+}
+
+.slotButton:hover {
+  transform: translateY(-1px);
+}
+
+.slotActive {
+  box-shadow: inset 0 0 0 3px var(--cq-violet-light), 0 0 0 4px rgba(166, 144, 255, 0.25);
+}
+
+.slotIndex {
+  position: absolute;
+  top: 4px;
+  left: 6px;
+  color: var(--cq-text-3);
+  font-size: 0.6875rem;
+  font-weight: 900;
+}
+
+.slotRemove {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--cq-red);
+  box-shadow: 0 2px 0 var(--cq-red-dark);
+  color: #fff;
+  cursor: pointer;
+}
+
+.slotRemove svg {
+  width: 14px;
+  height: 14px;
+}
+
+.gallery {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(48px, 1fr));
+  gap: var(--cq-space-2);
+  max-height: 280px;
+  padding: 2px;
+  overflow-y: auto;
+}
+
+.option {
+  display: grid;
+  place-items: center;
+  aspect-ratio: 1;
+  border: 0;
+  border-radius: var(--cq-radius-md);
+  background: rgba(255, 255, 255, 0.05);
+  font-size: 24px;
+  cursor: pointer;
+  transition: background var(--cq-dur-fast) var(--cq-ease-out), transform var(--cq-dur-fast) var(--cq-ease-out);
+}
+
+.option:hover {
+  background: rgba(255, 255, 255, 0.1);
+  transform: scale(1.06);
+}
+
+.optionActive {
+  background: rgba(123, 92, 255, 0.3);
+  box-shadow: inset 0 0 0 2px var(--cq-violet-light);
+}
+
+@media (max-width: 359px) {
+  .slots {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}

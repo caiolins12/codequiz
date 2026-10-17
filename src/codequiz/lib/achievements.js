@@ -31,8 +31,8 @@ function buildPassPath(id, label, icon, goals = []) {
 
 function buildDualPassPaths(pveGoals = [], pvpGoals = []) {
   return [
-    buildPassPath('pve', 'Trilha PVE', '📚', pveGoals),
-    buildPassPath('pvp', 'Trilha PVP', '⚔️', pvpGoals)
+    buildPassPath('pve', 'Trilha PvE', '📚', pveGoals),
+    buildPassPath('pvp', 'Trilha PvP', '⚔️', pvpGoals)
   ];
 }
 
@@ -76,7 +76,7 @@ export const EVOLUTION_PASS_STAGES = [
     name: 'Início Guiado',
     desc: 'Escolha seu estilo e abra o passe.',
     icon: '🧭',
-    hint: 'Conclua a trilha PVE ou a trilha PVP para liberar o próximo nível.',
+    hint: 'Conclua a trilha PvE ou a trilha PvP para liberar o próximo nível.',
     reward: { xp: 20, coins: 8 },
     paths: buildDualPassPaths(
       [
@@ -84,7 +84,7 @@ export const EVOLUTION_PASS_STAGES = [
         buildPassGoal('total_correct', 5, 'Acerte 5 perguntas')
       ],
       [
-        buildPassGoal('pvp_battles', 1, 'Jogue 1 partida PVP')
+        buildPassGoal('pvp_battles', 1, 'Jogue 1 partida PvP')
       ]
     )
   },
@@ -94,16 +94,16 @@ export const EVOLUTION_PASS_STAGES = [
     name: 'Fundamentos',
     desc: 'Ganhe corpo no passe com repetição e ritmo.',
     icon: '📘',
-    hint: 'Você pode avançar estudando no PVE ou disputando no PVP.',
+    hint: 'Você pode avançar estudando no PvE ou disputando no PvP.',
     reward: { xp: 28, coins: 10 },
     paths: buildDualPassPaths(
       [
         buildPassGoal('quizzes', 3, 'Complete 3 quizzes'),
-        buildPassGoal('ranking_points', 20, 'Alcance 20 pontos PVE')
+        buildPassGoal('ranking_points', 20, 'Alcance 20 pontos PvE')
       ],
       [
-        buildPassGoal('pvp_battles', 2, 'Jogue 2 partidas PVP'),
-        buildPassGoal('pvp_points', 20, 'Alcance 20 pontos PVP')
+        buildPassGoal('pvp_battles', 2, 'Jogue 2 partidas PvP'),
+        buildPassGoal('pvp_points', 20, 'Alcance 20 pontos PvP')
       ]
     )
   },
@@ -121,9 +121,9 @@ export const EVOLUTION_PASS_STAGES = [
         buildPassGoal('best_streak', 4, 'Faça streak de 4')
       ],
       [
-        buildPassGoal('pvp_battles', 3, 'Jogue 3 partidas PVP'),
-        buildPassGoal('pvp_points', 40, 'Alcance 40 pontos PVP'),
-        buildPassGoal('pvp_wins', 1, 'Conquiste 1 vitória PVP')
+        buildPassGoal('pvp_battles', 3, 'Jogue 3 partidas PvP'),
+        buildPassGoal('pvp_points', 40, 'Alcance 40 pontos PvP'),
+        buildPassGoal('pvp_wins', 1, 'Conquiste 1 vitória PvP')
       ]
     )
   },
@@ -138,11 +138,11 @@ export const EVOLUTION_PASS_STAGES = [
     paths: buildDualPassPaths(
       [
         buildPassGoal('quizzes', 5, 'Complete 5 quizzes'),
-        buildPassGoal('ranking_points', 45, 'Alcance 45 pontos PVE')
+        buildPassGoal('ranking_points', 45, 'Alcance 45 pontos PvE')
       ],
       [
-        buildPassGoal('pvp_battles', 4, 'Jogue 4 partidas PVP'),
-        buildPassGoal('pvp_points', 60, 'Alcance 60 pontos PVP')
+        buildPassGoal('pvp_battles', 4, 'Jogue 4 partidas PvP'),
+        buildPassGoal('pvp_points', 60, 'Alcance 60 pontos PvP')
       ]
     )
   },
@@ -156,13 +156,13 @@ export const EVOLUTION_PASS_STAGES = [
     reward: { xp: 48, coins: 16, shopItems: ['frame_aurora'] },
     paths: buildDualPassPaths(
       [
-        buildPassGoal('ranking_points', 60, 'Alcance 60 pontos PVE'),
+        buildPassGoal('ranking_points', 60, 'Alcance 60 pontos PvE'),
         buildPassGoal('mastered_quizzes', 2, 'Conquiste 2 quizzes com 3 estrelas')
       ],
       [
-        buildPassGoal('pvp_battles', 5, 'Jogue 5 partidas PVP'),
-        buildPassGoal('pvp_wins', 1, 'Conquiste 1 vitória PVP'),
-        buildPassGoal('pvp_points', 80, 'Alcance 80 pontos PVP')
+        buildPassGoal('pvp_battles', 5, 'Jogue 5 partidas PvP'),
+        buildPassGoal('pvp_wins', 1, 'Conquiste 1 vitória PvP'),
+        buildPassGoal('pvp_points', 80, 'Alcance 80 pontos PvP')
       ]
     )
   },
@@ -178,12 +178,12 @@ export const EVOLUTION_PASS_STAGES = [
       [
         buildPassGoal('quizzes', 8, 'Complete 8 quizzes'),
         buildPassGoal('total_correct', 45, 'Acerte 45 perguntas'),
-        buildPassGoal('ranking_points', 90, 'Alcance 90 pontos PVE')
+        buildPassGoal('ranking_points', 90, 'Alcance 90 pontos PvE')
       ],
       [
-        buildPassGoal('pvp_battles', 6, 'Jogue 6 partidas PVP'),
-        buildPassGoal('pvp_wins', 2, 'Conquiste 2 vitórias PVP'),
-        buildPassGoal('pvp_points', 100, 'Alcance 100 pontos PVP')
+        buildPassGoal('pvp_battles', 6, 'Jogue 6 partidas PvP'),
+        buildPassGoal('pvp_wins', 2, 'Conquiste 2 vitórias PvP'),
+        buildPassGoal('pvp_points', 100, 'Alcance 100 pontos PvP')
       ]
     )
   },
@@ -201,9 +201,9 @@ export const EVOLUTION_PASS_STAGES = [
         buildPassGoal('total_correct', 70, 'Acerte 70 perguntas')
       ],
       [
-        buildPassGoal('pvp_battles', 8, 'Jogue 8 partidas PVP'),
-        buildPassGoal('pvp_wins', 3, 'Conquiste 3 vitórias PVP'),
-        buildPassGoal('pvp_points', 120, 'Alcance 120 pontos PVP')
+        buildPassGoal('pvp_battles', 8, 'Jogue 8 partidas PvP'),
+        buildPassGoal('pvp_wins', 3, 'Conquiste 3 vitórias PvP'),
+        buildPassGoal('pvp_points', 120, 'Alcance 120 pontos PvP')
       ]
     )
   },
@@ -221,9 +221,9 @@ export const EVOLUTION_PASS_STAGES = [
         buildPassGoal('total_correct', 120, 'Acerte 120 perguntas')
       ],
       [
-        buildPassGoal('pvp_battles', 10, 'Jogue 10 partidas PVP'),
-        buildPassGoal('pvp_wins', 4, 'Conquiste 4 vitórias PVP'),
-        buildPassGoal('pvp_points', 150, 'Alcance 150 pontos PVP')
+        buildPassGoal('pvp_battles', 10, 'Jogue 10 partidas PvP'),
+        buildPassGoal('pvp_wins', 4, 'Conquiste 4 vitórias PvP'),
+        buildPassGoal('pvp_points', 150, 'Alcance 150 pontos PvP')
       ]
     )
   },
@@ -237,13 +237,13 @@ export const EVOLUTION_PASS_STAGES = [
     reward: { xp: 84, coins: 24, shopItems: ['bg_abissal_vortex'] },
     paths: buildDualPassPaths(
       [
-        buildPassGoal('ranking_points', 140, 'Alcance 140 pontos PVE'),
+        buildPassGoal('ranking_points', 140, 'Alcance 140 pontos PvE'),
         buildPassGoal('mastered_quizzes', 4, 'Conquiste 4 quizzes com 3 estrelas')
       ],
       [
-        buildPassGoal('pvp_battles', 12, 'Jogue 12 partidas PVP'),
-        buildPassGoal('pvp_wins', 5, 'Conquiste 5 vitórias PVP'),
-        buildPassGoal('pvp_points', 180, 'Alcance 180 pontos PVP')
+        buildPassGoal('pvp_battles', 12, 'Jogue 12 partidas PvP'),
+        buildPassGoal('pvp_wins', 5, 'Conquiste 5 vitórias PvP'),
+        buildPassGoal('pvp_points', 180, 'Alcance 180 pontos PvP')
       ]
     )
   },
@@ -258,19 +258,19 @@ export const EVOLUTION_PASS_STAGES = [
     paths: buildDualPassPaths(
       [
         buildPassGoal('level', 10, 'Alcance nível 10'),
-        buildPassGoal('ranking_points', 180, 'Alcance 180 pontos PVE')
+        buildPassGoal('ranking_points', 180, 'Alcance 180 pontos PvE')
       ],
       [
-        buildPassGoal('pvp_battles', 14, 'Jogue 14 partidas PVP'),
-        buildPassGoal('pvp_wins', 6, 'Conquiste 6 vitórias PVP'),
-        buildPassGoal('pvp_points', 220, 'Alcance 220 pontos PVP')
+        buildPassGoal('pvp_battles', 14, 'Jogue 14 partidas PvP'),
+        buildPassGoal('pvp_wins', 6, 'Conquiste 6 vitórias PvP'),
+        buildPassGoal('pvp_points', 220, 'Alcance 220 pontos PvP')
       ]
     )
   },
   {
     id: 'pass_lvl_11',
     level: 11,
-    name: 'Especialista PVE I',
+    name: 'Especialista PvE I',
     desc: 'A etapa já aceita uma especialização completa em qualquer lado.',
     icon: '🧪',
     hint: 'Escolha sua trilha principal e mantenha o foco.',
@@ -282,16 +282,16 @@ export const EVOLUTION_PASS_STAGES = [
         buildPassGoal('hard_quiz_completions', 2, 'Finalize 2 quizzes no hard')
       ],
       [
-        buildPassGoal('pvp_battles', 16, 'Jogue 16 partidas PVP'),
-        buildPassGoal('pvp_wins', 7, 'Conquiste 7 vitórias PVP'),
-        buildPassGoal('pvp_points', 260, 'Alcance 260 pontos PVP')
+        buildPassGoal('pvp_battles', 16, 'Jogue 16 partidas PvP'),
+        buildPassGoal('pvp_wins', 7, 'Conquiste 7 vitórias PvP'),
+        buildPassGoal('pvp_points', 260, 'Alcance 260 pontos PvP')
       ]
     )
   },
   {
     id: 'pass_lvl_12',
     level: 12,
-    name: 'Especialista PVP I',
+    name: 'Especialista PvP I',
     desc: 'Chegue mais forte ao bloco avançado.',
     icon: '🥊',
     hint: 'Concluir uma trilha basta para seguir no passe.',
@@ -300,12 +300,12 @@ export const EVOLUTION_PASS_STAGES = [
       [
         buildPassGoal('hard_quiz_completions', 4, 'Finalize 4 quizzes no hard'),
         buildPassGoal('total_correct', 170, 'Acerte 170 perguntas'),
-        buildPassGoal('ranking_points', 230, 'Alcance 230 pontos PVE')
+        buildPassGoal('ranking_points', 230, 'Alcance 230 pontos PvE')
       ],
       [
-        buildPassGoal('pvp_battles', 18, 'Jogue 18 partidas PVP'),
-        buildPassGoal('pvp_wins', 8, 'Conquiste 8 vitórias PVP'),
-        buildPassGoal('pvp_points', 300, 'Alcance 300 pontos PVP')
+        buildPassGoal('pvp_battles', 18, 'Jogue 18 partidas PvP'),
+        buildPassGoal('pvp_wins', 8, 'Conquiste 8 vitórias PvP'),
+        buildPassGoal('pvp_points', 300, 'Alcance 300 pontos PvP')
       ]
     )
   },
@@ -323,9 +323,9 @@ export const EVOLUTION_PASS_STAGES = [
         buildPassGoal('total_answered', 220, 'Responda 220 perguntas')
       ],
       [
-        buildPassGoal('pvp_battles', 20, 'Jogue 20 partidas PVP'),
-        buildPassGoal('pvp_wins', 9, 'Conquiste 9 vitórias PVP'),
-        buildPassGoal('pvp_points', 340, 'Alcance 340 pontos PVP')
+        buildPassGoal('pvp_battles', 20, 'Jogue 20 partidas PvP'),
+        buildPassGoal('pvp_wins', 9, 'Conquiste 9 vitórias PvP'),
+        buildPassGoal('pvp_points', 340, 'Alcance 340 pontos PvP')
       ]
     )
   },
@@ -335,17 +335,17 @@ export const EVOLUTION_PASS_STAGES = [
     name: 'Desafio Profundo',
     desc: 'Suba mais um bloco pesado por qualquer rota.',
     icon: '🧱',
-    hint: 'Você não precisa alternar entre PVE e PVP para continuar.',
+    hint: 'Você não precisa alternar entre PvE e PvP para continuar.',
     reward: { xp: 150, coins: 40 },
     paths: buildDualPassPaths(
       [
         buildPassGoal('hard_quiz_completions', 6, 'Finalize 6 quizzes no hard'),
-        buildPassGoal('ranking_points', 280, 'Alcance 280 pontos PVE')
+        buildPassGoal('ranking_points', 280, 'Alcance 280 pontos PvE')
       ],
       [
-        buildPassGoal('pvp_battles', 22, 'Jogue 22 partidas PVP'),
-        buildPassGoal('pvp_wins', 10, 'Conquiste 10 vitórias PVP'),
-        buildPassGoal('pvp_points', 380, 'Alcance 380 pontos PVP')
+        buildPassGoal('pvp_battles', 22, 'Jogue 22 partidas PvP'),
+        buildPassGoal('pvp_wins', 10, 'Conquiste 10 vitórias PvP'),
+        buildPassGoal('pvp_points', 380, 'Alcance 380 pontos PvP')
       ]
     )
   },
@@ -355,7 +355,7 @@ export const EVOLUTION_PASS_STAGES = [
     name: 'Fluxo Consistente',
     desc: 'Mantenha uma única rota forte até o fim.',
     icon: '🔁',
-    hint: 'O passe agora respeita uma progressão inteira só em PVE ou só em PVP.',
+    hint: 'O passe agora respeita uma progressão inteira só em PvE ou só em PvP.',
     reward: { xp: 168, coins: 44, shopItems: ['frame_sangue'] },
     paths: buildDualPassPaths(
       [
@@ -364,9 +364,9 @@ export const EVOLUTION_PASS_STAGES = [
         buildPassGoal('total_correct', 260, 'Acerte 260 perguntas')
       ],
       [
-        buildPassGoal('pvp_battles', 24, 'Jogue 24 partidas PVP'),
-        buildPassGoal('pvp_wins', 12, 'Conquiste 12 vitórias PVP'),
-        buildPassGoal('pvp_points', 420, 'Alcance 420 pontos PVP')
+        buildPassGoal('pvp_battles', 24, 'Jogue 24 partidas PvP'),
+        buildPassGoal('pvp_wins', 12, 'Conquiste 12 vitórias PvP'),
+        buildPassGoal('pvp_points', 420, 'Alcance 420 pontos PvP')
       ]
     )
   },
@@ -381,13 +381,13 @@ export const EVOLUTION_PASS_STAGES = [
     paths: buildDualPassPaths(
       [
         buildPassGoal('level', 15, 'Alcance nível 15'),
-        buildPassGoal('ranking_points', 340, 'Alcance 340 pontos PVE'),
+        buildPassGoal('ranking_points', 340, 'Alcance 340 pontos PvE'),
         buildPassGoal('hard_quiz_completions', 7, 'Finalize 7 quizzes no hard')
       ],
       [
-        buildPassGoal('pvp_battles', 26, 'Jogue 26 partidas PVP'),
-        buildPassGoal('pvp_wins', 13, 'Conquiste 13 vitórias PVP'),
-        buildPassGoal('pvp_points', 460, 'Alcance 460 pontos PVP')
+        buildPassGoal('pvp_battles', 26, 'Jogue 26 partidas PvP'),
+        buildPassGoal('pvp_wins', 13, 'Conquiste 13 vitórias PvP'),
+        buildPassGoal('pvp_points', 460, 'Alcance 460 pontos PvP')
       ]
     )
   },
@@ -402,13 +402,13 @@ export const EVOLUTION_PASS_STAGES = [
     paths: buildDualPassPaths(
       [
         buildPassGoal('mastered_quizzes', 10, 'Conquiste 10 quizzes com 3 estrelas'),
-        buildPassGoal('ranking_points', 400, 'Alcance 400 pontos PVE'),
+        buildPassGoal('ranking_points', 400, 'Alcance 400 pontos PvE'),
         buildPassGoal('hard_quiz_completions', 8, 'Finalize 8 quizzes no hard')
       ],
       [
-        buildPassGoal('pvp_battles', 28, 'Jogue 28 partidas PVP'),
-        buildPassGoal('pvp_wins', 14, 'Conquiste 14 vitórias PVP'),
-        buildPassGoal('pvp_points', 500, 'Alcance 500 pontos PVP')
+        buildPassGoal('pvp_battles', 28, 'Jogue 28 partidas PvP'),
+        buildPassGoal('pvp_wins', 14, 'Conquiste 14 vitórias PvP'),
+        buildPassGoal('pvp_points', 500, 'Alcance 500 pontos PvP')
       ]
     )
   },
@@ -418,19 +418,19 @@ export const EVOLUTION_PASS_STAGES = [
     name: 'Mestre do Passe',
     desc: 'Feche o passe inteiro pela rota que mais combina com você.',
     icon: '🏆',
-    hint: 'Conclua a trilha PVE ou a trilha PVP para completar o passe.',
+    hint: 'Conclua a trilha PvE ou a trilha PvP para completar o passe.',
     reward: { xp: 236, coins: 58 },
     paths: buildDualPassPaths(
       [
         buildPassGoal('level', 20, 'Alcance nível 20'),
-        buildPassGoal('ranking_points', 450, 'Alcance 450 pontos PVE'),
+        buildPassGoal('ranking_points', 450, 'Alcance 450 pontos PvE'),
         buildPassGoal('hard_quiz_completions', 10, 'Finalize 10 quizzes no hard'),
         buildPassGoal('mastered_quizzes', 12, 'Conquiste 12 quizzes com 3 estrelas')
       ],
       [
-        buildPassGoal('pvp_battles', 30, 'Jogue 30 partidas PVP'),
-        buildPassGoal('pvp_wins', 16, 'Conquiste 16 vitórias PVP'),
-        buildPassGoal('pvp_points', 560, 'Alcance 560 pontos PVP')
+        buildPassGoal('pvp_battles', 30, 'Jogue 30 partidas PvP'),
+        buildPassGoal('pvp_wins', 16, 'Conquiste 16 vitórias PvP'),
+        buildPassGoal('pvp_points', 560, 'Alcance 560 pontos PvP')
       ]
     )
   }

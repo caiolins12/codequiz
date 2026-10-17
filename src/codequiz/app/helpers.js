@@ -912,39 +912,6 @@ export function formatBuildBadgeValue(buildSha = '', builtAt = '') {
   }
 }
 
-export function formatSettingsUpdatedAtValue(builtAt = '') {
-  const safeBuiltAt = String(builtAt || '').trim();
-  const builtAtMs = Date.parse(safeBuiltAt);
-  const dateToFormat = Number.isFinite(builtAtMs) && builtAtMs > 0
-    ? new Date(builtAtMs)
-    : null;
-
-  if (!dateToFormat) {
-    return 'Última atualização em -- de -- de ---- às --:--:--.';
-  }
-
-  try {
-    const day = dateToFormat.toLocaleDateString('pt-BR', {
-      day: '2-digit'
-    });
-    const month = dateToFormat.toLocaleDateString('pt-BR', {
-      month: 'long'
-    });
-    const year = dateToFormat.toLocaleDateString('pt-BR', {
-      year: 'numeric'
-    });
-    const time = dateToFormat.toLocaleTimeString('pt-BR', {
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-      hour12: false
-    });
-    return `Última atualização em ${day} de ${month} de ${year} às ${time}.`;
-  } catch {
-    return 'Última atualização em -- de -- de ---- às --:--:--.';
-  }
-}
-
 export function buildQueueSessionId(userId = '', nowMs = Date.now()) {
   const safeUserId = String(userId || '').trim() || 'anonymous';
   const safeNowMs = Math.max(0, Number(nowMs || Date.now()));
@@ -1107,7 +1074,7 @@ export function buildPvpTeamRoomStartBlockedNotice(roomRow = null) {
   }
   return {
     id: `team_room_notice_${Date.now()}_${Math.floor(Math.random() * 10000)}`,
-    title: 'Ainda nao e possivel iniciar',
+    title: 'Ainda não é possível iniciar',
     message: issues.join(' '),
     created_at: new Date().toISOString(),
     created_by_user_id: String(getPvpTeamRoomHostUserId(room) || '').trim()
@@ -2123,7 +2090,7 @@ export function buildPvpEliminationRoomStartBlockedNotice(roomRow = null) {
   }
   return {
     id: `elimination_room_notice_${Date.now()}_${Math.floor(Math.random() * 10000)}`,
-    title: 'Ainda nao e possivel iniciar',
+    title: 'Ainda não é possível iniciar',
     message: issues.join(' '),
     created_at: new Date().toISOString(),
     created_by_user_id: String(getPvpEliminationRoomHostUserId(room) || '').trim()
@@ -3022,7 +2989,6 @@ export const COOKIE_CONSENT_MAX_AGE_SECONDS = 60 * 60 * 24 * 365;
 export const AUTH_OPERATION_TIMEOUT_MS = 7000;
 export const AUTH_POPUP_TIMEOUT_MS = 30000;
 export const AUTH_BOOTSTRAP_GUARD_MS = 18000;
-export const GOOGLE_AUTH_MODAL_DISABLED_STATE = Object.freeze({ open: false, mode: 'signin' });
 export const UI_ACTION_WATCHDOG_MS = 9000;
 export const PVP_QUEUE_DISCONNECT_GRACE_MS = 9000;
 export const PVP_QUEUE_DISCONNECT_GRACE_MOBILE_MS = 13000;
@@ -3032,11 +2998,6 @@ export const PRELOAD_RUNTIME_CHALLENGE_INTERVAL_MS = 18000;
 export const PROGRESS_RECOVERY_RETRY_MS = 6000;
 export const PROGRESS_FORCED_RESET_GUARD_MS = 1200;
 export const NICKNAME_RULE_COPY = 'Use 3 a 12 caracteres. Letras, números, espaços, . _ ou -.';
-export const SETTINGS_SECTION_DEFAULTS = Object.freeze({
-  account: false,
-  audio: false,
-  admin: false
-});
 export const ADMIN_PANEL_PASSWORD = 'admin';
 export const PVP_EMOJI_STORAGE_PREFIX = 'codequiz_pvp_battle_emojis_v1';
 export const PVP_SEQUENCE_CURSOR_STORAGE_PREFIX = 'codequiz_pvp_sequence_cursor_v1';
@@ -3369,7 +3330,7 @@ export const LANGUAGE_THEME_GROUPS = [
   {
     id: 'foundations',
     area: 'programming',
-    label: 'Fundamentos e Logica',
+    label: 'Fundamentos e Lógica',
     desc: 'Base de raciocínio, lógica e matemática para programação.',
     languages: [
       'zero_to_code',

@@ -1,17 +1,18 @@
+import { LogIn, LogOut } from 'lucide-react';
+import styles from './Overlays.module.css';
+
 export default function AuthTransitionOverlay({ vm }) {
-  const {
-    authTransition
-  } = vm;
+  const { authTransition } = vm;
+  const logout = authTransition?.mode === 'logout';
+  const Icon = logout ? LogOut : LogIn;
 
   return (
-    <div className="auth-transition-overlay">
-      <div className={`auth-transition-card ${authTransition.mode === 'logout' ? 'is-logout' : ''}`}>
-        <div className={`auth-transition-spinner ${authTransition.mode === 'logout' ? 'is-logout' : ''}`} />
-        {authTransition.mode === 'logout' ? (
-          <div className="auth-transition-kicker">Saída confirmada</div>
-        ) : null}
-        <div className="auth-transition-title">{authTransition.title || 'Preparando sua conta'}</div>
-        <div className="auth-transition-subtitle">{authTransition.subtitle || 'Aguarde alguns segundos...'}</div>
+    <div className={styles.fullscreen} role="status" aria-live="polite">
+      <div className={styles.fullscreenCard}>
+        <span className={styles.bigIcon} aria-hidden="true"><Icon strokeWidth={2.4} /></span>
+        <h2 className={styles.bigTitle}>{authTransition?.title || (logout ? 'Saindo da conta' : 'Preparando sua conta')}</h2>
+        <p className={styles.text}>{authTransition?.subtitle || 'Aguarde alguns segundos...'}</p>
+        <span className={styles.spinner} aria-hidden="true" />
       </div>
     </div>
   );

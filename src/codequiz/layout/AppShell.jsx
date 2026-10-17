@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { History, Music, Music2, Settings, SkipForward, VolumeX } from 'lucide-react';
 import { Avatar, CoinIcon, IconButton, ProgressBar, StatPill, TierBadge, Toast, cx } from '../ui';
 import { NAV_TABS } from './nav';
@@ -94,7 +94,7 @@ function Sidebar({ activeTab, onNavigate, profile, music, onOpenMenu }) {
   return (
     <aside className={styles.sidebar} aria-label="Navegação principal">
       <Brand onClick={() => onNavigate('home')} />
-      <nav>
+      <nav data-tour-anchor="app-nav">
         <ul className={styles.navList}>
           {NAV_TABS.map((tab) => {
             const Icon = tab.icon;
@@ -191,7 +191,7 @@ function MobileTopBar({ profile, music, onOpenMenu }) {
 
 function BottomTabBar({ activeTab, onNavigate }) {
   return (
-    <nav className={styles.tabBar} aria-label="Navegação principal">
+    <nav className={styles.tabBar} aria-label="Navegação principal" data-tour-anchor="app-nav">
       {NAV_TABS.map((tab) => {
         const Icon = tab.icon;
         const active = activeTab === tab.key;
@@ -243,6 +243,11 @@ export default function AppShell({
   const [menuPlacement, setMenuPlacement] = useState('');
   const tabsMode = mode === 'tabs';
   const closeMenu = () => setMenuPlacement('');
+
+  // Publica o modo no <html> para overlays fora do shell (ex.: banners acima da barra de abas).
+  useEffect(() => {
+    document.documentElement.dataset.shellMode = mode;
+  }, [mode]);
 
   return (
     <div className={cx(styles.shell, className)} data-shell-mode={mode}>

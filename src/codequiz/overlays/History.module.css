@@ -1,0 +1,121 @@
+/* Histórico de partidas do jogador */
+.body {
+  display: grid;
+  gap: var(--cq-space-3);
+}
+
+.alert {
+  padding: var(--cq-space-3);
+  border-radius: var(--cq-radius-md);
+  background: rgba(255, 92, 108, 0.12);
+  box-shadow: inset 0 0 0 1px rgba(255, 92, 108, 0.4);
+  color: #ffc4ca;
+  font-weight: 700;
+}
+
+.syncing {
+  display: flex;
+  align-items: center;
+  gap: var(--cq-space-2);
+  color: var(--cq-text-3);
+  font-size: var(--cq-text-sm);
+  font-weight: 700;
+}
+
+.list {
+  display: grid;
+  gap: var(--cq-space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.entry {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: var(--cq-space-2) var(--cq-space-3);
+  align-items: center;
+  padding: var(--cq-space-3);
+  border-radius: var(--cq-radius-lg);
+  background: rgba(8, 5, 30, 0.38);
+  box-shadow: inset 0 0 0 1px var(--cq-border);
+}
+
+.typeIcon {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  background: rgba(123, 92, 255, 0.2);
+  color: var(--cq-violet-light);
+}
+
+.typePvp {
+  background: rgba(255, 138, 61, 0.18);
+  color: var(--cq-orange);
+}
+
+.typeIcon svg {
+  width: 20px;
+  height: 20px;
+}
+
+.main {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 800;
+}
+
+.winner {
+  color: var(--cq-lime);
+}
+
+.versus {
+  margin: 0 6px;
+  color: var(--cq-text-3);
+}
+
+.sub {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--cq-text-3);
+  font-size: var(--cq-text-xs);
+  font-weight: 700;
+}
+
+.score {
+  display: grid;
+  justify-items: end;
+  gap: 2px;
+  font-family: var(--cq-font-display);
+  font-size: var(--cq-text-lg);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.chips {
+  grid-column: 2 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.spinner {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 3px solid rgba(255, 255, 255, 0.2);
+  border-top-color: var(--cq-violet-light);
+  animation: cq-spin 0.75s linear infinite;
+}

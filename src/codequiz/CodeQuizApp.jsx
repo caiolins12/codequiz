@@ -174,7 +174,6 @@ import {
   DATA_SUBSCRIBE_RETRY_TIMEOUT_MS,
   DEFAULT_BATTLE_EMOJIS,
   ENABLE_CLIENT_BOT_AUTOMATION,
-  GOOGLE_AUTH_MODAL_DISABLED_STATE,
   KNOWLEDGE_AREAS,
   LANGUAGE_THEME_GROUPS,
   LAST_CONFIRMED_BUILD_SHA_STORAGE_KEY,
@@ -232,7 +231,6 @@ import {
   PVP_SEQUENCE_RECENT_STARTS_MAX,
   PVP_TEAM_BATTLE_TOTAL_ROUNDS,
   QUICK_BOOT_CHECKS_MS,
-  SETTINGS_SECTION_DEFAULTS,
   SHOP_CATEGORY_OPEN_DEFAULT,
   SHOP_UI_STATE_STORAGE_PREFIX,
   THEME_INTRO_PVE_DURATION_MS,
@@ -271,7 +269,6 @@ import {
   ensureValidPvpConfig,
   extendPvpQuestionSetIfNeeded,
   formatBuildBadgeValue,
-  formatSettingsUpdatedAtValue,
   formatSignedPoints,
   getAdminMatchStartMs,
   getBackgroundVisualMeta,
@@ -420,14 +417,12 @@ import TeamJoinPromptModal from './overlays/TeamJoinPromptModal';
 import TeamRoomNoticeModal from './overlays/TeamRoomNoticeModal';
 import EliminationRoomNoticeModal from './overlays/EliminationRoomNoticeModal';
 import EliminationExitPromptModal from './overlays/EliminationExitPromptModal';
-import HeroMenuPopover from './overlays/HeroMenuPopover';
 import ShopItemPreviewModal from './overlays/ShopItemPreviewModal';
 import PlayerHistoryModal from './overlays/PlayerHistoryModal';
 import AdminAuthModal from './overlays/AdminAuthModal';
 import UpdateNoticeBar from './overlays/UpdateNoticeBar';
 import CookieConsentBanner from './overlays/CookieConsentBanner';
 import HomeTourOverlay from './overlays/HomeTourOverlay';
-import GoogleAuthModal from './overlays/GoogleAuthModal';
 import SignOutConfirmModal from './overlays/SignOutConfirmModal';
 import LeagueTransitionOverlay from './overlays/LeagueTransitionOverlay';
 import AuthTransitionOverlay from './overlays/AuthTransitionOverlay';
@@ -479,7 +474,6 @@ export default function CodeQuizApp() {
   const [profile, setProfile] = useState(null);
   const [profileDraft, setProfileDraft] = useState({ nickname: '', full_name: '' });
   const [profileSaving, setProfileSaving] = useState(false);
-  const [settingsSections, setSettingsSections] = useState(() => ({ ...SETTINGS_SECTION_DEFAULTS }));
   const [nicknameAvailability, setNicknameAvailability] = useState({
     status: 'idle',
     available: false,
@@ -498,7 +492,6 @@ export default function CodeQuizApp() {
   const [adminPassword, setAdminPassword] = useState('');
   const [adminAuthError, setAdminAuthError] = useState('');
   const [adminAuthorized, setAdminAuthorized] = useState(false);
-  const [settingsUpdatedAtValue, setSettingsUpdatedAtValue] = useState('Última atualização em -- de -- de ---- às --:--:--.');
   const [adminMatches, setAdminMatches] = useState([]);
   const [adminMatchesLoading, setAdminMatchesLoading] = useState(false);
   const [adminMatchesUpdatedAtMs, setAdminMatchesUpdatedAtMs] = useState(0);
@@ -556,8 +549,6 @@ export default function CodeQuizApp() {
   const [pvpKnowledgeArea, setPvpKnowledgeArea] = useState('programming');
   const [pvpAreaPreferenceReady, setPvpAreaPreferenceReady] = useState(false);
   const [arenaKaCarouselIndex, setArenaKaCarouselIndex] = useState(0);
-  const [playerHeroMenuOpen, setPlayerHeroMenuOpen] = useState(false);
-  const [playerHeroMenuAnchorRect, setPlayerHeroMenuAnchorRect] = useState(null);
   const [playerHistoryOpen, setPlayerHistoryOpen] = useState(false);
   const [playerHistoryFilter, setPlayerHistoryFilter] = useState('all');
   const [playerHistoryLoading, setPlayerHistoryLoading] = useState(false);
@@ -838,8 +829,6 @@ export default function CodeQuizApp() {
   const passClaimFxTimerRef = useRef(null);
   const passClaimStageFlashTimerRef = useRef(null);
   const pvpAreaPreferenceLoadedRef = useRef('');
-  const playerHeroMenuRef = useRef(null);
-  const playerHeroMenuPopoverRef = useRef(null);
   const botAnswerTimerRef = useRef(null);
   const botAnswerRoundKeyRef = useRef('');
   const pvpRoundResultFeedbackKeyRef = useRef('');
@@ -896,8 +885,6 @@ export default function CodeQuizApp() {
   const queueDisconnectStartedAtRef = useRef(0);
   const matchAcceptBusyStartedAtRef = useRef(0);
   const leavePvpFlowBusyRef = useRef(false);
-  const pveKaTouchStartXRef = useRef(null);
-  const pvpKaTouchStartXRef = useRef(null);
   const preloadRuntimeRef = useRef({
     userId: '',
     lastAtMs: 0,
@@ -1287,33 +1274,6 @@ export default function CodeQuizApp() {
     });
   };
 
-  const closePlayerHeroMenu = () => {
-    setPlayerHeroMenuOpen(false);
-    setPlayerHeroMenuAnchorRect(null);
-  };
-
-  const togglePlayerHeroMenu = () => {
-    setPlayerHeroMenuOpen((prev) => {
-      if (prev) {
-        setPlayerHeroMenuAnchorRect(null);
-      }
-      return !prev;
-    });
-  };
-
-  const syncPlayerHeroMenuAnchorRect = () => {
-    if (typeof window === 'undefined') return;
-    const shell = playerHeroMenuRef.current;
-    if (!shell) return;
-    const rect = shell.getBoundingClientRect();
-    const maxWidth = Math.min(280, Math.max(220, window.innerWidth - 36));
-    setPlayerHeroMenuAnchorRect({
-      top: Math.max(12, Math.round(rect.bottom + 8)),
-      right: Math.max(12, Math.round(window.innerWidth - rect.right)),
-      width: Math.round(maxWidth)
-    });
-  };
-
   const closePlayerHistoryPanel = () => {
     setPlayerHistoryOpen(false);
     setPlayerHistoryFilter('all');
@@ -1321,8 +1281,6 @@ export default function CodeQuizApp() {
 
   const openPlayerHistoryPanel = async () => {
     const safeUserId = String(authUser?.uid || '').trim();
-    setPlayerHeroMenuOpen(false);
-    setPlayerHeroMenuAnchorRect(null);
     setPlayerHistoryOpen(true);
     setPlayerHistoryFilter('all');
     setPlayerHistoryError('');
@@ -1352,7 +1310,7 @@ export default function CodeQuizApp() {
       setPlayerPvpHistoryRows(filtered);
     } catch (error) {
       console.error('player history load failed:', error);
-      setPlayerHistoryError('Nao foi possivel atualizar o historico PVP agora.');
+      setPlayerHistoryError('Não foi possível atualizar o histórico PvP agora.');
     } finally {
       setPlayerHistoryLoading(false);
     }
@@ -1907,45 +1865,9 @@ export default function CodeQuizApp() {
   }, [pvpEliminationMatch?.id, pvpEliminationMatch?.updated_at, pvpEliminationMatch?.status, authUser?.uid, pvpEliminationResultReward, profile?.nickname]);
 
   useEffect(() => {
-    if (!playerHeroMenuOpen) return undefined;
-
-    const handlePointerDown = (event) => {
-      const shell = playerHeroMenuRef.current;
-      const popover = playerHeroMenuPopoverRef.current;
-      if (shell && shell.contains(event.target)) return;
-      if (popover && popover.contains(event.target)) return;
-      setPlayerHeroMenuOpen(false);
-      setPlayerHeroMenuAnchorRect(null);
-    };
-
-    window.addEventListener('pointerdown', handlePointerDown);
-    return () => {
-      window.removeEventListener('pointerdown', handlePointerDown);
-    };
-  }, [playerHeroMenuOpen]);
-
-  useEffect(() => {
     if (screen === 'home') return;
-    setPlayerHeroMenuOpen(false);
-    setPlayerHeroMenuAnchorRect(null);
     setPlayerHistoryOpen(false);
   }, [screen]);
-
-  useEffect(() => {
-    if (!playerHeroMenuOpen) return undefined;
-
-    const syncRect = () => {
-      syncPlayerHeroMenuAnchorRect();
-    };
-
-    syncRect();
-    window.addEventListener('resize', syncRect);
-    window.addEventListener('scroll', syncRect, true);
-    return () => {
-      window.removeEventListener('resize', syncRect);
-      window.removeEventListener('scroll', syncRect, true);
-    };
-  }, [playerHeroMenuOpen]);
 
   useEffect(() => {
     const storageUserId = String(authUser?.uid || 'guest').trim() || 'guest';
@@ -2161,7 +2083,7 @@ export default function CodeQuizApp() {
     if (previousPveLeague.key !== currentPveLeague.key) {
       changes.push({
         mode: 'pve',
-        modeLabel: 'PVE',
+        modeLabel: 'PvE',
         from: previousPveLeague,
         to: currentPveLeague,
         direction: getLeagueRankByKey(currentPveLeague.key) > getLeagueRankByKey(previousPveLeague.key) ? 'up' : 'down'
@@ -2173,7 +2095,7 @@ export default function CodeQuizApp() {
     if (previousPvpLeague.key !== currentPvpLeague.key) {
       changes.push({
         mode: 'pvp',
-        modeLabel: 'PVP',
+        modeLabel: 'PvP',
         from: previousPvpLeague,
         to: currentPvpLeague,
         direction: getLeagueRankByKey(currentPvpLeague.key) > getLeagueRankByKey(previousPvpLeague.key) ? 'up' : 'down'
@@ -2888,7 +2810,7 @@ export default function CodeQuizApp() {
           if (googleSignInRef.current) {
             setAuthTransition({
               visible: true,
-              title: 'Login concluido',
+              title: 'Login concluído',
               subtitle: 'Entrando na sua área...'
             });
 
@@ -2933,11 +2855,6 @@ export default function CodeQuizApp() {
       unsub();
     };
   }, []);
-
-  useEffect(() => {
-    if (screen !== 'settings') return;
-    setSettingsSections({ ...SETTINGS_SECTION_DEFAULTS });
-  }, [screen]);
 
   useEffect(() => {
     const candidate = String(profileDraft.nickname || '').trim();
@@ -3831,7 +3748,6 @@ export default function CodeQuizApp() {
 
   const safeLevel = Math.max(1, Number(progress?.level || 1));
   const safeXp = Math.max(0, Number(progress?.xp || 0));
-  const safeBestStreak = Math.max(0, Number(progress?.bestStreak || 0));
   const safeCoins = Math.max(0, Number(progress?.coins || 0));
   const xpForNextLevel = Math.max(1, getXPForLevel(safeLevel));
   const xpPercent = Math.max(0, Math.min(100, Math.round((safeXp / xpForNextLevel) * 100)));
@@ -4972,7 +4888,7 @@ export default function CodeQuizApp() {
         setPvpCompensation(null);
         resetPvpState();
         setScreen('home');
-        showToast('Recompensas PVP coletadas.');
+        showToast('Recompensas PvP coletadas.');
         playSfx('success');
       }
     });
@@ -5056,7 +4972,7 @@ export default function CodeQuizApp() {
         if (roomId && userId) {
           leavePvpEliminationRoom(roomId, userId).catch(() => null);
         }
-        showToast('Recompensas da eliminatoria coletadas.');
+        showToast('Recompensas da eliminatória coletadas.');
         playSfx('success');
       }
     });
@@ -5224,9 +5140,9 @@ export default function CodeQuizApp() {
         setBotArenaDaemonControlState(updated);
       }
       if (safeMode === 'quiz') {
-        showToast(safeEnabled ? 'Automacao de quiz dos bots ativada.' : 'Automacao de quiz dos bots desativada.');
+        showToast(safeEnabled ? 'Automação de quiz dos bots ativada.' : 'Automação de quiz dos bots desativada.');
       } else {
-        showToast(safeEnabled ? 'Automacao de batalhas PVP dos bots ativada.' : 'Automacao de batalhas PVP dos bots desativada.');
+        showToast(safeEnabled ? 'Automação de batalhas PvP dos bots ativada.' : 'Automação de batalhas PvP dos bots desativada.');
       }
       playSfx('success');
     } catch (error) {
@@ -5250,7 +5166,7 @@ export default function CodeQuizApp() {
         actorUserId: String(authUser?.uid || '').trim()
       }).catch(() => null);
       await refreshAdminMetrics();
-      showToast('Operacao admin concluida.');
+      showToast('Operação admin concluída.');
       playSfx('success');
     } catch (error) {
       console.error('admin cleanup failed:', error);
@@ -5324,7 +5240,7 @@ export default function CodeQuizApp() {
     }
 
     if (safeChoice === 'accepted') {
-      showToast('Cookies habilitados para melhorar a experiencia.');
+      showToast('Cookies habilitados para melhorar a experiência.');
       playSfx('success');
       return;
     }
@@ -5575,7 +5491,6 @@ export default function CodeQuizApp() {
       ? String(window.__CODEQUIZ_BUILT_AT || '').trim()
       : '';
     setBuildBadgeValue(formatBuildBadgeValue(runningFromMeta, runningBuiltAt));
-    setSettingsUpdatedAtValue(formatSettingsUpdatedAtValue(runningBuiltAt));
 
     let cancelled = false;
     const bootTimers = [];
@@ -5917,7 +5832,7 @@ export default function CodeQuizApp() {
     const safeLanguageId = String(payload?.languageId || '').trim();
     const safeTopicId = String(payload?.topicId || '').trim();
     const safeDifficulty = normalizeDifficulty(payload?.difficulty || 'easy');
-    const safeLanguageLabel = safeLanguageId ? getLanguageNameById(safeLanguageId) : 'Conteudo geral';
+    const safeLanguageLabel = safeLanguageId ? getLanguageNameById(safeLanguageId) : 'Conteúdo geral';
     const safeTopicLabel = safeTopicId
       ? getTopicNameById(safeLanguageId, safeTopicId)
       : 'Tema geral';
@@ -5926,7 +5841,7 @@ export default function CodeQuizApp() {
     const difficultyLabel = DIFFICULTY_LABELS[safeDifficulty] || DIFFICULTY_LABELS.easy;
     return {
       mode: safeMode,
-      kicker: safeMode === 'pvp' ? `PVP · Rodada ${safeRoundNo}` : 'Quiz PVE',
+      kicker: safeMode === 'pvp' ? `PvP · Rodada ${safeRoundNo}` : 'Quiz PvE',
       title: safeTopicLabel,
       subtitle: `${safeLanguageLabel} · ${difficultyLabel}`,
       icon: safeTopicIcon,
@@ -6378,39 +6293,6 @@ export default function CodeQuizApp() {
     setPvpEliminationExitPrompt(null);
     setPvpEliminationResultReward(null);
     setPvpEliminationRewardCollecting(false);
-  }
-
-  function shiftKnowledgeAreaCarousel(target = 'pve', direction = 1) {
-    const safeTarget = target === 'pvp' ? 'pvp' : 'pve';
-    const currentIndex = safeTarget === 'pvp' ? arenaKaCarouselIndex : kaCarouselIndex;
-    const step = Number(direction || 0) >= 0 ? 1 : -1;
-    const nextIndex = Math.max(0, Math.min(KNOWLEDGE_AREAS.length - 1, currentIndex + step));
-    if (nextIndex === currentIndex) return false;
-
-    if (safeTarget === 'pvp') setArenaKaCarouselIndex(nextIndex);
-    else setKaCarouselIndex(nextIndex);
-    playSfx('click');
-    return true;
-  }
-
-  function handleKnowledgeAreaTouchStart(target = 'pve', event) {
-    const touch = event?.touches?.[0];
-    if (!touch) return;
-    if (target === 'pvp') pvpKaTouchStartXRef.current = touch.clientX;
-    else pveKaTouchStartXRef.current = touch.clientX;
-  }
-
-  function handleKnowledgeAreaTouchEnd(target = 'pve', event) {
-    const touch = event?.changedTouches?.[0];
-    if (!touch) return;
-    const startX = target === 'pvp' ? pvpKaTouchStartXRef.current : pveKaTouchStartXRef.current;
-    if (!Number.isFinite(Number(startX))) return;
-    const diff = Number(startX) - Number(touch.clientX || 0);
-    if (Math.abs(diff) > 50) {
-      shiftKnowledgeAreaCarousel(target, diff > 0 ? 1 : -1);
-    }
-    if (target === 'pvp') pvpKaTouchStartXRef.current = null;
-    else pveKaTouchStartXRef.current = null;
   }
 
   function chooseKnowledgeAreaForPve(areaId = '') {
@@ -6962,7 +6844,7 @@ export default function CodeQuizApp() {
       setPvpEliminationRooms([]);
       setPvpEliminationRoomsLoading(false);
       if (!silent) {
-        showToast('Voce saiu da fila.');
+        showToast('Você saiu da fila.');
         playSfx('notify');
       }
     } finally {
@@ -7658,7 +7540,7 @@ export default function CodeQuizApp() {
     );
     setQueueMessage(
       myAcceptState === 'accepted'
-        ? `Voce aceitou. Aguardando os demais (${Math.max(0, Math.ceil((acceptDeadlineMs - nowMs) / 1000))}s).`
+        ? `Você aceitou. Aguardando os demais (${Math.max(0, Math.ceil((acceptDeadlineMs - nowMs) / 1000))}s).`
         : `Partida encontrada. Confirme seu aceite (${Math.max(0, Math.ceil((acceptDeadlineMs - nowMs) / 1000))}s).`
     );
   }
@@ -7743,15 +7625,15 @@ export default function CodeQuizApp() {
       }
       enterPvpTeamRoom(joined, passwordHash);
       setPvpTeamRoom(joined);
-      showToast(`Voce entrou automaticamente no time ${getPvpTeamSideColorLabel(nextSide)}.`);
+      showToast(`Você entrou automaticamente no time ${getPvpTeamSideColorLabel(nextSide)}.`);
       playSfx('success');
     } catch (error) {
       console.error('confirm team room entry failed:', error);
       setPvpTeamJoinPrompt((prev) => ({
         ...prev,
         error: room?.has_password
-          ? 'Senha invalida ou sala indisponivel.'
-          : 'Nao foi possivel entrar nesta sala agora.'
+          ? 'Senha inválida ou sala indisponível.'
+          : 'Não foi possível entrar nesta sala agora.'
       }));
       playSfx('error');
     } finally {
@@ -7773,11 +7655,11 @@ export default function CodeQuizApp() {
         throw new Error('team_room_ready_update_failed');
       }
       setPvpTeamRoom(updated);
-      showToast(nextReady ? 'Voce marcou que esta pronto.' : 'Voce removeu seu pronto.');
+      showToast(nextReady ? 'Você marcou que está pronto.' : 'Você removeu seu pronto.');
       playSfx(nextReady ? 'success' : 'click');
     } catch (error) {
       console.error('toggle team ready failed:', error);
-      showToast('Nao foi possivel atualizar seu status agora.');
+      showToast('Não foi possível atualizar seu status agora.');
       playSfx('error');
     } finally {
       setPvpTeamActionBusy(false);
@@ -7801,7 +7683,7 @@ export default function CodeQuizApp() {
       return !!existingNameKey && existingNameKey === roomNameKey;
     });
     if (hasDuplicateRoomName) {
-      setPvpTeamRoomDraftError('Ja existe uma sala com esse nome. Escolha outro.');
+      setPvpTeamRoomDraftError('Já existe uma sala com esse nome. Escolha outro.');
       return;
     }
     const visibility = String(pvpTeamRoomDraft.visibility || 'open').trim().toLowerCase() === 'password'
@@ -7871,9 +7753,9 @@ export default function CodeQuizApp() {
       console.error('create team room failed:', error);
       const errorCode = String(error?.code || '').trim().toLowerCase();
       if (errorCode === 'pvp_team_room/name-already-exists') {
-        setPvpTeamRoomDraftError('Ja existe uma sala com esse nome. Escolha outro.');
+        setPvpTeamRoomDraftError('Já existe uma sala com esse nome. Escolha outro.');
       } else {
-        setPvpTeamRoomDraftError('Nao foi possivel criar a sala agora.');
+        setPvpTeamRoomDraftError('Não foi possível criar a sala agora.');
       }
       playSfx('error');
     } finally {
@@ -7950,7 +7832,7 @@ export default function CodeQuizApp() {
       const notice = buildPvpTeamRoomStartBlockedNotice(room);
       publishPvpTeamRoomNotice(room.id, notice).catch(() => null);
       setPvpTeamRoomNoticeModal(notice);
-      showToast('Ainda nao e possivel iniciar a sala.');
+      showToast('Ainda não é possível iniciar a sala.');
       playSfx('error');
       return;
     }
@@ -8049,7 +7931,7 @@ export default function CodeQuizApp() {
         const notice = buildPvpEliminationRoomStartBlockedNotice(room);
         publishPvpEliminationRoomNotice(room.id, notice).catch(() => null);
         setPvpEliminationRoomNoticeModal(notice);
-        showToast('Ainda nao e possivel iniciar a sala.');
+        showToast('Ainda não é possível iniciar a sala.');
         playSfx('error');
         return;
       }
@@ -8132,11 +8014,11 @@ export default function CodeQuizApp() {
       setPvpEliminationSelectedIndex(null);
       setPvpEliminationExitPrompt(null);
       setScreen('pvp-elimination');
-      showToast('Eliminatoria iniciada.');
+      showToast('Eliminatória iniciada.');
       playSfx('success');
     } catch (error) {
       console.error('start elimination battle failed:', error);
-      showToast('Nao foi possivel iniciar a eliminatoria.');
+      showToast('Não foi possível iniciar a eliminatória.');
       playSfx('error');
     } finally {
       setPvpEliminationActionBusy(false);
@@ -8522,10 +8404,6 @@ export default function CodeQuizApp() {
       closePlayerHistoryPanel();
       return true;
     }
-    if (playerHeroMenuOpen) {
-      closePlayerHeroMenu();
-      return true;
-    }
     if (pvpEmojiPickerOpen) {
       closePvpEmojiPicker();
       return true;
@@ -8648,11 +8526,11 @@ export default function CodeQuizApp() {
     }
     if (screen === 'pvp-elimination-result') {
       if (!pvpEliminationResultReward && !pvpEliminationRewardCollecting && !pvpEliminationResultProcessed) {
-        showToast('Preparando recompensas da eliminatoria...');
+        showToast('Preparando recompensas da eliminatória...');
         return true;
       }
       if (pvpEliminationResultReward || pvpEliminationRewardCollecting) {
-        showToast('Colete as recompensas da eliminatoria para encerrar.');
+        showToast('Colete as recompensas da eliminatória para encerrar.');
         return true;
       }
       resetPvpEliminationState();
@@ -8829,7 +8707,7 @@ export default function CodeQuizApp() {
     if (!quizState || quizState.answered) return;
     const selected = Number(quizState.selectedIndex ?? -1);
     if (!Number.isFinite(selected) || selected < 0) {
-      showToast('Selecione uma opcao para confirmar.');
+      showToast('Selecione uma opção para confirmar.');
       playSfx('error');
       return;
     }
@@ -9034,13 +8912,6 @@ export default function CodeQuizApp() {
     setScreen('quiz');
   }
 
-  function toggleSettingsSection(sectionKey) {
-    setSettingsSections((prev) => ({
-      ...prev,
-      [sectionKey]: !prev?.[sectionKey]
-    }));
-  }
-
   function openSettingsSignOutConfirm() {
     if (googleSignInBusy) return;
     setSettingsSignOutConfirmOpen(true);
@@ -9057,7 +8928,7 @@ export default function CodeQuizApp() {
     await handleSignOut({
       withTransition: true,
       transitionTitle: 'Saindo da sua conta',
-      transitionSubtitle: 'Encerrando a sessao com seguranca e voltando para o login.'
+      transitionSubtitle: 'Encerrando a sessão com segurança e voltando para o login.'
     });
   }
 
@@ -9078,7 +8949,7 @@ export default function CodeQuizApp() {
   function advanceHomeTour() {
     if (isHomeTourLastStep) {
       finishHomeTour(true);
-      showToast('Tour concluido.');
+      showToast('Tour concluído.');
       return;
     }
     setHomeTourStepIndex((prev) => Math.min(homeTourSteps.length - 1, prev + 1));
@@ -9103,10 +8974,6 @@ export default function CodeQuizApp() {
     setScreen('login');
   }
 
-  function closeGoogleAuthModal() {
-    // Legacy modal intentionally disabled. Google account selection now opens directly.
-  }
-
   async function handleSignIn(mode = 'signin') {
     if (googleSignInBusy) return;
     const signInMode = mode === 'switch' ? 'switch' : 'signin';
@@ -9115,7 +8982,7 @@ export default function CodeQuizApp() {
     setGoogleSignInBusy(true);
     setAuthTransition({
       visible: true,
-      title: signInMode === 'switch' ? 'Abrindo selecao de conta' : 'Conectando ao Google',
+      title: signInMode === 'switch' ? 'Abrindo seleção de conta' : 'Conectando ao Google',
       subtitle: 'Escolha a conta Google que deseja usar para continuar dentro do app.'
     });
 
@@ -9145,11 +9012,11 @@ export default function CodeQuizApp() {
         return;
       }
       if (userClosedPopup) {
-        showToast('Selecao de conta cancelada.');
+        showToast('Seleção de conta cancelada.');
       } else if (code.includes('popup-blocked')) {
-        showToast('Nao foi possivel abrir a selecao da conta Google. Permita popups para continuar.');
+        showToast('Não foi possível abrir a seleção da conta Google. Permita popups para continuar.');
       } else if (code === 'app/timeout' && label === 'signinwithpopup') {
-        showToast('A selecao da conta Google demorou mais do que o esperado.');
+        showToast('A seleção da conta Google demorou mais do que o esperado.');
       } else {
         showToast('Não foi possível entrar com Google.');
       }
@@ -9168,8 +9035,8 @@ export default function CodeQuizApp() {
     const showTransition = options?.withTransition === true;
     const transitionTitle = String(options?.transitionTitle || 'Saindo da conta').trim() || 'Saindo da conta';
     const transitionSubtitle = String(
-      options?.transitionSubtitle || 'Encerrando a sessao com seguranca para voltar ao login.'
-    ).trim() || 'Encerrando a sessao com seguranca para voltar ao login.';
+      options?.transitionSubtitle || 'Encerrando a sessão com segurança para voltar ao login.'
+    ).trim() || 'Encerrando a sessão com segurança para voltar ao login.';
     try {
       setGoogleSignInBusy(true);
       if (showTransition) {
@@ -9188,7 +9055,7 @@ export default function CodeQuizApp() {
         });
       }
       await resetGoogleSessionState();
-      showToast('Sessao encerrada.');
+      showToast('Sessão encerrada.');
       playSfx('notify');
     } catch (error) {
       console.error('sign out error:', error);
@@ -9275,7 +9142,7 @@ export default function CodeQuizApp() {
 
     if (!stage) return;
     if (stage.claimed) {
-      showToast('Essa recompensa ja foi coletada.');
+      showToast('Essa recompensa já foi coletada.');
       playSfx('notify');
       return;
     }
@@ -9292,7 +9159,7 @@ export default function CodeQuizApp() {
         ? claimResult.claimedAchievements[0]
         : null;
       if (!claimedStage) {
-        showToast('Recompensa indisponivel no momento. Tente novamente.');
+        showToast('Recompensa indisponível no momento. Tente novamente.');
         playSfx('notify');
         return;
       }
@@ -9340,7 +9207,7 @@ export default function CodeQuizApp() {
       }
 
       const levelSuffix = claimResult.leveledUp
-        ? ` · Nivel ${Math.max(1, Number(claimResult.newLevel || nextProgress.level || 1))}`
+        ? ` · Nível ${Math.max(1, Number(claimResult.newLevel || nextProgress.level || 1))}`
         : '';
       const cosmeticSuffix = rewardShopNames.length > 0
         ? ` · ${rewardShopNames.join(' · ')}`
@@ -9774,7 +9641,7 @@ export default function CodeQuizApp() {
       currentStatus: pvpStateRef.current?.status || ''
     });
     if (!authUser?.uid || !profile?.id) {
-      showToast('Entre com sua conta para jogar PVP.');
+      showToast('Entre com sua conta para jogar PvP.');
       setScreen('login');
       setQueueActionBusy(false);
       setQueueActionPhase('');
@@ -9888,7 +9755,7 @@ export default function CodeQuizApp() {
         botMatchAtMs: confirmedBotMatchAtMs
       });
       prepareBotForQueue(forcedDifficulty, 'join_queue').catch(() => null);
-      showToast('Entrou na fila PVP.');
+      showToast('Entrou na fila PvP.');
       playSfx('success');
       setQueueActionHint('');
     } catch (error) {
@@ -10200,7 +10067,7 @@ export default function CodeQuizApp() {
     if (!current || current.status !== 'active' || current.submitted) return;
     const selected = Number(current.selectedIndex ?? -1);
     if (!Number.isFinite(selected) || selected < 0) {
-      showToast('Selecione uma opcao para confirmar.');
+      showToast('Selecione uma opção para confirmar.');
       playSfx('error');
       return;
     }
@@ -10359,7 +10226,7 @@ export default function CodeQuizApp() {
       setPvpEliminationAnswers(previousAnswers);
       setPvpEliminationSubmitted(previousSubmitted);
       setPvpEliminationSelectedIndex(previousSelectedIndex);
-      showToast('Falha ao enviar resposta da eliminatoria.');
+      showToast('Falha ao enviar resposta da eliminatória.');
       playSfx('error');
     }
   }
@@ -10370,7 +10237,7 @@ export default function CodeQuizApp() {
     if (status !== 'active' || pvpEliminationSubmitted) return;
     const selected = Number(pvpEliminationSelectedIndex ?? -1);
     if (!Number.isFinite(selected) || selected < 0) {
-      showToast('Selecione uma opcao para confirmar.');
+      showToast('Selecione uma opção para confirmar.');
       playSfx('error');
       return;
     }
@@ -10768,11 +10635,11 @@ export default function CodeQuizApp() {
     });
 
     if (resultKey === 'win') {
-      showToast(`Vitoria em equipe! ${formatSignedPoints(pvpPointsGain)} PVP - +${totalRewardXp} XP - +${totalRewardCoins} moedas${leveledUp ? ' - Subiu de nivel!' : ''}${passUnlockedCount > 0 ? ` - Passe pronto: ${passUnlockedCount}` : ''}`);
+      showToast(`Vitória em equipe! ${formatSignedPoints(pvpPointsGain)} PvP · +${totalRewardXp} XP · +${totalRewardCoins} moedas${leveledUp ? ' · Subiu de nível!' : ''}${passUnlockedCount > 0 ? ` - Passe pronto: ${passUnlockedCount}` : ''}`);
     } else if (resultKey === 'draw') {
-      showToast(`Empate em equipe. ${formatSignedPoints(pvpPointsGain)} PVP - +${totalRewardXp} XP - +${totalRewardCoins} moedas${passUnlockedCount > 0 ? ` - Passe pronto: ${passUnlockedCount}` : ''}`);
+      showToast(`Empate em equipe. ${formatSignedPoints(pvpPointsGain)} PvP · +${totalRewardXp} XP · +${totalRewardCoins} moedas${passUnlockedCount > 0 ? ` - Passe pronto: ${passUnlockedCount}` : ''}`);
     } else {
-      showToast(`Derrota em equipe. ${formatSignedPoints(pvpPointsGain)} PVP - +${totalRewardXp} XP - +${totalRewardCoins} moedas${passUnlockedCount > 0 ? ` - Passe pronto: ${passUnlockedCount}` : ''}`);
+      showToast(`Derrota em equipe. ${formatSignedPoints(pvpPointsGain)} PvP · +${totalRewardXp} XP · +${totalRewardCoins} moedas${passUnlockedCount > 0 ? ` - Passe pronto: ${passUnlockedCount}` : ''}`);
     }
   }
 
@@ -10889,11 +10756,11 @@ export default function CodeQuizApp() {
     });
 
     if (placement === 1) {
-      showToast(`Campeao da eliminatoria! ${formatSignedPoints(pvpPointsGain)} PVP - +${totalRewardXp} XP - +${totalRewardCoins} moedas${leveledUp ? ' - Subiu de nivel!' : ''}${passUnlockedCount > 0 ? ` - Passe pronto: ${passUnlockedCount}` : ''}`);
+      showToast(`Campeão da eliminatória! ${formatSignedPoints(pvpPointsGain)} PvP · +${totalRewardXp} XP · +${totalRewardCoins} moedas${leveledUp ? ' · Subiu de nível!' : ''}${passUnlockedCount > 0 ? ` - Passe pronto: ${passUnlockedCount}` : ''}`);
     } else if (allowEarly) {
-      showToast(`Voce saiu em ${placementLabel}. ${formatSignedPoints(pvpPointsGain)} PVP - +${totalRewardXp} XP - +${totalRewardCoins} moedas${passUnlockedCount > 0 ? ` - Passe pronto: ${passUnlockedCount}` : ''}`);
+      showToast(`Você saiu em ${placementLabel}. ${formatSignedPoints(pvpPointsGain)} PvP · +${totalRewardXp} XP · +${totalRewardCoins} moedas${passUnlockedCount > 0 ? ` - Passe pronto: ${passUnlockedCount}` : ''}`);
     } else {
-      showToast(`Fim da eliminatoria - ${placementLabel}. ${formatSignedPoints(pvpPointsGain)} PVP - +${totalRewardXp} XP - +${totalRewardCoins} moedas${passUnlockedCount > 0 ? ` - Passe pronto: ${passUnlockedCount}` : ''}`);
+      showToast(`Fim da eliminatória · ${placementLabel}. ${formatSignedPoints(pvpPointsGain)} PvP · +${totalRewardXp} XP · +${totalRewardCoins} moedas${passUnlockedCount > 0 ? ` - Passe pronto: ${passUnlockedCount}` : ''}`);
     }
   }
 
@@ -11086,7 +10953,7 @@ export default function CodeQuizApp() {
     if (isOwnForfeit) {
       setPvpResultTransitionMode('');
       setPvpCompensation(null);
-      showToast(`Você saiu da partida: ${formatSignedPoints(pvpPointsGain)} PVP · +${totalRewardXp} XP · +${totalRewardCoins} moedas`);
+      showToast(`Você saiu da partida: ${formatSignedPoints(pvpPointsGain)} PvP · +${totalRewardXp} XP · +${totalRewardCoins} moedas`);
       return;
     }
 
@@ -11114,11 +10981,11 @@ export default function CodeQuizApp() {
     });
 
     if (result === 'win') {
-      showToast(`Vitória PVP! ${formatSignedPoints(pvpPointsGain)} PVP · +${totalRewardXp} XP · +${totalRewardCoins} moedas${leveledUp ? ' · Subiu de nível!' : ''}${passUnlockedCount > 0 ? ` · Passe pronto: ${passUnlockedCount}` : ''}`);
+      showToast(`Vitória PvP! ${formatSignedPoints(pvpPointsGain)} PvP · +${totalRewardXp} XP · +${totalRewardCoins} moedas${leveledUp ? ' · Subiu de nível!' : ''}${passUnlockedCount > 0 ? ` · Passe pronto: ${passUnlockedCount}` : ''}`);
     } else if (result === 'draw') {
-      showToast(`Empate PVP. ${formatSignedPoints(pvpPointsGain)} PVP · +${totalRewardXp} XP · +${totalRewardCoins} moedas${passUnlockedCount > 0 ? ` · Passe pronto: ${passUnlockedCount}` : ''}`);
+      showToast(`Empate PvP. ${formatSignedPoints(pvpPointsGain)} PvP · +${totalRewardXp} XP · +${totalRewardCoins} moedas${passUnlockedCount > 0 ? ` · Passe pronto: ${passUnlockedCount}` : ''}`);
     } else {
-      showToast(`Derrota PVP. ${formatSignedPoints(pvpPointsGain)} PVP · +${totalRewardXp} XP · +${totalRewardCoins} moedas${passUnlockedCount > 0 ? ` · Passe pronto: ${passUnlockedCount}` : ''}`);
+      showToast(`Derrota PvP. ${formatSignedPoints(pvpPointsGain)} PvP · +${totalRewardXp} XP · +${totalRewardCoins} moedas${passUnlockedCount > 0 ? ` · Passe pronto: ${passUnlockedCount}` : ''}`);
     }
   }
 
@@ -13845,7 +13712,7 @@ export default function CodeQuizApp() {
       sections.push({
         id: 'more',
         label: 'Outros temas',
-        desc: 'Demais trilhas disponiveis no app.',
+        desc: 'Demais trilhas disponíveis no app.',
         items: remaining
       });
     }
@@ -13988,8 +13855,8 @@ export default function CodeQuizApp() {
   );
   const playerHistoryFilterOptions = useMemo(() => ([
     { id: 'all', label: 'Todos' },
-    { id: 'pvp', label: 'PVP' },
-    { id: 'pve', label: 'PVE' }
+    { id: 'pvp', label: 'PvP' },
+    { id: 'pve', label: 'PvE' }
   ]), []);
   const playerHistoryItems = useMemo(() => {
     const formatStamp = (value) => {
@@ -14016,14 +13883,14 @@ export default function CodeQuizApp() {
       const difficultyKey = normalizeDifficulty(row?.difficulty || 'easy');
       const difficultyLabel = DIFFICULTY_LABELS[difficultyKey] || DIFFICULTY_LABELS.easy;
       const resultKey = getPvpResultForUser(row, safeUserId) === 'win' ? 'win' : 'loss';
-      const resultLabel = resultKey === 'win' ? 'Vitoria' : 'Derrota';
+      const resultLabel = resultKey === 'win' ? 'Vitória' : 'Derrota';
       const areaId = String(
         row?.knowledge_area
         || row?.pvp_sequence_area
         || resolveKnowledgeAreaByLanguageId(row?.language || '')
         || 'programming'
       ).trim();
-      const areaName = knowledgeAreaById.get(areaId)?.name || 'PVP';
+      const areaName = knowledgeAreaById.get(areaId)?.name || 'PvP';
       const timestampMs = Math.max(0, Number(toMillis(row?.ended_at || row?.updated_at || row?.created_at) || 0));
       const player1Score = Math.max(0, Number(row?.player1_score || 0));
       const player2Score = Math.max(0, Number(row?.player2_score || 0));
@@ -14040,7 +13907,7 @@ export default function CodeQuizApp() {
           player2: player2Name,
           winnerSide
         },
-        subtitle: `${DIFFICULTY_LABELS[normalizeDifficulty(row?.difficulty || 'easy')] || 'Facil'} · ${areaName}`,
+        subtitle: `${DIFFICULTY_LABELS[normalizeDifficulty(row?.difficulty || 'easy')] || 'Fácil'} · ${areaName}`,
         resultLabel: '',
         resultTone: resultKey,
         timestampMs,
@@ -14084,8 +13951,8 @@ export default function CodeQuizApp() {
       return {
         id: String(entry?.id || `pve_${timestampMs}`).trim() || `pve_${timestampMs}`,
         type: 'pve',
-        title: topicMeta?.name || 'Quiz concluido',
-        subtitle: `${languageMeta?.name || normalizedLanguageId || 'Quiz'} · ${DIFFICULTY_LABELS[normalizeDifficulty(entry?.difficulty || 'easy')] || 'Facil'}`,
+        title: topicMeta?.name || 'Quiz concluído',
+        subtitle: `${languageMeta?.name || normalizedLanguageId || 'Quiz'} · ${DIFFICULTY_LABELS[normalizeDifficulty(entry?.difficulty || 'easy')] || 'Fácil'}`,
         resultLabel: `${Math.max(0, Number(entry?.scorePct || 0))}%`,
         resultTone: 'score',
         timestampMs,
@@ -14118,10 +13985,10 @@ export default function CodeQuizApp() {
     pve: playerQuizHistoryEntries.length
   }), [playerPvpHistoryRows.length, playerQuizHistoryEntries.length]);
   const playerHistoryEmptyText = playerHistoryFilter === 'pvp'
-    ? 'Nenhuma partida PVP encontrada ainda.'
+    ? 'Nenhuma partida PvP encontrada ainda.'
     : (playerHistoryFilter === 'pve'
-      ? 'Nenhum quiz PVE foi registrado ainda.'
-      : 'Ainda nao ha partidas registradas para este perfil.');
+      ? 'Nenhum quiz PvE registrado ainda.'
+      : 'Ainda não há partidas registradas neste perfil.');
 
   const pvpQueueElapsedMs = pvpState.queueJoinedAtMs > 0
     ? Math.max(0, pvpClockMs - Number(pvpState.queueJoinedAtMs || 0))
@@ -14145,16 +14012,10 @@ export default function CodeQuizApp() {
     ? Math.max(0, Math.min(100, pvpTimerPctRaw))
     : 100;
   const pvpTimerClass = pvpTimerPct <= 18 ? 'danger' : pvpTimerPct <= 40 ? 'warning' : '';
-  const pvpTimerVisualClass = pvpTimerClass === 'danger'
-    ? 'time-critical'
-    : (pvpTimerClass === 'warning' ? 'time-warning' : '');
   const pvpIsEliminationRound = pvpRoundNo > pvpBaseFinalRoundNo;
   const pvpIsFinalRound = pvpRoundNo === pvpBaseFinalRoundNo;
-  const pvpRoundPhaseClass = pvpIsEliminationRound
-    ? 'phase-elimination'
-    : (pvpIsFinalRound ? 'phase-final' : '');
   const pvpRoundPhaseLabel = pvpIsEliminationRound
-    ? 'Eliminatoria'
+    ? 'Eliminatória'
     : (pvpIsFinalRound ? 'Rodada final' : '');
   const pvpIsRoundResult = String(pvpState.status || '') === 'round_result';
   const pvpRoundResultUntilMs = Math.max(0, Number(pvpMatch?.round_result_until_ms || 0));
@@ -14162,11 +14023,8 @@ export default function CodeQuizApp() {
   const pvpRoundResultNo = Math.max(1, Number(pvpMatch?.result_round_no || pvpMatch?.round_no || 1));
   const pvpRoundResultIsElimination = pvpRoundResultNo > pvpBaseFinalRoundNo;
   const pvpRoundResultIsFinal = pvpRoundResultNo === pvpBaseFinalRoundNo;
-  const pvpRoundResultPhaseClass = pvpRoundResultIsElimination
-    ? 'phase-elimination'
-    : (pvpRoundResultIsFinal ? 'phase-final' : '');
   const pvpRoundResultKicker = pvpRoundResultIsElimination
-    ? 'Resultado da rodada eliminatoria'
+    ? 'Resultado da rodada eliminatória'
     : (pvpRoundResultIsFinal ? 'Resultado da rodada final' : 'Resultado da rodada');
   const pvpRoundResultCountdownClass = pvpRoundResultRemainingSec <= 2 ? 'is-urgent' : '';
   const pvpRoundResultQuestion = pvpMatch?.question_set?.[pvpRoundResultNo - 1] || null;
@@ -14254,9 +14112,6 @@ export default function CodeQuizApp() {
     ? Math.max(0, Math.min(100, pvpTeamTimerPctRaw))
     : 100;
   const pvpTeamTimerClass = pvpTeamTimerPct <= 18 ? 'danger' : pvpTeamTimerPct <= 40 ? 'warning' : '';
-  const pvpTeamTimerVisualClass = pvpTeamTimerClass === 'danger'
-    ? 'time-critical'
-    : (pvpTeamTimerClass === 'warning' ? 'time-warning' : '');
   const pvpTeamRedMembers = getPvpTeamMembersBySide(pvpTeamRosterSource, 'red');
   const pvpTeamBlueMembers = getPvpTeamMembersBySide(pvpTeamRosterSource, 'blue');
   const pvpTeamIsActivePlayer = String(authUser?.uid || '').trim() === String(pvpTeamActivePair?.red?.user_id || '').trim()
@@ -14306,10 +14161,6 @@ export default function CodeQuizApp() {
     || knowledgeAreaById.get(String(pvpKnowledgeArea || '').trim())
     || KNOWLEDGE_AREAS[0]
     || null;
-  const pvpTeamDraftPrevAreaMeta = pvpTeamDraftAreaIndex > 0 ? KNOWLEDGE_AREAS[pvpTeamDraftAreaIndex - 1] : null;
-  const pvpTeamDraftNextAreaMeta = pvpTeamDraftAreaIndex < KNOWLEDGE_AREAS.length - 1
-    ? KNOWLEDGE_AREAS[pvpTeamDraftAreaIndex + 1]
-    : null;
   const pvpTeamResultKey = pvpTeamResult || getPvpTeamResultForUser(pvpTeamMatch, authUser?.uid || '');
   const pvpTeamResultMatchId = String(pvpTeamMatch?.id || '').trim();
   const pvpTeamResultProcessed = !!(pvpTeamResultMatchId && progress?.pvpProcessedMatches?.[pvpTeamResultMatchId]);
@@ -14397,9 +14248,6 @@ export default function CodeQuizApp() {
     ? Math.max(0, Math.min(100, pvpEliminationTimerPctRaw))
     : 100;
   const pvpEliminationTimerClass = pvpEliminationTimerPct <= 18 ? 'danger' : pvpEliminationTimerPct <= 40 ? 'warning' : '';
-  const pvpEliminationTimerVisualClass = pvpEliminationTimerClass === 'danger'
-    ? 'time-critical'
-    : (pvpEliminationTimerClass === 'warning' ? 'time-warning' : '');
   const pvpEliminationAnswersByUser = new Map(
     (Array.isArray(pvpEliminationAnswers) ? pvpEliminationAnswers : [])
       .map((answer) => [String(answer?.user_id || '').trim(), answer])
@@ -14430,7 +14278,7 @@ export default function CodeQuizApp() {
   const pvpEliminationEliminatedMember = pvpEliminationMemberMap.get(pvpEliminationEliminatedUserId) || null;
   const pvpEliminationEliminationLabel = pvpEliminationEliminatedUserId
     ? `${pvpEliminationEliminatedMember?.nickname || 'Jogador'} foi eliminado`
-    : 'Eliminacao concluida';
+    : 'Eliminação concluída';
   const pvpEliminationWinnerUserId = String(pvpEliminationMatch?.winner_user_id || '').trim();
   const pvpEliminationWinnerMember = pvpEliminationMemberMap.get(pvpEliminationWinnerUserId) || null;
   const pvpEliminationPlacement = getPvpEliminationPlacementForUser(pvpEliminationMatch, authUser?.uid || '');
@@ -14541,7 +14389,7 @@ export default function CodeQuizApp() {
     : pvpEliminationAllAccepted
       ? `Partida iniciando em ${Math.max(0, pvpEliminationAcceptStartRemainingSec)}s.`
       : pvpEliminationMyAcceptState === 'accepted'
-        ? `Voce aceitou. Aguardando os demais (${Math.max(0, pvpEliminationAcceptRemainingSec)}s).`
+        ? `Você aceitou. Aguardando os demais (${Math.max(0, pvpEliminationAcceptRemainingSec)}s).`
         : `Tempo para aceitar: ${Math.max(0, pvpEliminationAcceptRemainingSec)}s`;
   const pvpEliminationQueueElapsedMs = pvpEliminationQueueState.joinedAtMs > 0
     ? Math.max(0, pvpClockMs - Number(pvpEliminationQueueState.joinedAtMs || 0))
@@ -14867,7 +14715,6 @@ export default function CodeQuizApp() {
   const pvpCategory = getCategoryByPoints(progress?.pvpPoints || 0);
   const pvpSelectedDifficulty = getPvpQueueDifficultyFromConfig(pvpConfig, progress);
   const homeAuthUser = activeAuthUser;
-  const showHomeProfileHero = Boolean(homeAuthUser || profile?.id || profile?.nickname || profile?.avatar);
 
   const safeShopTab = normalizeShopTab(shopTab);
   const safeShopOwnershipFilter = normalizeShopOwnershipFilter(shopOwnershipFilter);
@@ -14897,7 +14744,6 @@ export default function CodeQuizApp() {
     });
     return groups;
   }, [activeShopItems]);
-  const equippedShopId = shopData?.equipped?.[safeShopTab] || '';
 
   const pvpResult = pvpState.result || getPvpResultForUser(pvpMatch, authUser?.uid || '');
   const pvpFinalScoreParts = useMemo(() => {
@@ -14937,18 +14783,6 @@ export default function CodeQuizApp() {
     || queueActionBusy
     || matchAcceptBusy
   );
-  const isWideAdminLayout = screen === 'admin-monitor' || screen === 'admin-live' || screen === 'admin-history';
-  const showMusicPlayer = !booting && !authLoading && progressReady && shopReady && screen !== 'login' && audioSettings.musicEnabled;
-  const appRootClassName = [
-    isWideAdminLayout ? 'app-wide' : '',
-    screen === 'achievements' ? 'app-pass-active' : ''
-  ].filter(Boolean).join(' ');
-  const homeScreenClassName = [
-    'screen',
-    'screen-home',
-    screen === 'home' ? 'active' : '',
-    updateState.available ? 'screen-home-has-update' : ''
-  ].filter(Boolean).join(' ');
   const homeTourSteps = useMemo(() => ([
     {
       anchor: 'home-hero',
@@ -14958,15 +14792,15 @@ export default function CodeQuizApp() {
     },
     {
       anchor: 'home-play',
-      kicker: 'Entrada rápida',
-      title: 'Jogar Agora leva você direto para a ação',
-      description: 'Use este botão para escolher o modo e iniciar partidas PVE ou PVP rapidamente.'
+      kicker: 'Hora de jogar',
+      title: 'Treine sozinho ou desafie outros jogadores',
+      description: 'Comece um quiz pelas trilhas ou entre na arena PvP para subir de liga.'
     },
     {
-      anchor: 'home-tools',
-      kicker: 'Atalhos principais',
-      title: 'Esses botões organizam as funções mais importantes',
-      description: 'Abra Rankings, Loja, Passe de Evolução e Configurações com um toque.'
+      anchor: 'app-nav',
+      kicker: 'Navegação',
+      title: 'Tudo a um toque de distância',
+      description: 'Use o menu para abrir Jogar, Ranking, Loja e o Passe de Evolução quando quiser.'
     }
   ]), []);
   const currentHomeTourStep = homeTourSteps[homeTourStepIndex] || null;
@@ -14974,15 +14808,6 @@ export default function CodeQuizApp() {
     ? `${Math.min(homeTourSteps.length, homeTourStepIndex + 1)} / ${homeTourSteps.length}`
     : '';
   const isHomeTourLastStep = homeTourStepIndex >= (homeTourSteps.length - 1);
-  const googleAuthModal = GOOGLE_AUTH_MODAL_DISABLED_STATE;
-  const googleAuthModalSwitchMode = googleAuthModal.mode === 'switch';
-  const googleAuthModalTitle = googleAuthModalSwitchMode ? 'Trocar conta Google' : 'Entrar com Google';
-  const googleAuthModalSubtitle = googleAuthModalSwitchMode
-    ? 'Abra a janela segura do Google para escolher outra conta sem sair da tela do app.'
-    : 'Entre com sua conta Google em uma janela segura, sem navegar para fora do app.';
-  const googleAuthModalPrimaryLabel = googleSignInBusy
-    ? 'Abrindo Google...'
-    : (googleAuthModalSwitchMode ? 'Escolher outra conta' : 'Continuar com Google');
   const settingsSignOutAccountLabel = googleAccountName || 'Conta Google';
 
   useEffect(() => {
@@ -15016,8 +14841,12 @@ export default function CodeQuizApp() {
     let timerId = 0;
     const selector = `[data-tour-anchor="${currentHomeTourStep.anchor}"]`;
 
+    // A âncora pode existir no menu lateral e na barra de abas: usa a que está visível.
+    const findTarget = () => Array.from(document.querySelectorAll(selector))
+      .find((node) => node instanceof HTMLElement && node.getClientRects().length > 0) || null;
+
     const refreshHighlight = () => {
-      const target = document.querySelector(selector);
+      const target = findTarget();
       if (!(target instanceof HTMLElement)) {
         setHomeTourHighlight(null);
         return;
@@ -15032,7 +14861,7 @@ export default function CodeQuizApp() {
       });
     };
 
-    const target = document.querySelector(selector);
+    const target = findTarget();
     if (target instanceof HTMLElement) {
       target.scrollIntoView({
         block: 'center',
@@ -15140,7 +14969,6 @@ export default function CodeQuizApp() {
   }
 
   function navigateToTab(tabKey) {
-    closePlayerHeroMenu();
     const target = getTabScreen(tabKey);
     if (target !== screen) setScreen(target);
     if (typeof window !== 'undefined') window.scrollTo({ top: 0 });
@@ -15157,7 +14985,6 @@ export default function CodeQuizApp() {
         profile={shellProfile}
         music={shellMusic}
         toast={toast}
-        className={appRootClassName}
       >
         {screen === 'home' ? (
           <HomeScreen vm={{
@@ -15367,8 +15194,7 @@ export default function CodeQuizApp() {
         {screen === 'login' ? (
           <LoginScreen vm={{
             googleButtonContainerRef,
-            googleSignInBusy,
-            screen
+            googleSignInBusy
           }} />
         ) : null}
 
@@ -15388,7 +15214,6 @@ export default function CodeQuizApp() {
             profileDraft,
             profileSaving,
             saveProfile,
-            screen,
             setProfileDraft,
             setScreen
           }} />
@@ -15417,7 +15242,6 @@ export default function CodeQuizApp() {
             saveProfile,
             setProfileDraft,
             setScreen,
-            settingsUpdatedAtValue,
             triggerAppBackNavigation,
             updateAudioSetting
           }} />
@@ -15452,14 +15276,11 @@ export default function CodeQuizApp() {
           <PvpLobbyScreen vm={{
             acceptPvpEliminationRoomInvite,
             acceptPvpMatchInvite,
-            arenaKaCarouselIndex,
             arenaPrimaryAction,
             authUser,
             buildCosmeticSnapshot,
             chooseKnowledgeAreaForPvp,
             choosePvpDifficulty,
-            handleKnowledgeAreaTouchEnd,
-            handleKnowledgeAreaTouchStart,
             joinPvpTeamRoomSide,
             knowledgeAreaById,
             matchAcceptBusy,
@@ -15472,7 +15293,6 @@ export default function CodeQuizApp() {
             openPvpMode,
             openPvpTeamRoomCreate,
             openPvpTeamRoomLobby,
-            playSfx,
             pvpAreaSelectionLocked,
             pvpBattleEmojis,
             pvpEliminationAcceptCountdownLabel,
@@ -15516,9 +15336,6 @@ export default function CodeQuizApp() {
             queueActionBusy,
             rejectPvpEliminationRoomInvite,
             rejectPvpMatchInvite,
-            screen,
-            setArenaKaCarouselIndex,
-            shiftKnowledgeAreaCarousel,
             shouldKeepQueueButtonPressed,
             shouldShowAcceptActions,
             showMatchFoundTransition,
@@ -15720,8 +15537,6 @@ export default function CodeQuizApp() {
           pvpSelectedDifficulty,
           pvpTeamActionBusy,
           pvpTeamDraftAreaMeta,
-          pvpTeamDraftNextAreaMeta,
-          pvpTeamDraftPrevAreaMeta,
           pvpTeamRoomDraft,
           pvpTeamRoomDraftError,
           setPvpTeamRoomDraft
@@ -15757,14 +15572,6 @@ export default function CodeQuizApp() {
           exitPvpEliminationWithPlacement,
           keepWatchingPvpElimination,
           pvpEliminationExitPrompt
-        }} />
-      ) : null}
-
-      {playerHeroMenuOpen && playerHeroMenuAnchorRect ? (
-        <HeroMenuPopover vm={{
-          openPlayerHistoryPanel,
-          playerHeroMenuAnchorRect,
-          playerHeroMenuPopoverRef
         }} />
       ) : null}
 
@@ -15833,17 +15640,6 @@ export default function CodeQuizApp() {
           homeTourProgressLabel,
           isHomeTourLastStep,
           skipHomeTour
-        }} />
-      ) : null}
-
-      {googleAuthModal.open ? (
-        <GoogleAuthModal vm={{
-          closeGoogleAuthModal,
-          googleAuthModalPrimaryLabel,
-          googleAuthModalSubtitle,
-          googleAuthModalTitle,
-          googleSignInBusy,
-          handleSignIn
         }} />
       ) : null}
 

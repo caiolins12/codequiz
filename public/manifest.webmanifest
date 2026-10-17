@@ -1,14 +1,14 @@
 {
   "name": "CodeQuiz",
   "short_name": "CodeQuiz",
-  "description": "Quiz de programação com PVE e PVP em tempo real.",
+  "description": "Quiz de programação com trilhas, ranking e batalhas PvP em tempo real.",
   "lang": "pt-BR",
   "start_url": "./?source=pwa",
   "scope": "./",
   "display": "standalone",
-  "orientation": "portrait",
-  "background_color": "#0b0c1e",
-  "theme_color": "#151832",
+  "orientation": "any",
+  "background_color": "#120e33",
+  "theme_color": "#120e33",
   "icons": [
     {
       "src": "./icons/icon-192.png",
@@ -24,4 +24,3 @@
     }
   ]
 }
-

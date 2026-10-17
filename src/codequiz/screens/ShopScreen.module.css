@@ -201,9 +201,27 @@
   -webkit-line-clamp: 2;
 }
 
+/* Emojis são pequenos: grade mais densa */
+.gridCompact {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.gridCompact .itemName {
+  font-size: var(--cq-text-xs);
+}
+
+.gridCompact .item button {
+  --btn-pad: 8px;
+  gap: 4px;
+}
+
 @media (min-width: 480px) {
   .grid {
     grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  }
+
+  .gridCompact {
+    grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
   }
 }
 

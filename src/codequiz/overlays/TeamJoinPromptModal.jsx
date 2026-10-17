@@ -1,3 +1,7 @@
+import { DoorOpen, Lock } from 'lucide-react';
+import { Button, Modal, TextField } from '../ui';
+import styles from './Overlays.module.css';
+
 export default function TeamJoinPromptModal({ vm }) {
   const {
     closePvpTeamJoinPrompt,
@@ -7,43 +11,51 @@ export default function TeamJoinPromptModal({ vm }) {
     submitPvpTeamJoinPrompt
   } = vm;
 
+  const needsPassword = !!pvpTeamJoinPrompt?.requiresPassword;
+
   return (
-    <div className="reset-modal" onClick={closePvpTeamJoinPrompt}>
-      <div className="reset-modal-card pvp-team-modal-card" onClick={(event) => event.stopPropagation()}>
-        <h3>{pvpTeamJoinPrompt.requiresPassword ? 'Entrar em sala privada' : 'Entrar na sala'}</h3>
-        <p>{pvpTeamJoinPrompt.roomName || 'Sala privada'}</p>
-        <div className="pvp-team-modal-fields">
-          {pvpTeamJoinPrompt.requiresPassword ? (
-            <>
-              <label className="settings-input-label" htmlFor="pvp-team-join-password">Senha da sala</label>
-              <input
-                id="pvp-team-join-password"
-                type="password"
-                className="profile-input settings-input"
-                placeholder="Digite a senha"
-                maxLength={24}
-                value={pvpTeamJoinPrompt.password}
-                onChange={(event) => setPvpTeamJoinPrompt((prev) => ({ ...prev, password: event.target.value, error: '' }))}
-              />
-            </>
-          ) : (
-            <div className="challenge-status pvp-team-join-confirm">
-              Voce entrara na sala e sera colocado automaticamente em um dos times.
-            </div>
-          )}
-          {pvpTeamJoinPrompt.error ? (
-            <div className="challenge-status pvp-team-modal-error">{pvpTeamJoinPrompt.error}</div>
-          ) : null}
-        </div>
-        <div className="match-accept-actions">
-          <button className="btn btn-secondary" disabled={pvpTeamActionBusy} onClick={closePvpTeamJoinPrompt}>
-            Cancelar
-          </button>
-          <button className="btn btn-primary" disabled={pvpTeamActionBusy} onClick={submitPvpTeamJoinPrompt}>
-            {pvpTeamJoinPrompt.requiresPassword ? 'Entrar' : 'Confirmar entrada'}
-          </button>
-        </div>
-      </div>
-    </div>
+    <Modal
+      title={needsPassword ? 'Sala privada' : 'Entrar na sala'}
+      subtitle={pvpTeamJoinPrompt?.roomName || 'Sala 2x2'}
+      icon={needsPassword ? Lock : DoorOpen}
+      tone="cyan"
+      size="sm"
+      onClose={pvpTeamActionBusy ? null : closePvpTeamJoinPrompt}
+      footer={(
+        <>
+          <Button variant="secondary" disabled={pvpTeamActionBusy} onClick={closePvpTeamJoinPrompt}>Cancelar</Button>
+          <Button variant="primary" type="submit" form="cq-team-join" loading={pvpTeamActionBusy}>Entrar</Button>
+        </>
+      )}
+    >
+      <form
+        id="cq-team-join"
+        className={styles.stack}
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (!pvpTeamActionBusy) submitPvpTeamJoinPrompt();
+        }}
+      >
+        {needsPassword ? (
+          <TextField
+            label="Senha da sala"
+            type="password"
+            autoComplete="off"
+            placeholder="Digite a senha"
+            maxLength={24}
+            autoFocus
+            value={pvpTeamJoinPrompt?.password || ''}
+            status={pvpTeamJoinPrompt?.error ? 'error' : ''}
+            hint={pvpTeamJoinPrompt?.error || ''}
+            onChange={(event) => setPvpTeamJoinPrompt((prev) => ({ ...prev, password: event.target.value, error: '' }))}
+          />
+        ) : (
+          <>
+            <p className={styles.text}>Você entra na sala e é colocado automaticamente em um dos times.</p>
+            {pvpTeamJoinPrompt?.error ? <p className={styles.alert} role="alert">{pvpTeamJoinPrompt.error}</p> : null}
+          </>
+        )}
+      </form>
+    </Modal>
   );
 }
