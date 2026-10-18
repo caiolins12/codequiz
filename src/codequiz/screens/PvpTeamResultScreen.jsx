@@ -53,6 +53,7 @@ export default function PvpTeamResultScreen({ vm }) {
     buildCosmeticSnapshot,
     collectPvpTeamResultRewards,
     pvpTeamBlueMembers,
+    pvpTeamLeaverNotice,
     pvpTeamMatch,
     pvpTeamMySide,
     pvpTeamRedMembers,
@@ -90,7 +91,10 @@ export default function PvpTeamResultScreen({ vm }) {
           <section className={cx(outcome.hero, view.tone)}>
             <span className={outcome.heroIcon} aria-hidden="true"><Icon strokeWidth={2.4} /></span>
             <h1 className={outcome.heroTitle}>{view.title}</h1>
-            <p className={outcome.heroText}>{view.text}</p>
+            {/* Adversário que saiu no meio da partida: o aviso ocupa o lugar do texto padrão */}
+            <p className={outcome.heroText} role={pvpTeamLeaverNotice && !cancelled ? 'status' : undefined}>
+              {(!cancelled && pvpTeamLeaverNotice) || view.text}
+            </p>
             <div className={cx(battle.scoreline, outcome.heroScore)} aria-label={`Placar: Vermelho ${redScore}, Azul ${blueScore}`}>
               <span className={battle.scorelineItem}>
                 <span className={battle.scorelineName}>Vermelho</span>

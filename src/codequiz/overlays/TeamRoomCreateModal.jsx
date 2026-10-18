@@ -1,5 +1,5 @@
 import { Lock, LockOpen, Plus, Users } from 'lucide-react';
-import { AreaPicker, DifficultyPicker } from '../screens/shared/ArenaParts';
+import { AreaPicker, DifficultyMix } from '../screens/shared/ArenaParts';
 import { Button, Modal, Tabs, TextField } from '../ui';
 import styles from './Overlays.module.css';
 
@@ -11,10 +11,10 @@ const VISIBILITY_TABS = [
 export default function TeamRoomCreateModal({ vm }) {
   const {
     chooseKnowledgeAreaForPvp,
-    choosePvpDifficulty,
     closePvpTeamRoomCreate,
     createPvpTeamRoomFromDraft,
-    pvpSelectedDifficulty,
+    pvpDifficultyMix,
+    pvpLeague,
     pvpTeamActionBusy,
     pvpTeamDraftAreaMeta,
     pvpTeamRoomDraft,
@@ -73,7 +73,7 @@ export default function TeamRoomCreateModal({ vm }) {
             onChange={(event) => setPvpTeamRoomDraft((prev) => ({ ...prev, password: event.target.value }))}
           />
         ) : null}
-        <DifficultyPicker value={pvpSelectedDifficulty} onChoose={choosePvpDifficulty} disabled={pvpTeamActionBusy} />
+        <DifficultyMix league={pvpLeague} mix={pvpDifficultyMix} label="Dificuldade pela liga" />
         <AreaPicker value={pvpTeamDraftAreaMeta?.id} onChoose={chooseKnowledgeAreaForPvp} disabled={pvpTeamActionBusy} label="Área da sala" />
         {pvpTeamRoomDraftError ? <p className={styles.alert} role="alert">{pvpTeamRoomDraftError}</p> : null}
       </form>

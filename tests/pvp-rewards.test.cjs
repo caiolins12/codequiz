@@ -97,3 +97,21 @@ test('empate: quem acertou ganha pontos PvP, quem não acertou nenhuma fica no z
   assert.equal(pvp.getPvpPointsDeltaAdvanced('win', { matchRow: duel, userId: 'a', roundNo: 5 }), 4);
   assert.equal(pvp.getPvpPointsDeltaAdvanced('loss', { matchRow: duel, userId: 'a', roundNo: 5 }), -2);
 });
+
+test('ligas: cada degrau pede 150 pontos a mais (prata 180, ouro 360, platina 540, diamante 710)', () => {
+  const tier = (points) => pvp.getCategoryByPoints(points).key;
+  assert.equal(tier(0), 'bronze');
+  assert.equal(tier(179), 'bronze');
+  assert.equal(tier(180), 'silver');
+  assert.equal(tier(359), 'silver');
+  assert.equal(tier(360), 'gold');
+  assert.equal(tier(539), 'gold');
+  assert.equal(tier(540), 'platinum');
+  assert.equal(tier(709), 'platinum');
+  assert.equal(tier(710), 'diamond');
+  // A tabela de transição de liga aponta para o piso de cada liga.
+  for (const key of ['bronze', 'silver', 'gold', 'platinum', 'diamond']) {
+    assert.equal(helpers.getLeagueMetaByKey(key).key, key);
+  }
+  assert.equal(helpers.getLeagueMetaByKey('diamond').minPoints, 710);
+});

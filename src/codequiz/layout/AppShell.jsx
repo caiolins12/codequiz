@@ -41,7 +41,13 @@ function MusicControl({ music, compact = false }) {
         <span className={styles.musicTrack}>{enabled ? (music.trackName || 'Sem trilha') : 'Música desligada'}</span>
       </span>
       {enabled ? (
-        <IconButton icon={SkipForward} label="Próxima trilha" size="sm" onClick={music.onSkip} />
+        <IconButton
+          icon={SkipForward}
+          label={music.skipDisabled ? 'Trilha sincronizada: troca automática a cada 2 minutos' : 'Próxima trilha'}
+          size="sm"
+          disabled={music.skipDisabled}
+          onClick={music.onSkip}
+        />
       ) : null}
       <IconButton
         icon={enabled ? VolumeX : Music2}

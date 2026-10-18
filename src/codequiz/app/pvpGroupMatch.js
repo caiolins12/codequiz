@@ -10,7 +10,9 @@ import {
   PVP_ELIMINATION_MAX_TOTAL_BATTLES,
   PVP_ROUND_EXTRA_ANSWER_MS,
   PVP_TEAM_BATTLE_TOTAL_ROUNDS,
+  THEME_INTRO_PVP_DURATION_MS,
   buildPvpEliminationCycleRounds,
+  buildThemeContextKey,
   buildPvpEliminationCycleScoreMap,
   createBotSeededRandom,
   getBotDefaultStrengthById,
@@ -34,6 +36,7 @@ import {
   PVP_MODE_ELIMINATION,
   pickBotAnswerIndex,
   pickPvpGroupExtraQuestion,
+  resolveQuestionThemeContext,
   toMillis
 } from './helpers';
 import {
@@ -70,6 +73,7 @@ import {
   upsertPvpEliminationAnswer,
   upsertPvpTeamAnswer
 } from '../lib/repository';
+import { normalizeDifficulty } from '../lib/utils';
 
 export const PVP_GROUP_MODE_TEAM = 'team';
 export const PVP_GROUP_MODE_ELIMINATION = 'elimination';
@@ -181,6 +185,34 @@ export function getPvpGroupMatchPresentHumanIds(match = null, mode = PVP_GROUP_M
   return getPvpGroupMatchHumanIds(match, mode).filter((userId) => !goneIds.includes(userId));
 }
 
+// Aviso da tela de resultado sobre adversários que deixaram a partida no meio.
+// - Eliminatória: quando a saída encerrou a partida (não sobrou com quem disputar).
+// - 2x2: quem saiu do time adversário (a partida seguiu sem ele até o fim).
+export function getPvpGroupMatchLeaverNotice(match = null, mode = PVP_GROUP_MODE_TEAM, userId = '') {
+  const safeUserId = safeId(userId);
+  if (!safeUserId || getStatus(match) !== 'finished' || match?.result_void === true) return '';
+  const nameOf = (member) => safeId(member?.nickname) || 'Jogador';
+
+  if (normalizeMode(mode) === PVP_GROUP_MODE_ELIMINATION) {
+    const leaverId = safeId(match?.ended_by_user_id);
+    if (safeId(match?.ended_reason).toLowerCase() !== 'player_exit' || !leaverId || leaverId === safeUserId) return '';
+    const leaver = getPvpEliminationMembers(match).find((member) => safeId(member?.user_id) === leaverId);
+    return safeId(match?.winner_user_id) === safeUserId
+      ? `${nameOf(leaver)} deixou a partida e a vitória ficou com você.`
+      : `${nameOf(leaver)} deixou a partida e ela foi encerrada.`;
+  }
+
+  const mySide = getPvpTeamUserSide(match, safeUserId);
+  if (!mySide) return '';
+  const goneIds = getPvpGroupMatchGoneIds(match, PVP_GROUP_MODE_TEAM);
+  const leavers = getPvpTeamMembersBySide(match, getPvpTeamOpponentSide(mySide))
+    .filter((member) => goneIds.includes(safeId(member?.user_id)));
+  if (!leavers.length) return '';
+  return leavers.length === 1
+    ? `${nameOf(leavers[0])}, do time adversário, deixou a partida.`
+    : `${leavers.map(nameOf).join(' e ')}, do time adversário, deixaram a partida.`;
+}
+
 export function getPvpGroupMatchBusyId(match = null) {
   return safeId(match?.room_id) || safeId(match?.id);
 }
@@ -189,12 +221,35 @@ export function getPvpGroupMatchBusyId(match = null) {
 // Tempo do confronto
 // ---------------------------------------------------------------------------
 
+// Roleta de temas (como no duelo): aparece no primeiro confronto e sempre que o tema
+// da pergunta muda em relação ao confronto anterior. Sai só da partida gravada, então
+// todos os aparelhos chegam à mesma resposta.
+export const PVP_GROUP_THEME_INTRO_MS = THEME_INTRO_PVP_DURATION_MS;
+
+function getPvpGroupQuestionThemeKey(match = null, question = null) {
+  const theme = resolveQuestionThemeContext(question, match?.language || '', match?.topic || '');
+  return buildThemeContextKey(theme.languageId, theme.topicId);
+}
+
+export function isPvpGroupBattleThemeIntro(match = null, battleNo = 0) {
+  const safeBattleNo = Math.max(1, Math.floor(Number(battleNo || match?.battle_no || 1)));
+  const question = getPvpGroupBattleQuestion(match, safeBattleNo);
+  if (!question) return false;
+  if (safeBattleNo <= 1) return true;
+  const previous = getPvpGroupBattleQuestion(match, safeBattleNo - 1);
+  return getPvpGroupQuestionThemeKey(match, question) !== getPvpGroupQuestionThemeKey(match, previous);
+}
+
+// No Um contra todos a apresentação da dupla vem primeiro e a roleta depois. O tempo
+// da roleta entra antes de abrir as respostas: ninguém perde tempo de resposta.
 export function getPvpGroupBattleTiming(match = null, mode = PVP_GROUP_MODE_TEAM) {
   const startedAtMs = Math.max(
     0,
     Number(match?.battle_started_at_ms || toMillis(match?.battle_started_at) || 0)
   );
-  const introMs = normalizeMode(mode) === PVP_GROUP_MODE_ELIMINATION ? PVP_ELIMINATION_BATTLE_INTRO_MS : 0;
+  const pairIntroMs = normalizeMode(mode) === PVP_GROUP_MODE_ELIMINATION ? PVP_ELIMINATION_BATTLE_INTRO_MS : 0;
+  const themeIntroMs = isPvpGroupBattleThemeIntro(match, match?.battle_no) ? PVP_GROUP_THEME_INTRO_MS : 0;
+  const introMs = pairIntroMs + themeIntroMs;
   const answerMs = Math.max(
     1000,
     Number(getRoundDurationSeconds(match?.difficulty || match?.category || 'easy') || 20) * 1000
@@ -206,6 +261,8 @@ export function getPvpGroupBattleTiming(match = null, mode = PVP_GROUP_MODE_TEAM
   return {
     startedAtMs,
     introMs,
+    themeIntroAtMs: startedAtMs + pairIntroMs,
+    themeIntroMs,
     answerMs,
     opensAtMs,
     closesAtMs,
@@ -246,7 +303,13 @@ export function getPvpGroupBattleTiebreakLevel(match = null, battleNo = 0) {
   return Math.max(0, Number(pickPvpGroupExtraQuestion(match, extraIndex)?.level || 0));
 }
 
+// Nos confrontos normais vale a dificuldade da própria pergunta (a partida mistura
+// dificuldades pela liga dos jogadores).
 export function getPvpGroupBattleDifficulty(match = null, battleNo = 0) {
+  if (getPvpGroupExtraBattleIndex(match, battleNo) < 0) {
+    const questionDifficulty = String(getPvpGroupBattleQuestion(match, battleNo)?.difficulty || '').trim();
+    if (questionDifficulty) return normalizeDifficulty(questionDifficulty);
+  }
   return getPvpTiebreakDifficulty(
     match?.difficulty || match?.category || 'easy',
     getPvpGroupBattleTiebreakLevel(match, battleNo)

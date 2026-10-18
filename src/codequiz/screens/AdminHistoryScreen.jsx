@@ -1,4 +1,5 @@
 import { History } from 'lucide-react';
+import { DIFFICULTY_LABELS } from '../lib/constants';
 import {
   ADMIN_HISTORY_FILTER_OPTIONS,
   getAdminBotClassSummary,
@@ -28,6 +29,18 @@ function buildHistoryRow(row, adminMatchCodeById, nowMs) {
     ended: formatTime(row?.ended_at || row?.updated_at),
     duration: getAdminMatchDurationLabel(row, nowMs)
   };
+  if (row?.admin_group_kind) {
+    const isTeam = row.admin_group_kind === 'team';
+    return {
+      ...base,
+      code: `${isTeam ? '2X2' : 'UCT'}-${String(row.id || '').slice(-6) || 'HIST'}`,
+      title: row.group_title,
+      typeLabel: getAdminMatchTypeLabel(row),
+      result: row.group_score_label,
+      resultSub: row.group_result_label,
+      chips: [isTeam ? `Confrontos ${getAdminMatchRoundsLabel(row)}` : getAdminMatchRoundsLabel(row), DIFFICULTY_LABELS[row.difficulty], botClass]
+    };
+  }
   if (isQuiz) {
     const quiz = getAdminQuizCardData(row);
     const batchId = String(row?.bot_quiz_batch_id || row?.id || '').trim();

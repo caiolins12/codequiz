@@ -289,43 +289,43 @@ export function getPvpPointsDeltaAdvanced(resultKey, context = {}) {
 
 export function getCategoryByPoints(pointsValue) {
   const points = Math.max(0, Number(pointsValue || 0));
-  if (points >= 110) {
+  if (points >= 710) {
     return {
       key: 'diamond',
       label: 'Diamante',
       emblem: '💎',
-      minPoints: 110,
+      minPoints: 710,
       maxPoints: null,
       rank: 4
     };
   }
-  if (points >= 90) {
+  if (points >= 540) {
     return {
       key: 'platinum',
       label: 'Platina',
       emblem: '✨',
-      minPoints: 90,
-      maxPoints: 109,
+      minPoints: 540,
+      maxPoints: 709,
       rank: 3
     };
   }
-  if (points >= 60) {
+  if (points >= 360) {
     return {
       key: 'gold',
       label: 'Ouro',
       emblem: '🏆',
-      minPoints: 60,
-      maxPoints: 89,
+      minPoints: 360,
+      maxPoints: 539,
       rank: 2
     };
   }
-  if (points >= 30) {
+  if (points >= 180) {
     return {
       key: 'silver',
       label: 'Prata',
       emblem: '🥈',
-      minPoints: 30,
-      maxPoints: 59,
+      minPoints: 180,
+      maxPoints: 359,
       rank: 1
     };
   }
@@ -334,7 +334,7 @@ export function getCategoryByPoints(pointsValue) {
     label: 'Bronze',
     emblem: '🥉',
     minPoints: 0,
-    maxPoints: 29,
+    maxPoints: 179,
     rank: 0
   };
 }

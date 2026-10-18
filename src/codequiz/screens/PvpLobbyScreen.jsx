@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import { ArrowLeftRight, Crown, Lock, Plus, Smile, Swords, UserCheck, Users } from 'lucide-react';
-import { DIFFICULTY_LABELS } from '../lib/constants';
-import { normalizeDifficulty } from '../lib/utils';
+import { getCategoryByPoints } from '../lib/pvp';
 import {
   PVP_MODE_DUEL,
   PVP_MODE_ELIMINATION,
@@ -11,14 +10,15 @@ import {
   getPvpTeamMembersBySide,
   getPvpTeamRoomStatusLabel,
   getPvpTeamSideColorLabel,
+  getPvpAveragePoints,
   getPvpTeamUserSide,
   normalizePvpEliminationAcceptState
 } from '../app/helpers';
-import { Badge, Button, Card, EmptyState, PageHeader, SectionHeader, cx } from '../ui';
+import { Badge, Button, Card, EmptyState, PageHeader, SectionHeader, TierBadge, cx } from '../ui';
 import {
   AreaPicker,
   Countdown,
-  DifficultyPicker,
+  DifficultyMix,
   LoadingDots,
   PlayerCard,
   QueuePanel,
@@ -27,7 +27,18 @@ import {
 import { buildPlayerView, playerViewFromShop } from './shared/players';
 import styles from './PvpLobbyScreen.module.css';
 
-const DIFFICULTY_TONES = { easy: 'lime', medium: 'orange', hard: 'pink' };
+// Liga da sala: média dos pontos PvP de quem está nela (é ela que define a mistura
+// de dificuldade das perguntas da partida).
+function getRoomLeague(members = []) {
+  return getCategoryByPoints(getPvpAveragePoints(
+    (Array.isArray(members) ? members : []).map((member) => Number(member?.pvp_points || 0))
+  ));
+}
+
+function LeagueBadge({ league, ...rest }) {
+  if (!league) return null;
+  return <TierBadge tierKey={league.key} label={`${league.emblem} ${league.label}`} size="sm" {...rest} />;
+}
 
 const MODES = [
   {
@@ -57,7 +68,7 @@ const MODES = [
 ];
 
 const MODE_HEADERS = {
-  [PVP_MODE_DUEL]: { title: 'Duelo 1x1', subtitle: 'Escolha a dificuldade e a área, depois entre na fila.' },
+  [PVP_MODE_DUEL]: { title: 'Duelo 1x1', subtitle: 'Escolha a área e entre na fila. A dificuldade vem da sua liga.' },
   [PVP_MODE_TEAM_BATTLE]: { title: 'Batalha de equipes', subtitle: 'Entre numa sala aberta ou crie a sua.' },
   [PVP_MODE_ELIMINATION]: { title: 'Um contra todos', subtitle: 'Fila para 4 jogadores em eliminatória.' }
 };
@@ -87,13 +98,12 @@ function ModeMenu({ openPvpMode }) {
   );
 }
 
-// O que o jogador escolheu para a fila (aparece no radar enquanto procura)
-function QueueChoice({ difficulty, areaId, knowledgeAreaById }) {
-  const level = normalizeDifficulty(difficulty || 'easy');
+// O que vale para a fila (aparece no radar enquanto procura): a liga e a área
+function QueueChoice({ league, areaId, knowledgeAreaById }) {
   const area = knowledgeAreaById?.get(String(areaId || '').trim()) || null;
   return (
     <>
-      <Badge tone={DIFFICULTY_TONES[level] || 'lime'} size="sm">{DIFFICULTY_LABELS[level]}</Badge>
+      <LeagueBadge league={league} />
       {area ? <Badge tone="neutral" size="sm">{`${area.icon} ${area.name}`}</Badge> : null}
     </>
   );
@@ -138,7 +148,6 @@ function DuelPanel({ vm }) {
     acceptPvpMatchInvite,
     arenaPrimaryAction,
     chooseKnowledgeAreaForPvp,
-    choosePvpDifficulty,
     knowledgeAreaById,
     matchAcceptBusy,
     matchAcceptCountdownLabel,
@@ -161,12 +170,12 @@ function DuelPanel({ vm }) {
     pvpPlayer2FrameClass,
     pvpPlayer2FrameStyle,
     pvpPlayer2Shop,
+    pvpDuelQueueSearching,
     pvpQueueTimeLabel,
-    pvpSelectedDifficulty,
+    pvpDifficultyMix,
+    pvpLeague,
     pvpState,
-    queueActionBusy,
     rejectPvpMatchInvite,
-    shouldKeepQueueButtonPressed,
     shouldShowAcceptActions,
     showMatchFoundTransition
   } = vm;
@@ -232,11 +241,11 @@ function DuelPanel({ vm }) {
     );
   }
 
-  const searching = shouldKeepQueueButtonPressed && !queueActionBusy;
+  const searching = !!pvpDuelQueueSearching;
   return (
     <div className={cx(styles.layout, searching ? styles.layoutSearching : '')}>
       <Card padding="lg" className={styles.config}>
-        <DifficultyPicker value={pvpSelectedDifficulty} onChoose={choosePvpDifficulty} disabled={pvpAreaSelectionLocked} label="Dificuldade da fila" />
+        <DifficultyMix league={pvpLeague} mix={pvpDifficultyMix} />
         <AreaPicker value={pvpKnowledgeArea} onChoose={chooseKnowledgeAreaForPvp} disabled={pvpAreaSelectionLocked} />
       </Card>
       <div className={styles.side}>
@@ -244,7 +253,7 @@ function DuelPanel({ vm }) {
           searching={searching}
           timeLabel={pvpQueueTimeLabel}
           action={arenaPrimaryAction}
-          details={<QueueChoice difficulty={pvpSelectedDifficulty} areaId={pvpKnowledgeArea} knowledgeAreaById={knowledgeAreaById} />}
+          details={<QueueChoice league={pvpLeague} areaId={pvpKnowledgeArea} knowledgeAreaById={knowledgeAreaById} />}
         />
         <EmojiCard emojis={pvpBattleEmojis} onEdit={openPvpEmojiPicker} />
       </div>
@@ -275,7 +284,6 @@ function TeamRoom({ vm }) {
   const selfId = String(authUser?.uid || '').trim();
   const hostId = String(pvpTeamRoomHostUserId || '').trim();
   const isHost = hostId === selfId;
-  const roomDifficulty = normalizeDifficulty(pvpTeamRoom?.difficulty || 'easy');
   const membersBySide = {
     red: getPvpTeamMembersBySide(pvpTeamRoom, 'red'),
     blue: getPvpTeamMembersBySide(pvpTeamRoom, 'blue')
@@ -379,7 +387,7 @@ function TeamRoom({ vm }) {
     <>
       {/* O nome da sala já está no título da tela: aqui ficam só as etiquetas da partida */}
       <div className={styles.roomInfo}>
-        <Badge tone={DIFFICULTY_TONES[roomDifficulty] || 'lime'} size="sm">{DIFFICULTY_LABELS[roomDifficulty]}</Badge>
+        <LeagueBadge league={getRoomLeague(allMembers)} />
         <Badge tone="neutral" size="sm">
           {pvpTeamRoomAreaMeta ? `${pvpTeamRoomAreaMeta.icon} ${pvpTeamRoomAreaMeta.name}` : 'Área geral'}
         </Badge>
@@ -472,7 +480,6 @@ function TeamPanel({ vm }) {
               const red = getPvpTeamMembersBySide(room, 'red');
               const blue = getPvpTeamMembersBySide(room, 'blue');
               const mySide = getPvpTeamUserSide(room, selfId);
-              const difficulty = normalizeDifficulty(room?.difficulty || 'easy');
               return (
                 <li key={roomId}>
                   <button type="button" className={cx(styles.room, mySide ? styles.roomMine : '')} onClick={() => openPvpTeamRoomLobby(room)}>
@@ -481,7 +488,7 @@ function TeamPanel({ vm }) {
                         {room?.has_password ? <Lock aria-label="Sala privada" strokeWidth={2.6} /> : null}
                         {room?.name || 'Sala de equipe'}
                       </span>
-                      <Badge tone={DIFFICULTY_TONES[difficulty] || 'lime'} size="sm">{DIFFICULTY_LABELS[difficulty]}</Badge>
+                      <LeagueBadge league={getRoomLeague([...red, ...blue])} />
                     </span>
                     <span className={styles.roomMeta}>
                       <span>{area ? `${area.icon} ${area.name}` : 'Área geral'}</span>
@@ -521,14 +528,12 @@ function EliminationPanel({ vm }) {
     authUser,
     buildCosmeticSnapshot,
     chooseKnowledgeAreaForPvp,
-    choosePvpDifficulty,
     knowledgeAreaById,
     openPvpEmojiPicker,
     pvpBattleEmojis,
     pvpEliminationAcceptCountdownLabel,
     pvpEliminationAcceptMembers,
     pvpEliminationAcceptStateMap,
-    pvpEliminationActionBusy,
     pvpEliminationAreaSelectionLocked,
     pvpEliminationHasLiveMatch,
     pvpEliminationInviteBusy,
@@ -539,14 +544,17 @@ function EliminationPanel({ vm }) {
     pvpEliminationShouldShowAcceptActions,
     pvpEliminationShowMatchFoundTransition,
     pvpKnowledgeArea,
-    pvpSelectedDifficulty,
+    pvpDifficultyMix,
+    pvpLeague,
     rejectPvpEliminationRoomInvite
   } = vm;
 
   const members = (Array.isArray(pvpEliminationAcceptMembers) ? pvpEliminationAcceptMembers : [])
     .map((member) => buildPlayerView(member, buildCosmeticSnapshot));
 
-  const eliminationSearching = pvpEliminationQueueing && !pvpEliminationActionBusy && !pvpEliminationHasLiveMatch;
+  // Na fila o radar fica na tela mesmo enquanto o grupo é refeito (alguém recusou,
+  // bots entrando): a ação em andamento só trava o botão.
+  const eliminationSearching = pvpEliminationQueueing && !pvpEliminationHasLiveMatch;
   const acceptStates = members.map((player) => normalizePvpEliminationAcceptState(pvpEliminationAcceptStateMap[player.userId]));
   // Quem já aceitou vê o aviso no lugar dos botões (até todos confirmarem)
   const waitingOthers = !pvpEliminationShouldShowAcceptActions
@@ -563,7 +571,7 @@ function EliminationPanel({ vm }) {
     >
       {!pvpEliminationPendingAccept ? (
         <Card padding="lg" className={styles.config}>
-          <DifficultyPicker value={pvpSelectedDifficulty} onChoose={choosePvpDifficulty} disabled={pvpEliminationAreaSelectionLocked} label="Dificuldade da fila" />
+          <DifficultyMix league={pvpLeague} mix={pvpDifficultyMix} />
           <AreaPicker value={pvpKnowledgeArea} onChoose={chooseKnowledgeAreaForPvp} disabled={pvpEliminationAreaSelectionLocked} />
         </Card>
       ) : pvpEliminationShowMatchFoundTransition ? (
@@ -613,7 +621,7 @@ function EliminationPanel({ vm }) {
             action={pvpEliminationPrimaryAction}
             title="Montando o grupo"
             text="A partida começa quando 4 jogadores estiverem na fila."
-            details={<QueueChoice difficulty={pvpSelectedDifficulty} areaId={pvpKnowledgeArea} knowledgeAreaById={knowledgeAreaById} />}
+            details={<QueueChoice league={pvpLeague} areaId={pvpKnowledgeArea} knowledgeAreaById={knowledgeAreaById} />}
           />
           <EmojiCard emojis={pvpBattleEmojis} onEdit={openPvpEmojiPicker} subtitle="Reaja durante a eliminatória." />
         </div>

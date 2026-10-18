@@ -29,7 +29,8 @@ async function createHarness(mode) {
     status: 'active',
     battle_no: 1,
     round_no: 1,
-    battle_started_at_ms: Date.now() - 5000,
+    // Já passou a apresentação da dupla e a roleta de temas do primeiro confronto.
+    battle_started_at_ms: Date.now() - 8000,
     question_set: Array.from({ length: 3 }, () => ({ ...QUESTION })),
     ...members,
     battle_schedule: helpers.buildPvpTeamBattleSchedule(members),

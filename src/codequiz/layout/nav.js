@@ -23,7 +23,8 @@ const SCREEN_TAB = {
   settings: 'settings',
   'admin-monitor': 'settings',
   'admin-live': 'settings',
-  'admin-history': 'settings'
+  'admin-history': 'settings',
+  'admin-bots': 'settings'
 };
 
 // Telas em modo foco: sem menus, ocupam a tela inteira.

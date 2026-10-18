@@ -54,3 +54,6 @@ export const DIFFICULTY_LABELS = {
   medium: 'Intermediário',
   hard: 'Avançado'
 };
+
+// Única conta com acesso ao painel admin (o banco confere o mesmo e-mail em private.db_is_admin).
+export const ADMIN_ACCOUNT_EMAIL = 'caiolins12@gmail.com';

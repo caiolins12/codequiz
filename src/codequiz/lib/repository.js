@@ -12,6 +12,7 @@ import { LANGUAGES, QUESTIONS } from '../data/questions-data';
 import { applyPvpDurationBonus, buildMatchId, getPvpPointsDeltaAdvanced, PVP_ROUNDS_PER_MATCH } from './pvp';
 import { getRoundQuestionCapacity } from './quizEngine';
 import { getItemsByType } from './shop';
+import { getBotDuelDurationMs, getBotQuizDurationMs } from './botMatchTiming';
 import {
   BOT_ECONOMY_VERSION,
   BOT_STARTING_COINS,
@@ -27,6 +28,13 @@ import {
   normalizeDifficulty,
   splitProgressTotalXp
 } from './utils';
+import {
+  getBotBalanceAverages,
+  getBotDuelUnderdogEdge,
+  getBrazilDayKey,
+  pickBalancedDuelPair,
+  rankBotsForPlay
+} from './botBalance';
 
 const SYSTEM_BOT_ROSTER = [
   {
@@ -106,6 +114,96 @@ const SYSTEM_BOT_ROSTER = [
     nickname: 'z3n',
     full_name: 'z3n',
     avatar: '😉',
+    gender: 'neutral',
+    default_personality: 'calmo',
+    default_strength: 'forte'
+  },
+  {
+    id: 'bot_sys_codequiz_capivara42',
+    nickname: 'capivara42',
+    full_name: 'Capivara42',
+    avatar: '😌',
+    gender: 'neutral',
+    default_personality: 'calmo',
+    default_strength: 'forte'
+  },
+  {
+    id: 'bot_sys_codequiz_juhzinha',
+    nickname: 'Juhzinha',
+    full_name: 'Juhzinha',
+    avatar: '🤗',
+    gender: 'female',
+    default_personality: 'calmo',
+    default_strength: 'forte'
+  },
+  {
+    id: 'bot_sys_codequiz_kaiqu3',
+    nickname: 'kaiqu3',
+    full_name: 'Kaique',
+    avatar: '😜',
+    gender: 'male',
+    default_personality: 'provocador',
+    default_strength: 'forte'
+  },
+  {
+    id: 'bot_sys_codequiz_l1via',
+    nickname: 'L1via',
+    full_name: 'L1via',
+    avatar: '🤨',
+    gender: 'female',
+    default_personality: 'analitico',
+    default_strength: 'forte'
+  },
+  {
+    id: 'bot_sys_codequiz_ma7eus',
+    nickname: 'Ma7eus',
+    full_name: 'Mateus',
+    avatar: '😤',
+    gender: 'male',
+    default_personality: 'analitico',
+    default_strength: 'forte'
+  },
+  {
+    id: 'bot_sys_codequiz_biaxs',
+    nickname: 'Biaxs',
+    full_name: 'Bia',
+    avatar: '🤭',
+    gender: 'female',
+    default_personality: 'provocador',
+    default_strength: 'forte'
+  },
+  {
+    id: 'bot_sys_codequiz_nandobr',
+    nickname: 'nandoBR',
+    full_name: 'Nando BR',
+    avatar: '😁',
+    gender: 'male',
+    default_personality: 'calmo',
+    default_strength: 'forte'
+  },
+  {
+    id: 'bot_sys_codequiz_nyx77',
+    nickname: 'nyx77',
+    full_name: 'Nyx77',
+    avatar: '🙃',
+    gender: 'neutral',
+    default_personality: 'provocador',
+    default_strength: 'forte'
+  },
+  {
+    id: 'bot_sys_codequiz_melcosta',
+    nickname: 'MelCosta',
+    full_name: 'Mel Costa',
+    avatar: '😇',
+    gender: 'female',
+    default_personality: 'analitico',
+    default_strength: 'forte'
+  },
+  {
+    id: 'bot_sys_codequiz_pipoca07',
+    nickname: 'pipoca07',
+    full_name: 'Pipoca07',
+    avatar: '🤩',
     gender: 'neutral',
     default_personality: 'calmo',
     default_strength: 'forte'
@@ -195,23 +293,29 @@ const BOT_DAEMON_CONTROL_PATH = 'pvp_bots_state/daemon_control';
 const BOT_DAEMON_STATUS_PATH = 'pvp_bots_state/daemon_status';
 const BOT_ARENA_QUIZ_STATE_PATH = 'pvp_bots_state/arena_quiz_state';
 const BOT_QUIZ_HISTORY_PURGE_STATE_PATH = 'pvp_bots_state/quiz_history_purge_state';
+const BOT_DAILY_PACE_PATH = 'pvp_bots_state/daily_pace';
 const BOT_QUIZ_HISTORY_PURGE_VERSION = 2;
 const BOT_QUIZ_HISTORY_PURGE_RETRY_MS = 60000;
 const BOT_QUIZ_HISTORY_PURGE_MATCH_BATCH = 240;
 const BOT_QUIZ_HISTORY_PURGE_RESULT_BATCH = 720;
-const BOT_BATTLE_DURATION_MS_MIN = 20000;
-const BOT_BATTLE_DURATION_MS_MAX = 32000;
 const BOT_ARENA_BASE_ROUNDS = PVP_ROUNDS_PER_MATCH;
 const BOT_ARENA_MAX_ROUNDS = 15;
-const BOT_DUEL_MAX_ACTIVE_AGE_MS = 150000;
+// Duelo entre bots dura o tempo do placar (lib/botMatchTiming.js, até ~6,5 min com 15
+// rodadas) e só fecha no ciclo seguinte do servidor (2 min): passou disso, travou.
+const BOT_DUEL_MAX_ACTIVE_AGE_MS = 10 * 60 * 1000;
 const BOT_USER_OPEN_MATCH_STALE_MS = 210000;
 const BOT_DUEL_RECOVERY_MAX_BATCH = 8;
 const BOT_QUEUE_PRNG_MOD = 2147483647;
 const BOT_QUIZ_DIFFICULTY_SEQUENCE = Object.freeze(['easy', 'medium', 'hard']);
 const BOT_QUIZ_BATCH_SIZE = 1;
-const BOT_QUIZ_DURATION_MS_MIN = 24000;
-const BOT_QUIZ_DURATION_MS_MAX = 36000;
 const BOT_QUIZ_BUSY_SOURCE = 'arena_quiz';
+// Histórico das partidas só de bots (duelos e quizzes da automação), lido apenas
+// pelo painel admin. Fica fora de pvp_matches, que todo jogador baixa inteira:
+// cada dia (UTC) é uma linha pvp_bot_match_log/<aaaa-mm-dd>.
+const BOT_MATCH_LOG_TOP = 'pvp_bot_match_log';
+const BOT_MATCH_LOG_RETENTION_DAYS = 3;
+const BOT_MATCH_ARCHIVE_MIN_AGE_MS = 90000;
+const BOT_MATCH_ARCHIVE_MAX_BATCH = 24;
 const ENSURE_SYSTEM_BOTS_MIN_INTERVAL_MS = 900000;
 const PVP_MATCH_ROWS_CACHE_TTL_MS = 1200;
 // v2: economia individual dos bots (cache v1 guardava o enxoval antigo de 600 moedas).
@@ -819,20 +923,6 @@ function buildSeededRandom(seedValue) {
   };
 }
 
-function shuffleBotQueueOrder(order, seedValue = Date.now()) {
-  const safe = normalizeBotQueueOrder(order);
-  if (safe.length <= 1) return safe;
-  const random = buildSeededRandom(seedValue);
-  const next = [...safe];
-  for (let index = next.length - 1; index > 0; index -= 1) {
-    const swapIndex = Math.floor(random() * (index + 1));
-    const temp = next[index];
-    next[index] = next[swapIndex];
-    next[swapIndex] = temp;
-  }
-  return next;
-}
-
 function isArenaCycleCompleted(cyclePlayedMap) {
   const safe = cyclePlayedMap && typeof cyclePlayedMap === 'object' ? cyclePlayedMap : {};
   return SYSTEM_BOT_IDS.every((botId) => safe[botId] === true);
@@ -848,6 +938,10 @@ function normalizeArenaState(raw) {
     started_at_ms: Math.max(0, Number(safe.started_at_ms || 0)),
     ends_at_ms: Math.max(0, Number(safe.ends_at_ms || 0)),
     difficulty: normalizeDifficulty(safe.difficulty || 'easy'),
+    // Placar decidido na criação (a duração depende dele); 0 rodadas = sem plano.
+    planned_score_a: Math.max(0, Number(safe.planned_score_a || 0)),
+    planned_score_b: Math.max(0, Number(safe.planned_score_b || 0)),
+    planned_rounds: Math.max(0, Number(safe.planned_rounds || 0)),
     updated_at: String(safe.updated_at || '')
   };
 }
@@ -872,9 +966,16 @@ function normalizeBotArenaDaemonStatus(raw) {
     owner_id: String(safe.owner_id || ''),
     status: String(safe.status || '').trim().toLowerCase() || 'unknown',
     last_state: String(safe.last_state || ''),
+    last_quiz_state: String(safe.last_quiz_state || ''),
+    last_error: String(safe.last_error || ''),
     ticks: Math.max(0, Number(safe.ticks || 0)),
     created_matches: Math.max(0, Number(safe.created_matches || 0)),
     finalized_matches: Math.max(0, Number(safe.finalized_matches || 0)),
+    created_quizzes: Math.max(0, Number(safe.created_quizzes || 0)),
+    finalized_quizzes: Math.max(0, Number(safe.finalized_quizzes || 0)),
+    archived_matches: Math.max(0, Number(safe.archived_matches || 0)),
+    run_duration_ms: Math.max(0, Number(safe.run_duration_ms || 0)),
+    pace: safe.pace && typeof safe.pace === 'object' ? safe.pace : null,
     lock_ok: safe.lock_ok === true,
     run_started_at: String(safe.run_started_at || ''),
     run_started_at_ms: Math.max(0, Number(safe.run_started_at_ms || 0)),
@@ -2126,6 +2227,74 @@ export function subscribeBotArenaQuizState(onChange, onError = null) {
   return () => unsubscribe();
 }
 
+// Painel admin (tela Bots): perfil, stats, loja e config de cada bot do roster, mais
+// os estados da automação. Cada caminho é uma assinatura; o polling do dbClient só
+// baixa de novo o que mudou. onChange recebe { bots, busy, arena_state, quiz_state, daily_pace, queue_order }.
+export function subscribeSystemBotsForAdmin(onChange, onError = null) {
+  if (typeof onChange !== 'function') return () => { };
+  const values = {};
+  const pending = new Set();
+  let emitTimer = null;
+  let stopped = false;
+  const paths = [
+    BOT_BUSY_PATH,
+    BOT_USER_QUEUE_PATH,
+    BOT_ARENA_STATE_PATH,
+    BOT_ARENA_QUIZ_STATE_PATH,
+    BOT_DAILY_PACE_PATH,
+    ...SYSTEM_BOT_ROSTER.flatMap((botDef) => [
+      `users/${botDef.id}`,
+      `user_stats/${botDef.id}`,
+      `user_shop/${botDef.id}`,
+      `pvp_bots_state/configs/${botDef.id}`
+    ])
+  ];
+  paths.forEach((path) => pending.add(path));
+
+  const emit = () => {
+    emitTimer = null;
+    if (stopped || pending.size) return;
+    onChange({
+      bots: SYSTEM_BOT_ROSTER.map((botDef) => ({
+        bot_id: botDef.id,
+        roster: { ...botDef },
+        profile: values[`users/${botDef.id}`] || null,
+        stats: values[`user_stats/${botDef.id}`] || null,
+        shop: values[`user_shop/${botDef.id}`] || null,
+        config: values[`pvp_bots_state/configs/${botDef.id}`] || null
+      })),
+      busy: values[BOT_BUSY_PATH] || {},
+      arena_state: values[BOT_ARENA_STATE_PATH] || null,
+      quiz_state: values[BOT_ARENA_QUIZ_STATE_PATH] || null,
+      daily_pace: values[BOT_DAILY_PACE_PATH] || null,
+      queue_order: normalizeBotQueueOrder(values[BOT_USER_QUEUE_PATH]?.order)
+    });
+  };
+  const scheduleEmit = () => {
+    if (emitTimer || stopped) return;
+    emitTimer = setTimeout(emit, 60);
+  };
+
+  const unsubscribers = paths.map((path) => onValue(
+    ref(firebaseDb, path),
+    (snap) => {
+      values[path] = snap.exists() ? snap.val() : null;
+      pending.delete(path);
+      scheduleEmit();
+    },
+    (error) => {
+      pending.delete(path);
+      scheduleEmit();
+      if (typeof onError === 'function') onError(error);
+    }
+  ));
+  return () => {
+    stopped = true;
+    if (emitTimer) clearTimeout(emitTimer);
+    unsubscribers.forEach((unsubscribe) => unsubscribe());
+  };
+}
+
 async function syncUserQueueOrderFromArena(order, nowIso = new Date().toISOString()) {
   const safeOrder = normalizeBotQueueOrder(order);
   const current = await getNode(BOT_USER_QUEUE_PATH).catch(() => null);
@@ -2260,10 +2429,10 @@ async function rotateGlobalBotQueue(botIds = [], options = {}) {
       });
     }
 
+    // Fim de ciclo (todos jogaram um duelo) só abre um novo ciclo: a ordem continua
+    // sendo a de quem esperou mais, usada pelo rodízio equilibrado (lib/botBalance.js).
     let cycleNo = Math.max(0, Number(safe.cycle_no || 0));
     if (countForArenaCycle && isArenaCycleCompleted(cyclePlayed)) {
-      const shuffleSeed = nowMs + ((cycleNo + 1) * 97) + (nextOrder.length * 31);
-      nextOrder = shuffleBotQueueOrder(nextOrder, shuffleSeed);
       cyclePlayed = {};
       cycleNo += 1;
     }
@@ -2471,7 +2640,7 @@ async function cleanupOrphanBotBusyEntries(nowMs = Date.now()) {
     getNode('pvp_matches').catch(() => null)
   ]);
 
-  if (!busyRows || typeof busyRows !== 'object') return;
+  if (!busyRows || typeof busyRows !== 'object' || !Object.keys(busyRows).length) return;
 
   // Salas 2x2 / Um contra todos também prendem bots (busy.match_id = id da sala).
   const activeMatchIds = await getActivePvpGroupBusyIds(nowMs).catch(() => new Set());
@@ -2833,9 +3002,29 @@ export async function getNextBotForUserMatch(targetDifficulty = '', options = {}
     return getBotDifficultyById(botId, null).catch(() => 'easy');
   };
 
-  for (const botId of userOrder) {
-    if (excludedSet.has(botId)) continue;
-    if (busySet.has(botId)) continue;
+  // Rodízio equilibrado também contra jogadores (lib/botBalance.js): entre os bots
+  // livres, quem está mais atrás em partidas e pontos e esperou mais vem primeiro, e os
+  // da categoria do jogador vêm antes dos outros (partida mais disputada).
+  const statsById = {};
+  if (preferLocal) {
+    userOrder.forEach((botId) => {
+      const cached = getCachedBotSnapshot(botId, BOT_LOCAL_CACHE_MAX_AGE_MS);
+      if (cached?.stats && typeof cached.stats === 'object') statsById[botId] = cached.stats;
+    });
+  } else {
+    Object.assign(statsById, await getSystemBotStatsMap().catch(() => ({})));
+  }
+  let candidates = rankBotsForPlay(
+    userOrder.filter((botId) => !excludedSet.has(botId) && !busySet.has(botId)),
+    { queueOrder: userOrder, statsById, mode: 'pvp', rosterIds: SYSTEM_BOT_IDS, missingAsAverage: true }
+  );
+  if (safeTargetDifficulty) {
+    const inTargetCategory = (botId) => !!statsById[botId]
+      && normalizeDifficulty(resolveDifficultyByPvpPoints(statsById[botId].pvp_points || 0)) === safeTargetDifficulty;
+    candidates = [...candidates.filter(inTargetCategory), ...candidates.filter((botId) => !inTargetCategory(botId))];
+  }
+
+  for (const botId of candidates) {
     if (safeTargetDifficulty && enforceTargetDifficulty) {
       const botDifficulty = await getBotDifficultyFast(botId);
       if (botDifficulty && normalizeDifficulty(botDifficulty || 'easy') !== safeTargetDifficulty) continue;
@@ -2857,8 +3046,9 @@ function simulateBotDuelScores(botAConfig, botBConfig, options = {}) {
   const maxRounds = Math.max(baseRounds + 1, Number(options?.maxRounds || BOT_ARENA_MAX_ROUNDS));
   const strengthA = normalizeBotStrength(botAConfig?.strength || SYSTEM_BOT_STRENGTH_DEFAULT);
   const strengthB = normalizeBotStrength(botBConfig?.strength || SYSTEM_BOT_STRENGTH_DEFAULT);
-  const accA = getBotAccuracyByStrength(strengthA);
-  const accB = getBotAccuracyByStrength(strengthB);
+  // Bônus do bot atrasado no rodízio (getBotDuelUnderdogEdge), com teto de precisão.
+  const accA = Math.min(0.97, getBotAccuracyByStrength(strengthA) + Math.max(0, Number(options?.accuracyBonusA || 0)));
+  const accB = Math.min(0.97, getBotAccuracyByStrength(strengthB) + Math.max(0, Number(options?.accuracyBonusB || 0)));
   const safeSeedKey = String(options?.seed_key || '').trim()
     || `duel:${normalizeDifficulty(options?.difficulty || 'easy')}:${strengthA}:${strengthB}:${Date.now()}_${Math.floor(Math.random() * 10000)}`;
   let scoreA = 0;
@@ -2909,7 +3099,37 @@ function simulateBotDuelScores(botAConfig, botBConfig, options = {}) {
   };
 }
 
-async function createBotArenaMatch({ botAId, botBId, nowIso, nowMs }) {
+// Placar e duração de um duelo entre bots. Quem está atrás no progresso tem uma
+// pequena vantagem, que some quando se equiparam.
+async function planBotDuelResult({ botAId, botBId, strengthA, strengthB, difficulty, statsMap = null, seedKey = '' }) {
+  const stats = statsMap && typeof statsMap === 'object'
+    ? statsMap
+    : ((await getSystemBotStatsMap().catch(() => null)) || {});
+  const underdogEdge = getBotDuelUnderdogEdge(
+    stats[botAId],
+    stats[botBId],
+    getBotBalanceAverages(stats, SYSTEM_BOT_IDS)
+  );
+  const score = simulateBotDuelScores({ strength: strengthA }, { strength: strengthB }, {
+    baseRounds: BOT_ARENA_BASE_ROUNDS,
+    maxRounds: BOT_ARENA_MAX_ROUNDS,
+    difficulty,
+    accuracyBonusA: underdogEdge.a,
+    accuracyBonusB: underdogEdge.b,
+    seed_key: seedKey
+  });
+  const scoreA = Math.max(0, Number(score.scoreA || 0));
+  const scoreB = Math.max(0, Number(score.scoreB || 0));
+  const endedRoundNo = Math.max(BOT_ARENA_BASE_ROUNDS, Number(score.endedRoundNo || BOT_ARENA_BASE_ROUNDS));
+  return {
+    scoreA,
+    scoreB,
+    endedRoundNo,
+    durationMs: getBotDuelDurationMs({ roundsPlayed: endedRoundNo, scoreA, scoreB, difficulty, strengthA, strengthB, seedKey })
+  };
+}
+
+async function createBotArenaMatch({ botAId, botBId, nowIso, nowMs, statsMap = null }) {
   const [snapA, snapB] = await Promise.all([
     getSystemBotSnapshot(botAId),
     getSystemBotSnapshot(botBId)
@@ -2926,11 +3146,23 @@ async function createBotArenaMatch({ botAId, botBId, nowIso, nowMs }) {
   const botStrengthB = normalizeBotStrength(snapB?.config?.strength || getSystemBotDefinition(botBId).default_strength);
 
   const matchId = buildMatchId(botAId, botBId);
+  // O placar sai já na criação: a partida fica em andamento pelo tempo que ele levaria.
+  const plan = await planBotDuelResult({
+    botAId,
+    botBId,
+    strengthA: botStrengthA,
+    strengthB: botStrengthB,
+    difficulty: duelDifficulty,
+    statsMap,
+    seedKey: matchId
+  });
+  const endsAtMs = nowMs + plan.durationMs;
   const created = await createPvpMatch({
     id: matchId,
     status: 'active',
     is_bot_match: true,
     is_bot_duel: true,
+    bot_planned_end_ms: endsAtMs,
     bot_user_id: String(botAId),
     bot_duel_ids: [String(botAId), String(botBId)],
     difficulty: duelDifficulty,
@@ -2977,21 +3209,18 @@ async function createBotArenaMatch({ botAId, botBId, nowIso, nowMs }) {
 
   if (!created?.id) return null;
 
-  const durationMs = Math.round(
-    BOT_BATTLE_DURATION_MS_MIN + Math.random() * (BOT_BATTLE_DURATION_MS_MAX - BOT_BATTLE_DURATION_MS_MIN)
-  );
   await Promise.all([
     setBotBusy(botAId, {
       reason: 'bot_duel',
       match_id: created.id,
       source: 'arena',
-      until_ms: nowMs + durationMs + 1000
+      until_ms: endsAtMs + 1000
     }),
     setBotBusy(botBId, {
       reason: 'bot_duel',
       match_id: created.id,
       source: 'arena',
-      until_ms: nowMs + durationMs + 1000
+      until_ms: endsAtMs + 1000
     })
   ]);
 
@@ -3001,7 +3230,8 @@ async function createBotArenaMatch({ botAId, botBId, nowIso, nowMs }) {
     botBId: String(botBId),
     difficulty: duelDifficulty,
     startedAtMs: nowMs,
-    endsAtMs: nowMs + durationMs
+    endsAtMs,
+    plan
   };
 }
 
@@ -3017,7 +3247,7 @@ async function finalizeBotArenaMatch(arenaState, endedReason = 'bot_duel_complet
     return null;
   }
 
-  const nowIso = new Date().toISOString();
+  const nowMs = Date.now();
   const p1Score = Math.max(0, Number(matchRow?.player1_score || 0));
   const p2Score = Math.max(0, Number(matchRow?.player2_score || 0));
   const hasRealScores = p1Score > 0 || p2Score > 0;
@@ -3025,27 +3255,49 @@ async function finalizeBotArenaMatch(arenaState, endedReason = 'bot_duel_complet
   let finalP1Score = p1Score;
   let finalP2Score = p2Score;
   let endedRoundNo = Math.max(1, Number(matchRow?.ended_round_no || matchRow?.round_no || BOT_ARENA_BASE_ROUNDS));
+  const duelDifficulty = normalizeDifficulty(matchRow?.difficulty || matchRow?.category || 'easy');
+  const strengthA = normalizeBotStrength(matchRow?.player1_bot_strength || matchRow?.bot_strength);
+  const strengthB = normalizeBotStrength(matchRow?.player2_bot_strength || matchRow?.bot_strength);
+  const startedAtMs = state.started_at_ms || toMillis(matchRow?.created_at) || nowMs;
+  let durationMs = state.planned_rounds > 0 ? Math.max(0, state.ends_at_ms - startedAtMs) : 0;
 
-  if (!hasRealScores) {
-    const [configA, configB] = await Promise.all([
-      getPvpBotConfig(state.bot_a_id).catch(() => null),
-      getPvpBotConfig(state.bot_b_id).catch(() => null)
-    ]);
-    const duelDifficulty = normalizeDifficulty(matchRow?.difficulty || matchRow?.category || 'easy');
-    const score = simulateBotDuelScores(configA, configB, {
-      baseRounds: BOT_ARENA_BASE_ROUNDS,
-      maxRounds: BOT_ARENA_MAX_ROUNDS,
-      difficulty: duelDifficulty
+  if (!hasRealScores && state.planned_rounds > 0) {
+    finalP1Score = state.planned_score_a;
+    finalP2Score = state.planned_score_b;
+    endedRoundNo = state.planned_rounds;
+  } else if (!hasRealScores) {
+    // Duelo criado sem placar planejado (antes desta versão): decide agora.
+    const plan = await planBotDuelResult({
+      botAId: state.bot_a_id,
+      botBId: state.bot_b_id,
+      strengthA,
+      strengthB,
+      difficulty: duelDifficulty,
+      seedKey: state.match_id
     });
-    finalP1Score = Math.max(0, Number(score.scoreA || 0));
-    finalP2Score = Math.max(0, Number(score.scoreB || 0));
-    endedRoundNo = Math.max(BOT_ARENA_BASE_ROUNDS, Number(score.endedRoundNo || BOT_ARENA_BASE_ROUNDS));
+    finalP1Score = plan.scoreA;
+    finalP2Score = plan.scoreB;
+    endedRoundNo = plan.endedRoundNo;
+    durationMs = plan.durationMs;
   }
 
   if (finalP1Score === finalP2Score) {
     if (Math.random() < 0.5) finalP1Score += 1;
     else finalP2Score += 1;
   }
+  if (!durationMs) {
+    durationMs = getBotDuelDurationMs({
+      roundsPlayed: endedRoundNo,
+      scoreA: finalP1Score,
+      scoreB: finalP2Score,
+      difficulty: duelDifficulty,
+      strengthA,
+      strengthB,
+      seedKey: state.match_id
+    });
+  }
+  // A partida acabou quando o placar diz, não quando o servidor passou para fechá-la.
+  const endedAtIso = new Date(Math.min(nowMs, startedAtMs + durationMs)).toISOString();
 
   const winnerId = finalP1Score > finalP2Score ? state.bot_a_id : state.bot_b_id;
   const loserId = winnerId === state.bot_a_id ? state.bot_b_id : state.bot_a_id;
@@ -3059,7 +3311,7 @@ async function finalizeBotArenaMatch(arenaState, endedReason = 'bot_duel_complet
     ended_reason: String(endedReason || 'bot_duel_complete'),
     ended_by_user_id: winnerId,
     ended_round_no: endedRoundNo,
-    ended_at: nowIso
+    ended_at: endedAtIso
   }).catch(() => null);
 
   const latest = await getPvpMatch(state.match_id).catch(() => null);
@@ -3409,43 +3661,6 @@ async function reconcileFinishedBotMatchStats(nowMs = Date.now()) {
   }
 }
 
-function isFinishedDrawMatchRow(row) {
-  const safe = row && typeof row === 'object' ? row : {};
-  if (String(safe.status || '').trim().toLowerCase() !== 'finished') return false;
-  if (safe.result_void === true || safe.history_hidden === true) return false;
-  const winnerId = String(safe.winner_user_id || '').trim();
-  if (winnerId) return false;
-  const p1 = Math.max(0, Number(safe.player1_score || 0));
-  const p2 = Math.max(0, Number(safe.player2_score || 0));
-  return p1 === p2;
-}
-
-export async function cleanupDrawFinishedMatches(maxBatch = 80) {
-  const limit = Math.max(1, Number(maxBatch || 80));
-  const rows = await getNode('pvp_matches').catch(() => null);
-  if (!rows || typeof rows !== 'object') return { hidden: 0 };
-
-  const targets = Object.entries(rows)
-    .filter(([id, row]) => !!id && isFinishedDrawMatchRow(row))
-    .slice(0, limit);
-  if (!targets.length) return { hidden: 0 };
-
-  const nowIso = new Date().toISOString();
-  let hidden = 0;
-  await Promise.all(targets.map(([matchId]) => update(ref(firebaseDb, `pvp_matches/${matchId}`), {
-    result_void: true,
-    result_void_reason: 'draw_result',
-    history_hidden: true,
-    history_hidden_reason: 'draw_result',
-    draw_hidden_at: nowIso,
-    updated_at: nowIso
-  }).then(() => {
-    hidden += 1;
-  }).catch(() => null)));
-
-  return { hidden };
-}
-
 export async function cleanupZeroScoreFinishedMatches(maxBatch = 80) {
   const limit = Math.max(1, Number(maxBatch || 80));
   const rows = await getNode('pvp_matches').catch(() => null);
@@ -3454,6 +3669,8 @@ export async function cleanupZeroScoreFinishedMatches(maxBatch = 80) {
   const targets = Object.entries(rows)
     .filter(([id, row]) => {
       if (!id || !row || typeof row !== 'object') return false;
+      // Desistência é um fim válido (recompensa/compensação), como em getInvalidFinishedMatchReason.
+      if (String(row.ended_reason || '').trim().toLowerCase() === 'forfeit') return false;
       const invalidReason = getInvalidFinishedPvpMatchReason(row);
       if (!invalidReason) return false;
       const alreadyMarked = row.result_void === true
@@ -3786,7 +4003,8 @@ async function persistBotQuizHistoryMatch({ batchId = '', assignments = [], star
   const normalizedBatchId = String(batchId || '').trim() || `bot_quiz_batch_${endedMs}_${Math.floor(Math.random() * 10000)}`;
   const matchId = `bot_quiz_match_${normalizedBatchId}`;
 
-  const created = await createPvpMatch({
+  // Só o painel admin mostra quizzes de bots: vai direto para o histórico dos bots.
+  const entry = buildBotMatchLogEntry({
     id: matchId,
     status: 'finished',
     is_bot_quiz: true,
@@ -3802,46 +4020,161 @@ async function persistBotQuizHistoryMatch({ batchId = '', assignments = [], star
     ended_round_no: totalRounds,
     player1_user_id: player1Id,
     player1_nickname: String(snap1?.profile?.nickname || getSystemBotDefinition(player1Id).nickname || 'Bot 1'),
-    player1_avatar: String(snap1?.profile?.avatar || '🤖'),
-    player1_frame: String(snap1?.profile?.equipped_frame || 'frame_default'),
-    player1_background: String(snap1?.profile?.equipped_background || 'bg_default'),
-    player1_emoji: String(snap1?.profile?.equipped_emoji || 'emoji_profile'),
-    player1_level: Math.max(1, Number(snap1?.stats?.level || 1)),
-    player1_pvp_points: Math.max(0, Number(snap1?.stats?.pvp_points || 0)),
-    player1_pvp_battles: Math.max(0, Number(snap1?.stats?.pvp_battles || 0)),
     player1_bot_strength: normalizeBotStrength(first.bot_strength || getSystemBotDefinition(player1Id).default_strength),
     player1_score: player1Score,
-    player1_accept_state: 'accepted',
     player2_user_id: player2Id || '',
     player2_nickname: player2Id
       ? String(snap2?.profile?.nickname || getSystemBotDefinition(player2Id).nickname || 'Bot 2')
       : 'Quiz solo',
-    player2_avatar: String(snap2?.profile?.avatar || '🤖'),
-    player2_frame: String(snap2?.profile?.equipped_frame || 'frame_default'),
-    player2_background: String(snap2?.profile?.equipped_background || 'bg_default'),
-    player2_emoji: String(snap2?.profile?.equipped_emoji || 'emoji_profile'),
-    player2_level: Math.max(1, Number(snap2?.stats?.level || 1)),
-    player2_pvp_points: Math.max(0, Number(snap2?.stats?.pvp_points || 0)),
-    player2_pvp_battles: Math.max(0, Number(snap2?.stats?.pvp_battles || 0)),
     player2_bot_strength: player2Id
       ? normalizeBotStrength(second?.bot_strength || getSystemBotDefinition(player2Id).default_strength)
       : '',
     player2_score: player2Score,
-    player2_accept_state: player2Id ? 'accepted' : 'pending',
-    bot_strength: normalizeBotStrength(first.bot_strength || getSystemBotDefinition(player1Id).default_strength),
-    winner_user_id: winnerId || null,
+    winner_user_id: winnerId,
     ended_reason: winnerId ? 'bot_quiz_complete' : 'bot_quiz_draw',
-    ended_by_user_id: winnerId || null,
     ended_at: endedIso,
-    round_started_at_ms: startedMs,
-    round_started_at: startedIso,
     created_at: startedIso,
     updated_at: endedIso
-  }).catch(() => null);
+  });
+  await set(ref(firebaseDb, `${BOT_MATCH_LOG_TOP}/${getBotMatchLogDayKey(endedMs)}/${matchId}`), entry).catch(() => null);
+  return entry;
+}
 
-  return created && typeof created === 'object'
-    ? created
-    : { id: matchId };
+export function getBotMatchLogDayKey(msValue = Date.now()) {
+  const ms = Math.max(0, Number(msValue || 0)) || Date.now();
+  return new Date(ms).toISOString().slice(0, 10);
+}
+
+// Versão enxuta da partida, com os campos que as telas do admin usam.
+function buildBotMatchLogEntry(matchRow) {
+  const row = matchRow && typeof matchRow === 'object' ? matchRow : {};
+  const assignments = Array.isArray(row.bot_quiz_assignments)
+    ? row.bot_quiz_assignments
+      .filter((item) => item && typeof item === 'object' && item.bot_id)
+      .slice(0, 2)
+      .map((item) => ({
+        bot_id: String(item.bot_id || ''),
+        bot_strength: String(item.bot_strength || ''),
+        language: String(item.language || ''),
+        topic: String(item.topic || ''),
+        difficulty: String(item.difficulty || ''),
+        total_questions: Math.max(0, Number(item.total_questions || 0)),
+        correct_count: Math.max(0, Number(item.correct_count || 0))
+      }))
+    : [];
+  return stripUndefinedDeep({
+    id: String(row.id || ''),
+    status: 'finished',
+    is_bot_duel: row.is_bot_duel === true,
+    is_bot_quiz: row.is_bot_quiz === true,
+    player1_user_id: String(row.player1_user_id || ''),
+    player2_user_id: String(row.player2_user_id || ''),
+    player1_nickname: String(row.player1_nickname || ''),
+    player2_nickname: String(row.player2_nickname || ''),
+    player1_score: Math.max(0, Number(row.player1_score || 0)),
+    player2_score: Math.max(0, Number(row.player2_score || 0)),
+    player1_bot_strength: String(row.player1_bot_strength || ''),
+    player2_bot_strength: String(row.player2_bot_strength || ''),
+    bot_strength: String(row.bot_strength || ''),
+    winner_user_id: String(row.winner_user_id || ''),
+    difficulty: String(row.difficulty || ''),
+    category: String(row.category || ''),
+    language: String(row.language || ''),
+    topic: String(row.topic || ''),
+    total_rounds: Math.max(0, Number(row.total_rounds || 0)),
+    round_no: Math.max(0, Number(row.round_no || 0)),
+    ended_round_no: Math.max(0, Number(row.ended_round_no || 0)),
+    ended_reason: String(row.ended_reason || ''),
+    result_void: row.result_void === true,
+    history_hidden: row.history_hidden === true,
+    bot_quiz_batch_id: row.is_bot_quiz === true ? String(row.bot_quiz_batch_id || '') : undefined,
+    bot_quiz_difficulty: row.is_bot_quiz === true ? String(row.bot_quiz_difficulty || '') : undefined,
+    bot_quiz_assignments: assignments.length ? assignments : undefined,
+    created_at: String(row.created_at || ''),
+    ended_at: String(row.ended_at || row.updated_at || ''),
+    updated_at: String(row.updated_at || row.ended_at || '')
+  });
+}
+
+// Tira de pvp_matches os duelos entre bots já encerrados (com pontos aplicados) e os
+// guarda no histórico dos bots. Sem isso, a automação faria pvp_matches crescer sem
+// parar, e ela é baixada inteira por todo jogador.
+async function archiveFinishedBotOnlyMatches(nowMs = Date.now()) {
+  const rows = await getNode('pvp_matches').catch(() => null);
+  if (!rows || typeof rows !== 'object') return 0;
+  const patch = {};
+  const archivedIds = [];
+  Object.entries(rows).forEach(([matchId, row]) => {
+    if (archivedIds.length >= BOT_MATCH_ARCHIVE_MAX_BATCH) return;
+    if (!matchId || !row || typeof row !== 'object') return;
+    if (String(row.status || '').trim().toLowerCase() !== 'finished') return;
+    const isBotQuiz = row.is_bot_quiz === true;
+    const isBotDuel = row.is_bot_duel === true
+      && isSystemBotUserId(row.player1_user_id)
+      && isSystemBotUserId(row.player2_user_id);
+    if (!isBotQuiz && !isBotDuel) return;
+    if (isBotDuel && row.bot_duel_stats_applied !== true) return;
+    const endedMs = toMillis(row.ended_at || row.updated_at || row.created_at);
+    if (!endedMs || (nowMs - endedMs) < BOT_MATCH_ARCHIVE_MIN_AGE_MS) return;
+    patch[`${BOT_MATCH_LOG_TOP}/${getBotMatchLogDayKey(endedMs)}/${matchId}`] = buildBotMatchLogEntry({ id: matchId, ...row });
+    patch[`pvp_matches/${matchId}`] = null;
+    archivedIds.push(matchId);
+  });
+  if (!archivedIds.length) return 0;
+  await update(ref(firebaseDb, ''), patch);
+  archivedIds.forEach((matchId) => updatePvpMatchRowsCacheRow(matchId, null));
+  return archivedIds.length;
+}
+
+// Apaga os dias do histórico dos bots fora da retenção (linha inexistente não custa nada).
+async function pruneBotMatchLog(nowMs = Date.now()) {
+  const dayMs = 24 * 60 * 60 * 1000;
+  const patch = {};
+  for (let daysAgo = BOT_MATCH_LOG_RETENTION_DAYS; daysAgo < BOT_MATCH_LOG_RETENTION_DAYS + 7; daysAgo += 1) {
+    patch[getBotMatchLogDayKey(nowMs - (daysAgo * dayMs))] = null;
+  }
+  await update(ref(firebaseDb, BOT_MATCH_LOG_TOP), patch).catch(() => null);
+}
+
+export function subscribeBotMatchLogDay(dayKey, onChange, onError = null) {
+  const safeDayKey = String(dayKey || '').trim();
+  if (typeof onChange !== 'function' || !/^\d{4}-\d{2}-\d{2}$/.test(safeDayKey)) return () => { };
+  const unsubscribe = onValue(
+    ref(firebaseDb, `${BOT_MATCH_LOG_TOP}/${safeDayKey}`),
+    (snap) => {
+      const rows = snap.exists() ? snap.val() : null;
+      onChange(rows && typeof rows === 'object'
+        ? Object.entries(rows)
+          .filter(([id, row]) => !!id && row && typeof row === 'object')
+          .map(([id, row]) => ({ ...row, id }))
+        : []);
+    },
+    (error) => {
+      if (typeof onError === 'function') onError(error);
+    }
+  );
+  return () => unsubscribe();
+}
+
+// Partidas 2x2 (pvp_team_matches) e Um contra todos (pvp_elimination_matches) para o painel admin.
+export function subscribePvpGroupMatchesForAdmin(collection, onChange, onError = null) {
+  const safeCollection = collection === 'pvp_elimination_matches' ? 'pvp_elimination_matches' : 'pvp_team_matches';
+  if (typeof onChange !== 'function') return () => { };
+  const unsubscribe = onValue(
+    ref(firebaseDb, safeCollection),
+    (snap) => {
+      const rows = snap.exists() ? snap.val() : null;
+      onChange(rows && typeof rows === 'object'
+        ? Object.entries(rows)
+          .filter(([id, row]) => !!id && row && typeof row === 'object')
+          .map(([id, row]) => ({ ...row, id }))
+        : []);
+    },
+    (error) => {
+      if (typeof onError === 'function') onError(error);
+    }
+  );
+  return () => unsubscribe();
 }
 
 async function runBotQuizAutomationStep(nowMs = Date.now(), quizEnabled = true) {
@@ -3877,6 +4210,7 @@ async function runBotQuizAutomationStep(nowMs = Date.now(), quizEnabled = true) 
     return { ok: true, state: quizState.status === 'active' ? 'quiz_paused' : 'quiz_paused_idle' };
   }
 
+  let finalizedQuiz = null;
   if (quizState.status === 'active') {
     if (safeNowMs < quizState.ends_at_ms) {
       return {
@@ -3891,11 +4225,12 @@ async function runBotQuizAutomationStep(nowMs = Date.now(), quizEnabled = true) 
       const applied = await applyBotQuizOutcomeToStats(assignment.bot_id, assignment).catch(() => null);
       if (applied) appliedResults.push(applied);
     }
+    // Acabou no fim previsto pelo resultado, não quando o servidor passou para fechá-lo.
     const quizHistoryMatch = await persistBotQuizHistoryMatch({
       batchId: quizState.batch_id || '',
       assignments: quizState.assignments,
       startedAtMs: quizState.started_at_ms,
-      endedAtMs: safeNowMs
+      endedAtMs: Math.min(safeNowMs, quizState.ends_at_ms || safeNowMs)
     }).catch(() => null);
 
     await Promise.all(
@@ -3909,6 +4244,13 @@ async function runBotQuizAutomationStep(nowMs = Date.now(), quizEnabled = true) 
       await rotateGlobalBotQueue(rotatedIds, { count_for_arena_cycle: false }).catch(() => null);
     }
 
+    const lastResult = {
+      status: 'completed',
+      at_ms: safeNowMs,
+      batch_id: quizState.batch_id || '',
+      bots: appliedResults,
+      history_match_id: String(quizHistoryMatch?.id || '')
+    };
     await set(ref(firebaseDb, BOT_ARENA_QUIZ_STATE_PATH), {
       status: 'idle',
       batch_id: '',
@@ -3919,21 +4261,19 @@ async function runBotQuizAutomationStep(nowMs = Date.now(), quizEnabled = true) 
       cursor_index: quizState.cursor_index,
       cursor_cycle_no: quizState.cursor_cycle_no,
       updated_at: safeNowIso,
-      last_result: {
-        status: 'completed',
-        at_ms: safeNowMs,
-        batch_id: quizState.batch_id || '',
-        bots: appliedResults,
-        history_match_id: String(quizHistoryMatch?.id || '')
-      }
+      last_result: lastResult
     }).catch(() => null);
 
-    return {
-      ok: true,
-      state: 'quiz_finalized',
-      bot_ids: rotatedIds
-    };
+    // Segue no mesmo passo para o próximo quiz (no servidor o passo roda a cada 2 min).
+    finalizedQuiz = { bot_ids: rotatedIds };
+    quizState.status = 'idle';
+    quizState.last_result = lastResult;
   }
+  const withFinalizedQuiz = (result) => {
+    if (!finalizedQuiz) return result;
+    if (result.state === 'quiz_created') return { ...result, state: 'quiz_finalized_created' };
+    return { ok: true, state: 'quiz_finalized', bot_ids: finalizedQuiz.bot_ids };
+  };
 
   const [queueRow, busyRows, openMatchBusy] = await Promise.all([
     getNode(BOT_ARENA_QUEUE_PATH).catch(() => null),
@@ -3952,8 +4292,19 @@ async function runBotQuizAutomationStep(nowMs = Date.now(), quizEnabled = true) 
 
   const freeBots = queueOrder.filter((botId) => !busySet.has(botId));
   if (freeBots.length < BOT_QUIZ_BATCH_SIZE) {
-    return { ok: true, state: 'quiz_idle_no_available_bot' };
+    return withFinalizedQuiz({ ok: true, state: 'quiz_idle_no_available_bot' });
   }
+
+  // Rodízio equilibrado (lib/botBalance.js): sempre há quiz; quem tem menos XP, quizzes
+  // e pontos de quiz (como os bots mais novos) e esperou mais vai primeiro.
+  const userStatsMap = (await getSystemBotStatsMap().catch(() => null)) || {};
+  const pace = await ensureBotDailyPace(safeNowMs, userStatsMap).catch(() => null);
+  const rankedQuizBots = rankBotsForPlay(freeBots, {
+    queueOrder,
+    statsById: userStatsMap,
+    mode: 'quiz',
+    rosterIds: SYSTEM_BOT_IDS
+  });
 
   const selection = takeNextBotQuizCatalogEntries({
     cursor_difficulty: quizState.cursor_difficulty,
@@ -3961,10 +4312,10 @@ async function runBotQuizAutomationStep(nowMs = Date.now(), quizEnabled = true) 
     cursor_cycle_no: quizState.cursor_cycle_no
   }, BOT_QUIZ_BATCH_SIZE);
   if (!selection.entries.length || selection.entries.length < BOT_QUIZ_BATCH_SIZE) {
-    return { ok: true, state: 'quiz_idle_no_catalog' };
+    return withFinalizedQuiz({ ok: true, state: 'quiz_idle_no_catalog' });
   }
 
-  const pickedBots = freeBots.slice(0, BOT_QUIZ_BATCH_SIZE);
+  const pickedBots = rankedQuizBots.slice(0, BOT_QUIZ_BATCH_SIZE);
   const configs = await Promise.all(pickedBots.map((botId) => getPvpBotConfig(botId).catch(() => null)));
   const batchId = `bot_quiz_batch_${safeNowMs}_${Math.floor(Math.random() * 10000)}`;
   const assignments = pickedBots.map((botId, index) => {
@@ -3990,9 +4341,13 @@ async function runBotQuizAutomationStep(nowMs = Date.now(), quizEnabled = true) 
     };
   });
 
-  const durationMs = Math.round(
-    BOT_QUIZ_DURATION_MS_MIN + Math.random() * (BOT_QUIZ_DURATION_MS_MAX - BOT_QUIZ_DURATION_MS_MIN)
-  );
+  // Quiz em andamento pelo tempo que o resultado levaria (os bots jogam ao mesmo tempo).
+  const durationMs = Math.max(...assignments.map((entry) => getBotQuizDurationMs({
+    totalQuestions: entry.total_questions,
+    correctCount: entry.correct_count,
+    strength: entry.bot_strength,
+    seedKey: `${batchId}:${entry.bot_id}`
+  })));
   await Promise.all(
     assignments.map((entry) => setBotBusy(entry.bot_id, {
       reason: 'bot_quiz',
@@ -4013,12 +4368,88 @@ async function runBotQuizAutomationStep(nowMs = Date.now(), quizEnabled = true) 
     updated_at: safeNowIso,
     last_result: quizState.last_result || null
   }).catch(() => null);
+  if (pace?.day_key) await countBotDailyActivity('quizzes', pace.day_key).catch(() => null);
 
-  return {
+  return withFinalizedQuiz({
     ok: true,
     state: 'quiz_created',
     bot_ids: assignments.map((row) => row.bot_id)
+  });
+}
+
+// Stats só dos bots do roster, linha a linha: o ciclo já leu essas linhas (cache do
+// dbClient) e a coleção user_stats inteira cresce com os jogadores.
+async function getSystemBotStatsMap() {
+  const rows = await Promise.all(SYSTEM_BOT_IDS.map((botId) => getNode(`user_stats/${botId}`).catch(() => null)));
+  const map = {};
+  SYSTEM_BOT_IDS.forEach((botId, index) => {
+    if (rows[index] && typeof rows[index] === 'object') map[botId] = rows[index];
+  });
+  return map;
+}
+
+// Dia da automação (pvp_bots_state/daily_pace): retrato das stats de cada bot no começo
+// do dia e quantos duelos/quizzes o servidor criou hoje. Só para acompanhar no painel;
+// não limita nada (os bots jogam sem parar; quem joga é decidido em lib/botBalance.js).
+function normalizeBotDailyPace(raw) {
+  const safe = raw && typeof raw === 'object' ? raw : {};
+  return {
+    day_key: String(safe.day_key || ''),
+    start: safe.start && typeof safe.start === 'object' ? safe.start : {},
+    duels: Math.max(0, Math.trunc(Number(safe.duels || 0))),
+    quizzes: Math.max(0, Math.trunc(Number(safe.quizzes || 0)))
   };
+}
+
+// Abre o dia (ou inclui bots novos) com o retrato atual das stats.
+async function ensureBotDailyPace(nowMs = Date.now(), userStatsMap = {}) {
+  const dayKey = getBrazilDayKey(nowMs);
+  const nowIso = new Date(nowMs).toISOString();
+  const statsMap = userStatsMap && typeof userStatsMap === 'object' ? userStatsMap : {};
+  const tx = await runTransaction(ref(firebaseDb, BOT_DAILY_PACE_PATH), (current) => {
+    const cur = normalizeBotDailyPace(current);
+    const sameDay = cur.day_key === dayKey;
+    const start = sameDay ? { ...cur.start } : {};
+    let changed = !sameDay;
+    SYSTEM_BOT_IDS.forEach((botId) => {
+      if (start[botId] && typeof start[botId] === 'object') return;
+      const stats = statsMap[botId] && typeof statsMap[botId] === 'object' ? statsMap[botId] : {};
+      start[botId] = {
+        battles: Math.max(0, Math.trunc(Number(stats.pvp_battles || 0))),
+        quizzes: Math.max(0, Math.trunc(Number(stats.quizzes_completed || 0)))
+      };
+      changed = true;
+    });
+    if (!changed) return undefined;
+    return {
+      day_key: dayKey,
+      start,
+      duels: sameDay ? cur.duels : 0,
+      quizzes: sameDay ? cur.quizzes : 0,
+      updated_at: nowIso
+    };
+  });
+  return normalizeBotDailyPace(tx?.snapshot?.val?.());
+}
+
+async function countBotDailyActivity(field, dayKey) {
+  const safeField = field === 'quizzes' ? 'quizzes' : 'duels';
+  await runTransaction(ref(firebaseDb, BOT_DAILY_PACE_PATH), (current) => {
+    const cur = normalizeBotDailyPace(current);
+    if (cur.day_key !== dayKey) return undefined;
+    return {
+      ...(current && typeof current === 'object' ? current : {}),
+      [safeField]: cur[safeField] + 1,
+      updated_at: new Date().toISOString()
+    };
+  });
+}
+
+// Resumo do dia para o painel admin.
+export async function getBotDailyPaceSummary(nowMs = Date.now()) {
+  const pace = normalizeBotDailyPace(await getNode(BOT_DAILY_PACE_PATH).catch(() => null));
+  if (pace.day_key !== getBrazilDayKey(nowMs)) return null;
+  return { day_key: pace.day_key, duels: pace.duels, quizzes: pace.quizzes };
 }
 
 export async function tryAcquireBotAutomationLock(ownerId, ttlMs = 7000) {
@@ -4054,8 +4485,8 @@ export async function runBotArenaAutomationTick(ownerId) {
   const nowMs = Date.now();
   await recoverStaleOrDuplicateBotDuels(nowMs).catch(() => null);
   await cleanupOrphanBotBusyEntries(nowMs).catch(() => null);
-  await cleanupStalePendingBotUserMatches({ maxBatch: 40, staleMs: 14000 }).catch(() => null);
-  await cleanupDrawFinishedMatches(120).catch(() => null);
+  // Sem actorUserId vale para todos os jogadores: folga acima do prazo de aceite (15 s).
+  await cleanupStalePendingBotUserMatches({ maxBatch: 40, staleMs: 30000 }).catch(() => null);
   await cleanupZeroScoreFinishedMatches(120).catch(() => null);
   await reconcileFinishedBotMatchStats(nowMs).catch(() => null);
   const nowIso = new Date(nowMs).toISOString();
@@ -4100,6 +4531,20 @@ export async function runBotArenaAutomationTick(ownerId) {
     return withQuizState({ ok: true, state: 'paused' });
   }
 
+  // Duelo encerrado neste passo: o próximo já começa em seguida (no servidor o passo
+  // roda a cada 2 min). O estado devolvido vira, por exemplo, "finalized_created".
+  let closedState = '';
+  const withClosedState = (payload = {}) => {
+    if (!closedState) return withQuizState(payload);
+    const created = payload.state === 'created';
+    return withQuizState({
+      ...payload,
+      ok: true,
+      state: created ? `${closedState}_created` : closedState,
+      closed_match_id: arenaState.match_id
+    });
+  };
+
   if (arenaState.status === 'active') {
     const arenaMatch = arenaState.match_id
       ? await getPvpMatch(arenaState.match_id).catch(() => null)
@@ -4122,25 +4567,24 @@ export async function runBotArenaAutomationTick(ownerId) {
         updated_at: nowIso,
         last_result: null
       }).catch(() => null);
-      return withQuizState({ ok: true, state: 'stale_reset', match_id: arenaState.match_id });
-    }
-
-    if (nowMs < arenaState.ends_at_ms && !staleByAge) {
+      closedState = 'stale_reset';
+    } else if (nowMs < arenaState.ends_at_ms && !staleByAge) {
       return withQuizState({ ok: true, state: 'active', match_id: arenaState.match_id });
+    } else {
+      const finalized = await finalizeBotArenaMatch(arenaState).catch(() => null);
+      await set(ref(firebaseDb, BOT_ARENA_STATE_PATH), {
+        status: 'idle',
+        match_id: '',
+        bot_a_id: '',
+        bot_b_id: '',
+        started_at_ms: 0,
+        ends_at_ms: 0,
+        difficulty: 'easy',
+        updated_at: nowIso,
+        last_result: finalized || null
+      }).catch(() => null);
+      closedState = 'finalized';
     }
-    const finalized = await finalizeBotArenaMatch(arenaState).catch(() => null);
-    await set(ref(firebaseDb, BOT_ARENA_STATE_PATH), {
-      status: 'idle',
-      match_id: '',
-      bot_a_id: '',
-      bot_b_id: '',
-      started_at_ms: 0,
-      ends_at_ms: 0,
-      difficulty: 'easy',
-      updated_at: nowIso,
-      last_result: finalized || null
-    }).catch(() => null);
-    return withQuizState({ ok: true, state: 'finalized', match_id: arenaState.match_id });
   }
 
   const [queueRow, busyRows, openMatchBusy] = await Promise.all([
@@ -4161,64 +4605,42 @@ export async function runBotArenaAutomationTick(ownerId) {
 
   const freeBots = queueOrder.filter((botId) => !busySet.has(botId));
   if (freeBots.length < 2) {
-    return withQuizState({ ok: true, state: 'idle_no_pair' });
+    return withClosedState({ ok: true, state: 'idle_no_pair' });
   }
 
   const hasExternalActiveDuel = await hasAnyActiveBotDuelMatch().catch(() => false);
   if (hasExternalActiveDuel) {
-    return withQuizState({ ok: true, state: 'idle_duel_already_active' });
+    return withClosedState({ ok: true, state: 'idle_duel_already_active' });
   }
 
-  const userStatsMap = await getNode('user_stats').catch(() => null);
-  const freeBotsWithCategory = await Promise.all(
-    freeBots.map(async (botId) => {
-      const category = await getBotDifficultyById(botId, userStatsMap).catch(() => 'easy');
-      return {
-        bot_id: botId,
-        category: normalizeDifficulty(category || 'easy')
-      };
-    })
-  );
-  const categoryPair = (() => {
-    for (let firstIndex = 0; firstIndex < freeBotsWithCategory.length; firstIndex += 1) {
-      const first = freeBotsWithCategory[firstIndex];
-      for (let secondIndex = firstIndex + 1; secondIndex < freeBotsWithCategory.length; secondIndex += 1) {
-        const second = freeBotsWithCategory[secondIndex];
-        if (first.category !== second.category) continue;
-        return {
-          firstIndex,
-          secondIndex,
-          botAId: first.bot_id,
-          botBId: second.bot_id,
-          category: first.category
-        };
-      }
-    }
-    return null;
-  })();
-
+  // Rodízio equilibrado (lib/botBalance.js): sempre há duelo; quem está mais atrás
+  // (partidas e pontos, como os bots mais novos) e esperou mais joga primeiro, contra o
+  // rival da mesma categoria com pontos mais próximos.
+  const userStatsMap = (await getSystemBotStatsMap().catch(() => null)) || {};
+  const pace = await ensureBotDailyPace(nowMs, userStatsMap).catch(() => null);
+  const rankedBots = rankBotsForPlay(freeBots, {
+    queueOrder,
+    statsById: userStatsMap,
+    mode: 'pvp',
+    rosterIds: SYSTEM_BOT_IDS
+  });
+  const categoryPair = pickBalancedDuelPair(rankedBots, {
+    statsById: userStatsMap,
+    getCategory: (botId) => resolveDifficultyByPvpPoints(userStatsMap?.[botId]?.pvp_points || 0)
+  });
   if (!categoryPair?.botAId || !categoryPair?.botBId) {
-    const headBotId = freeBotsWithCategory[0]?.bot_id || freeBots[0] || '';
-    if (headBotId) {
-      await rotateGlobalBotQueue([headBotId], { count_for_arena_cycle: false }).catch(() => null);
-    }
-    return withQuizState({ ok: true, state: 'idle_no_pair' });
-  }
-
-  // Keep queue moving when the pair is found deeper in the queue.
-  const queueHeadBotId = freeBotsWithCategory[0]?.bot_id || '';
-  if (queueHeadBotId && queueHeadBotId !== categoryPair.botAId) {
-    await rotateGlobalBotQueue([queueHeadBotId], { count_for_arena_cycle: false }).catch(() => null);
+    return withClosedState({ ok: true, state: 'idle_no_pair' });
   }
 
   const created = await createBotArenaMatch({
     botAId: categoryPair.botAId,
     botBId: categoryPair.botBId,
     nowIso,
-    nowMs
+    nowMs,
+    statsMap: userStatsMap
   });
   if (!created?.matchId) {
-    return withQuizState({ ok: false, reason: 'create_failed' });
+    return withClosedState({ ok: false, reason: 'create_failed' });
   }
 
   await set(ref(firebaseDb, BOT_ARENA_STATE_PATH), {
@@ -4229,10 +4651,69 @@ export async function runBotArenaAutomationTick(ownerId) {
     started_at_ms: created.startedAtMs,
     ends_at_ms: created.endsAtMs,
     difficulty: created.difficulty,
+    planned_score_a: created.plan.scoreA,
+    planned_score_b: created.plan.scoreB,
+    planned_rounds: created.plan.endedRoundNo,
     updated_at: nowIso
   }).catch(() => null);
+  if (pace?.day_key) await countBotDailyActivity('duels', pace.day_key).catch(() => null);
 
-  return withQuizState({ ok: true, state: 'created', match_id: created.matchId });
+  return withClosedState({ ok: true, state: 'created', match_id: created.matchId });
+}
+
+// Um ciclo da automação no servidor (rota /api/bot-daemon, chamada pelo pg_cron a
+// cada 2 min): passo dos bots, arquivamento dos duelos encerrados e status do painel.
+export async function runBotDaemonCycle() {
+  const startedAtMs = Date.now();
+  const ownerId = `bot_daemon_${startedAtMs}_${Math.floor(Math.random() * 100000)}`;
+  let result = null;
+  let errorMessage = '';
+  try {
+    result = await runBotArenaAutomationTick(ownerId);
+  } catch (error) {
+    errorMessage = String(error?.message || error || 'erro desconhecido').slice(0, 300);
+  }
+  const archived = await archiveFinishedBotOnlyMatches(Date.now()).catch(() => 0);
+  await pruneBotMatchLog(Date.now()).catch(() => null);
+  const paceSummary = await getBotDailyPaceSummary(Date.now()).catch(() => null);
+
+  const finishedAtMs = Date.now();
+  const state = String(result?.state || result?.reason || (errorMessage ? 'tick_error' : 'unknown'));
+  const quizState = String(result?.quiz_state || '');
+  const lockMissed = result?.reason === 'lock_not_acquired';
+  const failed = !!errorMessage || (result?.ok === false && !lockMissed);
+  const previous = normalizeBotArenaDaemonStatus(await getNode(BOT_DAEMON_STATUS_PATH).catch(() => null));
+  const status = {
+    owner_id: ownerId,
+    status: failed ? 'error' : 'running',
+    last_state: state,
+    last_quiz_state: quizState,
+    last_error: errorMessage || (failed ? state : ''),
+    lock_ok: !lockMissed && !errorMessage,
+    ticks: previous.ticks + 1,
+    created_matches: previous.created_matches + (/(^|_)created$/.test(state) ? 1 : 0),
+    finalized_matches: previous.finalized_matches + (/^(finalized|stale_reset|paused_finalized)/.test(state) ? 1 : 0),
+    created_quizzes: previous.created_quizzes + (/created$/.test(quizState) ? 1 : 0),
+    finalized_quizzes: previous.finalized_quizzes + (/^quiz_finalized/.test(quizState) ? 1 : 0),
+    archived_matches: previous.archived_matches + Math.max(0, Number(archived || 0)),
+    pace: paceSummary || null,
+    run_started_at: new Date(startedAtMs).toISOString(),
+    run_started_at_ms: startedAtMs,
+    run_finished_at: new Date(finishedAtMs).toISOString(),
+    run_finished_at_ms: finishedAtMs,
+    run_duration_ms: Math.max(0, finishedAtMs - startedAtMs),
+    updated_at: new Date(finishedAtMs).toISOString(),
+    updated_at_ms: finishedAtMs
+  };
+  await set(ref(firebaseDb, BOT_DAEMON_STATUS_PATH), status).catch(() => null);
+  return {
+    ok: !failed,
+    state,
+    quiz_state: quizState,
+    archived: Math.max(0, Number(archived || 0)),
+    duration_ms: status.run_duration_ms,
+    error: status.last_error
+  };
 }
 
 async function isNicknameTaken(candidateNickname, userId) {
@@ -5801,22 +6282,21 @@ export function isPvpGroupMatchStale(matchRow = null, nowMs = Date.now(), staleM
 // Ids (das salas) que mantêm bots ocupados: lobby com humano conectado ou sala com
 // partida em andamento que não foi abandonada.
 async function getActivePvpGroupBusyIds(nowMs = Date.now()) {
-  const [teamRooms, teamMatches, eliminationRooms, eliminationMatches] = await Promise.all([
+  // As coleções de partidas guardam todo o histórico; só as partidas das salas
+  // ativas interessam, então elas são lidas uma a uma.
+  const [teamRooms, eliminationRooms] = await Promise.all([
     getNode('pvp_team_rooms').catch(() => null),
-    getNode('pvp_team_matches').catch(() => null),
-    getNode('pvp_elimination_rooms').catch(() => null),
-    getNode('pvp_elimination_matches').catch(() => null)
+    getNode('pvp_elimination_rooms').catch(() => null)
   ]);
   const ids = new Set();
-  const collect = (roomRows, matchRows) => {
-    const matches = matchRows && typeof matchRows === 'object' ? matchRows : {};
-    Object.entries(roomRows && typeof roomRows === 'object' ? roomRows : {}).forEach(([roomId, row]) => {
+  const collect = async (roomRows, matchCollection) => {
+    const tasks = Object.entries(roomRows && typeof roomRows === 'object' ? roomRows : {}).map(async ([roomId, row]) => {
       if (!roomId || !row || typeof row !== 'object') return;
       const status = String(row.status || '').trim().toLowerCase();
       if (status === 'finished') return;
       if (status === 'active') {
         const matchId = String(row.match_id || '').trim();
-        const match = matchId ? matches[matchId] : null;
+        const match = matchId ? await getNode(`${matchCollection}/${matchId}`).catch(() => null) : null;
         if (!match || typeof match !== 'object') return;
         if (String(match.status || '').trim().toLowerCase() === 'finished') return;
         if (isPvpGroupMatchStale(match, nowMs)) return;
@@ -5826,9 +6306,12 @@ async function getActivePvpGroupBusyIds(nowMs = Date.now()) {
       }
       if (isPvpGroupRoomAlive({ id: roomId, ...row }, nowMs, PVP_GROUP_ROOM_ABANDONED_MS)) ids.add(String(roomId));
     });
+    await Promise.all(tasks);
   };
-  collect(teamRooms, teamMatches);
-  collect(eliminationRooms, eliminationMatches);
+  await Promise.all([
+    collect(teamRooms, 'pvp_team_matches'),
+    collect(eliminationRooms, 'pvp_elimination_matches')
+  ]);
   return ids;
 }
 

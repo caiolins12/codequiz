@@ -1,4 +1,4 @@
-import { Bot, ChevronRight, History, Hourglass, Radio, RefreshCw, Wifi } from 'lucide-react';
+import { Bot, ChevronRight, History, Hourglass, Radio, RefreshCw, Users, Wifi } from 'lucide-react';
 import { Card, IconButton, PageHeader, SectionHeader, StatTile, Switch, cx } from '../ui';
 import styles from './AdminScreens.module.css';
 
@@ -23,9 +23,9 @@ export default function AdminMonitorScreen({ vm }) {
     adminLiveMatches,
     adminMatchesUpdatedAtMs,
     arenaMetrics,
+    botCount,
     botArenaBattlesEnabled,
-    botArenaDaemonModeLabel,
-    botArenaDaemonUpdatedAtLabel,
+    botArenaDaemonInfo,
     botArenaPvpEnabled,
     botArenaQuizEnabled,
     refreshAdminMetrics,
@@ -34,6 +34,7 @@ export default function AdminMonitorScreen({ vm }) {
     triggerAppBackNavigation
   } = vm;
 
+  const daemon = botArenaDaemonInfo || {};
   const liveCount = Array.isArray(adminLiveMatches) ? adminLiveMatches.length : 0;
   const historyCount = Array.isArray(adminHistoryTodayBaseMatches) ? adminHistoryTodayBaseMatches.length : 0;
   const updatedAt = adminMatchesUpdatedAtMs ? new Date(adminMatchesUpdatedAtMs).toLocaleTimeString('pt-BR') : '--:--:--';
@@ -66,14 +67,41 @@ export default function AdminMonitorScreen({ vm }) {
 
       <div className={styles.grid}>
         <Card padding="lg" className={styles.card}>
-          <SectionHeader title="Automação dos bots" subtitle="Liga e desliga as partidas automáticas." icon={Bot} />
+          <SectionHeader title="Automação dos bots" subtitle="Duelos e quizzes entre bots sem parar, com rodízio que favorece quem está atrás." icon={Bot} />
           <div className={styles.daemon}>
-            <span className={cx(styles.dot, botArenaBattlesEnabled ? styles.dotOn : '')} aria-hidden="true" />
+            <span
+              className={cx(styles.dot, daemon.tone === 'on' ? styles.dotOn : '', daemon.tone === 'warn' ? styles.dotWarn : '')}
+              aria-hidden="true"
+            />
             <span className={styles.daemonText}>
               <span className={styles.daemonTitle}>{botArenaBattlesEnabled ? 'Automação ativa' : 'Automação desativada'}</span>
-              <span className={styles.daemonMeta}>Daemon: {botArenaDaemonModeLabel} · Atualizado: {botArenaDaemonUpdatedAtLabel}</span>
+              <span className={styles.daemonMeta}>Servidor: {daemon.modeLabel} · Último ciclo: {daemon.lastRunLabel}</span>
             </span>
           </div>
+          <dl className={styles.daemonDetails}>
+            <div>
+              <dt>Duelos</dt>
+              <dd>{daemon.lastStateLabel}</dd>
+            </div>
+            <div>
+              <dt>Quizzes</dt>
+              <dd>{daemon.lastQuizStateLabel}</dd>
+            </div>
+            <div>
+              <dt>Criados hoje</dt>
+              <dd>{daemon.paceLabel || '--'}</dd>
+            </div>
+            <div>
+              <dt>Criados pelo servidor</dt>
+              <dd>{daemon.createdMatches} duelo{daemon.createdMatches === 1 ? '' : 's'} · {daemon.createdQuizzes} quiz{daemon.createdQuizzes === 1 ? '' : 'zes'}</dd>
+            </div>
+            {daemon.errorText ? (
+              <div>
+                <dt>Erro</dt>
+                <dd>{daemon.errorText}</dd>
+              </div>
+            ) : null}
+          </dl>
           <div className={styles.toggles}>
             <div className={styles.toggle}>
               <span className={styles.toggleText}>
@@ -115,6 +143,12 @@ export default function AdminMonitorScreen({ vm }) {
             title="Histórico do dia"
             desc={historyCount ? `${historyCount} partida${historyCount === 1 ? '' : 's'} finalizada${historyCount === 1 ? '' : 's'} hoje` : 'Sem partidas finalizadas hoje'}
             onClick={() => setScreen('admin-history')}
+          />
+          <NavLink
+            icon={Users}
+            title="Bots"
+            desc={botCount ? `${botCount} bots: status, pontos e conta de cada um` : 'Status, pontos e conta de cada bot'}
+            onClick={() => setScreen('admin-bots')}
           />
         </div>
       </div>

@@ -16,7 +16,8 @@ const STATUS_VIEW = {
   pending_accept: { label: 'Aguardando aceite', tone: 'gold' },
   matched: { label: 'Pareando', tone: 'cyan' },
   starting: { label: 'Iniciando', tone: 'cyan' },
-  round_result: { label: 'Resultado da rodada', tone: 'violet' }
+  round_result: { label: 'Resultado da rodada', tone: 'violet' },
+  elimination_result: { label: 'Eliminação', tone: 'violet' }
 };
 
 function formatTime(value) {
@@ -34,6 +35,19 @@ function buildLiveRow(row, adminMatchCodeById, nowMs) {
     updated: formatTime(row?.updated_at),
     duration: getAdminMatchDurationLabel(row, nowMs)
   };
+  if (row?.admin_group_kind) {
+    const isTeam = row.admin_group_kind === 'team';
+    return {
+      ...base,
+      code: `${isTeam ? '2X2' : 'UCT'}-${String(row.id || '').slice(-6) || 'LIVE'}`,
+      title: row.group_title,
+      typeLabel: getAdminMatchTypeLabel(row),
+      score: row.group_score_label,
+      scoreSub: isTeam ? `Confronto ${getAdminMatchRoundsLabel(row)}` : `Na disputa · ${getAdminMatchRoundsLabel(row)}`,
+      status: STATUS_VIEW[status] || { label: 'Em andamento', tone: 'lime' },
+      chips: [isTeam ? '' : row.group_result_label, DIFFICULTY_LABELS[row.difficulty], botClass]
+    };
+  }
   if (isQuiz) {
     const quiz = getAdminQuizCardData(row);
     const batchId = String(row?.bot_quiz_batch_id || row?.id || '').trim();

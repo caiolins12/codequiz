@@ -56,6 +56,38 @@
   animation: cq-pulse 1.8s ease-in-out infinite;
 }
 
+.dotWarn {
+  background: var(--cq-gold);
+  box-shadow: 0 0 0 4px rgba(255, 210, 74, 0.2);
+}
+
+.daemonDetails {
+  display: grid;
+  gap: var(--cq-space-2);
+  margin: 0;
+}
+
+.daemonDetails > div {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: var(--cq-space-1) var(--cq-space-3);
+}
+
+.daemonDetails dt {
+  color: var(--cq-text-3);
+  font-size: var(--cq-text-sm);
+  font-weight: 700;
+}
+
+.daemonDetails dd {
+  margin: 0;
+  font-size: var(--cq-text-sm);
+  font-weight: 800;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
 .daemonText {
   display: grid;
   gap: 2px;

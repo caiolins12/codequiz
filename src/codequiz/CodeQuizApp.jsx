@@ -15,9 +15,12 @@ import { firebaseDb, isCurrentUserAdmin, onValue, ref } from './lib/dbClient';
 import { LANGUAGES, QUESTIONS, TOPICS } from './data/questions-data';
 import { buildEvolutionPassSnapshot, EVOLUTION_PASS_STAGES } from './lib/achievements';
 import { DIFFICULTY_LABELS, PVE_QUESTIONS_PER_ROUND, QUESTIONS_PER_ROUND } from './lib/constants';
+import { buildBotDailyCounts, getBrazilDayKey } from './lib/botBalance';
+import { CHIP_SONG_ENGINE, CHIP_SONG_TICK_MS, createChipSongPlayer } from './lib/chipMusic';
+import { getMatchMusicPlayback } from './lib/musicPlayback';
+import { getServerNowMs, syncServerClock } from './lib/serverClock';
 import {
   cleanupStalePairLocks,
-  cleanupDrawFinishedMatches,
   cleanupZeroScoreFinishedMatches,
   cleanupStalePendingBotUserMatches,
   checkNicknameAvailability,
@@ -40,6 +43,7 @@ import {
   getBotArenaDaemonControl,
   getBotArenaDaemonStatus,
   getBotArenaQuizState,
+  getBotMatchLogDayKey,
   getPvpMatch,
   getPvpMatchesSnapshot,
   getPvpBotConfig,
@@ -66,6 +70,7 @@ import {
   runBotArenaAutomationTick,
   setBotBusy,
   SYSTEM_BOT_ID,
+  SYSTEM_BOT_IDS,
   getUserProfile,
   getUserShop,
   getUserStats,
@@ -87,6 +92,9 @@ import {
   subscribeBotArenaDaemonControl,
   subscribeBotArenaDaemonStatus,
   subscribeBotArenaQuizState,
+  subscribeBotMatchLogDay,
+  subscribePvpGroupMatchesForAdmin,
+  subscribeSystemBotsForAdmin,
   subscribePvpMatches,
   subscribeGlobalRankings,
   subscribeMatch,
@@ -139,6 +147,7 @@ import {
   getPvpGroupEmojiDriverId,
   getPvpGroupForfeitOutcome,
   getPvpGroupMatchGoneIds,
+  getPvpGroupMatchLeaverNotice,
   getPvpGroupMatchMemberIds,
   getPvpGroupMatchOutcomeForUser,
   getPvpGroupPendingBotAnswerPlans,
@@ -222,6 +231,7 @@ import {
   MENU_MUSIC_TRACKS,
   MOBILE_SW_CLEANUP_STORAGE_KEY,
   MUSIC_AUTO_SKIP_INTERVAL_MS,
+  MUSIC_MENU_AUTO_SKIP_INTERVAL_MS,
   MUSIC_SKIP_FADE_IN_MS,
   MUSIC_SKIP_FADE_OUT_MS,
   MUSIC_SKIP_SWITCH_DELAY_MS,
@@ -268,6 +278,7 @@ import {
   PVP_QUEUE_BOT_REFUSAL_DELAY_MIN_SECONDS,
   PVP_QUEUE_DISCONNECT_RECOVERY_TIMEOUT_MS,
   PVP_QUEUE_RESUME_MODE_REFUSAL,
+  PVP_DIFFICULTY_STEPS,
   PVP_ROUND_EXTRA_ANSWER_MS,
   PVP_ROUND_RESULT_DURATION_MS,
   PVP_SEQUENCE_RECENT_STARTS_MAX,
@@ -289,6 +300,7 @@ import {
   buildDefaultShopCategoryState,
   buildFallbackPvpConfig,
   buildLeagueSnapshot,
+  buildPvpDifficultyPlan,
   buildPvpTiebreakQuestionSets,
   buildProgressSnapshot,
   buildPveQuestionReviewEntry,
@@ -316,6 +328,7 @@ import {
   formatSignedPoints,
   getAdminMatchStartMs,
   getBackgroundVisualMeta,
+  getBotDaemonStateLabel,
   getBotAnswerDelayMs,
   getBotDefaultStrengthById,
   getBotEmojiPool,
@@ -339,7 +352,9 @@ import {
   getPreferredLanguageByKnowledgeArea,
   getPveRoundSeconds,
   getPvpAnswerTargetRoundNo,
+  getPvpAveragePoints,
   getPvpDifficultyFromPoints,
+  getPvpDifficultyMixFromPoints,
   getPvpDuelRoundDifficulty,
   getPvpEliminationActiveMemberIds,
   getPvpEliminationActivePair,
@@ -386,6 +401,9 @@ import {
   getTopicNameById,
   hasMeaningfulProgress,
   hashPvpTeamRoomPassword,
+  buildAdminBotView,
+  isAdminAccountEmail,
+  isAdminHistoryMatchRow,
   isAdminLiveMatchRow,
   isInvalidFinishedMatch,
   isLikelyMobileWeb,
@@ -414,7 +432,7 @@ import {
   pickBotMoodEmoji,
   pickPveRoundQuestionsByTopicSequence,
   pickPvpEmojiFxLane,
-  pickPvpQuestionSetBySequence,
+  pickPvpMixedQuestionSet,
   queueFlowLog,
   readHomeTourSeenLocal,
   readLeagueSnapshotLocal,
@@ -428,6 +446,7 @@ import {
   schedulePvpEmojiReplay,
   shouldResumeQueueAfterMatchRefused,
   toAdminDayKey,
+  toAdminGroupMatchRow,
   toMillis,
   withTimeout,
   writeHomeTourSeenLocal,
@@ -450,6 +469,7 @@ import RankingsScreen from './screens/RankingsScreen';
 import AdminMonitorScreen from './screens/AdminMonitorScreen';
 import AdminLiveScreen from './screens/AdminLiveScreen';
 import AdminHistoryScreen from './screens/AdminHistoryScreen';
+import AdminBotsScreen from './screens/AdminBotsScreen';
 import LoginScreen from './screens/LoginScreen';
 import NicknameSetupScreen from './screens/NicknameSetupScreen';
 import SettingsScreen from './screens/SettingsScreen';
@@ -539,6 +559,14 @@ export default function CodeQuizApp() {
   const [adminAccessBusy, setAdminAccessBusy] = useState(false);
   const [adminAuthorized, setAdminAuthorized] = useState(false);
   const [adminMatches, setAdminMatches] = useState([]);
+  const [adminTeamMatches, setAdminTeamMatches] = useState([]);
+  const [adminEliminationMatches, setAdminEliminationMatches] = useState([]);
+  const [adminBotLogRowsByDay, setAdminBotLogRowsByDay] = useState({});
+  const [adminBotsData, setAdminBotsData] = useState(null);
+  const [adminBotsLoading, setAdminBotsLoading] = useState(false);
+  const [adminBotsUpdatedAtMs, setAdminBotsUpdatedAtMs] = useState(0);
+  const [adminSelectedBotId, setAdminSelectedBotId] = useState('');
+  const [adminBotSort, setAdminBotSort] = useState('pvp');
   const [adminMatchesLoading, setAdminMatchesLoading] = useState(false);
   const [adminMatchesUpdatedAtMs, setAdminMatchesUpdatedAtMs] = useState(0);
   const [adminHistoryFilter, setAdminHistoryFilter] = useState('all');
@@ -741,6 +769,7 @@ export default function CodeQuizApp() {
   const themeIntroLockTimerRef = useRef(null);
   const themeIntroTokenRef = useRef(0);
   const pvpThemeIntroShownKeysRef = useRef(new Set());
+  const pvpGroupThemeIntroShownKeysRef = useRef(new Set());
   const pvpThemeIntroMatchRef = useRef('');
   const finalizeRoundBusyRef = useRef(false);
   const handledMatchIdsRef = useRef(new Set());
@@ -887,8 +916,11 @@ export default function CodeQuizApp() {
   const musicSkipSwitchTimerRef = useRef(null);
   const musicSkipBusyRef = useRef(false);
   const musicStepRef = useRef(0);
+  const musicSongPlayerRef = useRef(null);
   const musicModeRef = useRef('menu');
   const musicBattleFlowRef = useRef(false);
+  const pvpMusicSessionRef = useRef(null);
+  const musicPlaybackKeyRef = useRef('');
   const audioUnlockedRef = useRef(false);
   const rewardFxTimeoutRef = useRef(null);
   const rewardSfxTimersRef = useRef([]);
@@ -1313,15 +1345,16 @@ export default function CodeQuizApp() {
     });
   };
 
+  // Perguntas normais da partida. A dificuldade de cada uma vem da liga (pvpPoints:
+  // a média dos pontos PvP de quem joga), misturando as três na proporção da liga.
   const resolvePvpMatchQuestionSequence = ({
     areaId = '',
-    difficulty = 'easy',
+    pvpPoints = 0,
     language = '',
     topic = '',
     rounds = PVP_ROUNDS_PER_MATCH,
     sequenceSeed = ''
   } = {}) => {
-    const safeDifficulty = normalizeDifficulty(difficulty || 'easy');
     const safeArea = String(
       areaId
       || resolveKnowledgeAreaByLanguageId(language || '')
@@ -1330,19 +1363,33 @@ export default function CodeQuizApp() {
     const safeLanguage = String(language || '').trim();
     const safeTopic = String(topic || '').trim();
     const safeRounds = Math.max(1, Math.trunc(Number(rounds || PVP_ROUNDS_PER_MATCH)));
-    const cursor = getPvpSequenceCursorEntry(safeArea, safeDifficulty);
-    const recentStartTopicKeys = getPvpSequenceRecentStartTopicKeys(safeArea, safeDifficulty);
-    return pickPvpQuestionSetBySequence(QUESTIONS, {
-      difficulty: safeDifficulty,
-      count: safeRounds,
+    const cursors = {};
+    const recentStartTopicKeys = {};
+    PVP_DIFFICULTY_STEPS.forEach((difficulty) => {
+      cursors[difficulty] = getPvpSequenceCursorEntry(safeArea, difficulty);
+      recentStartTopicKeys[difficulty] = getPvpSequenceRecentStartTopicKeys(safeArea, difficulty);
+    });
+    return pickPvpMixedQuestionSet(QUESTIONS, {
+      difficultyPlan: buildPvpDifficultyPlan(pvpPoints, safeRounds),
       areaId: safeArea,
       preferredLanguage: safeLanguage,
       preferredTopic: safeTopic,
       sequenceSeed,
       ensureMatchWindow: true,
-      cursor,
+      cursors,
       recentStartTopicKeys,
       recentQuestionKeys: readSeenQuestionKeysLocal(authUser?.uid || 'guest')
+    });
+  };
+
+  // Guarda onde cada dificuldade parou, para a próxima partida seguir a sequência.
+  const rememberPvpMatchQuestionSequence = (areaId = '', questionSequence = null) => {
+    const sequences = Array.isArray(questionSequence?.sequences) ? questionSequence.sequences : [];
+    sequences.forEach((sequence) => {
+      const difficulty = normalizeDifficulty(sequence?.difficulty || 'easy');
+      const startCursor = normalizePvpSequenceCursorEntry(sequence?.startCursor);
+      rememberPvpSequenceStartTopic(areaId, difficulty, startCursor.topic_key);
+      setPvpSequenceCursorEntry(areaId, difficulty, normalizePvpSequenceCursorEntry(sequence?.nextCursor));
     });
   };
 
@@ -1782,14 +1829,17 @@ export default function CodeQuizApp() {
           pvpEliminationExcludedRoomIdsRef.current.set(String(row.id || roomId), Date.now() + 60000);
           setPvpEliminationRoom(null);
           setPvpEliminationRoomId('');
-          if (removedReason === 'accept_timeout') {
+          // Quem não confirmou a tempo ou recusou sai da fila; os demais seguem procurando.
+          if (removedReason === 'accept_timeout' || removedReason === 'match_refused') {
             setPvpEliminationQueueState({
               status: 'idle',
               joinedAtMs: 0,
               sessionId: '',
               message: ''
             });
-            showToast('Você não confirmou a partida a tempo e saiu da fila.');
+            showToast(removedReason === 'accept_timeout'
+              ? 'Você não confirmou a partida a tempo e saiu da fila.'
+              : 'Você recusou a partida. Sua fila foi cancelada.');
             playSfx('notify');
           } else {
             setPvpEliminationQueueState((prev) => (
@@ -2349,17 +2399,6 @@ export default function CodeQuizApp() {
   useEffect(() => {
     battleTrackIndexRef.current = battleTrackIndex;
   }, [battleTrackIndex]);
-
-  useEffect(() => {
-    const menuTotal = Math.max(1, MENU_MUSIC_TRACKS.length);
-    const battleTotal = Math.max(1, BATTLE_MUSIC_TRACKS.length);
-    const randomMenuIndex = Math.floor(Math.random() * menuTotal);
-    const randomBattleIndex = Math.floor(Math.random() * battleTotal);
-    menuTrackIndexRef.current = randomMenuIndex;
-    battleTrackIndexRef.current = randomBattleIndex;
-    setMenuTrackIndex(randomMenuIndex);
-    setBattleTrackIndex(randomBattleIndex);
-  }, []);
 
   useEffect(() => {
     if (!toast) return;
@@ -3592,7 +3631,7 @@ export default function CodeQuizApp() {
   }, [authUser?.uid, profile?.id, profile?.nickname, profile?.avatar]);
 
   useEffect(() => {
-    const isAdminScreen = screen === 'admin-monitor' || screen === 'admin-live' || screen === 'admin-history';
+    const isAdminScreen = screen === 'admin-monitor' || screen === 'admin-live' || screen === 'admin-history' || screen === 'admin-bots';
     const shouldPoll = screen === 'challenge' || pvpState.status === 'queueing' || (adminAuthorized && isAdminScreen);
     if (!shouldPoll) return;
     let cancelled = false;
@@ -3617,7 +3656,7 @@ export default function CodeQuizApp() {
       cancelled = true;
       clearInterval(timer);
     };
-  }, [screen, pvpState.status]);
+  }, [screen, pvpState.status, adminAuthorized]);
 
   useEffect(() => {
     if (screen !== 'rankings' && screen !== 'home') return;
@@ -3771,17 +3810,17 @@ export default function CodeQuizApp() {
   }, [authUser?.uid, profile?.id, screen, pvpConfig?.difficulty, progress?.pvpPoints, progress?.updatedAt]);
 
   useEffect(() => {
-    const isAdminScreen = screen === 'admin-monitor' || screen === 'admin-live' || screen === 'admin-history';
+    const isAdminScreen = screen === 'admin-monitor' || screen === 'admin-live' || screen === 'admin-history' || screen === 'admin-bots';
     if (!isAdminScreen) return;
     if (adminAuthorized) return;
     setScreen('home');
   }, [screen, adminAuthorized]);
 
   useEffect(() => {
-    // O papel de admin é do servidor (private.db_admins); trocar de conta fecha o painel.
+    // O papel de admin é do servidor (private.db_admins + e-mail do dono); trocar de conta fecha o painel.
     setIsAdminUser(false);
     setAdminAuthorized(false);
-    if (!authUser?.uid) return;
+    if (!authUser?.uid || !isAdminAccountEmail(authUser?.email)) return;
     let cancelled = false;
     isCurrentUserAdmin()
       .then((isAdmin) => {
@@ -3791,12 +3830,12 @@ export default function CodeQuizApp() {
     return () => {
       cancelled = true;
     };
-  }, [authUser?.uid]);
+  }, [authUser?.uid, authUser?.email]);
+
+  const isAdminScreenOpen = adminAuthorized && (screen === 'admin-monitor' || screen === 'admin-live' || screen === 'admin-history' || screen === 'admin-bots');
 
   useEffect(() => {
-    const shouldLoad = adminAuthorized && (screen === 'admin-monitor' || screen === 'admin-live' || screen === 'admin-history');
-    if (!shouldLoad) return;
-    cleanupDrawFinishedMatches(300).catch(() => null);
+    if (!isAdminScreenOpen) return;
     cleanupZeroScoreFinishedMatches(300).catch(() => null);
     cleanupStalePendingBotUserMatches({
       maxBatch: 60,
@@ -3869,7 +3908,78 @@ export default function CodeQuizApp() {
       unsubscribe();
       setAdminMatchesLoading(false);
     };
-  }, [adminAuthorized, screen, authUser?.uid]);
+  }, [isAdminScreenOpen, authUser?.uid]);
+
+  // Tela Bots do admin: perfil/stats/loja/config de cada bot, ao vivo.
+  useEffect(() => {
+    if (!adminAuthorized || screen !== 'admin-bots') {
+      setAdminSelectedBotId('');
+      return undefined;
+    }
+    let cancelled = false;
+    setAdminBotsLoading(true);
+    const unsubscribe = subscribeSystemBotsForAdmin(
+      (data) => {
+        if (cancelled) return;
+        setAdminBotsData(data && typeof data === 'object' ? data : null);
+        setAdminBotsUpdatedAtMs(Date.now());
+        setAdminBotsLoading(false);
+      },
+      (error) => {
+        if (!cancelled) console.error('admin bots subscribe error:', error);
+      }
+    );
+    return () => {
+      cancelled = true;
+      unsubscribe();
+      setAdminBotsLoading(false);
+    };
+  }, [adminAuthorized, screen]);
+
+  // 2x2 e Um contra todos ficam em coleções próprias; o histórico dos duelos e
+  // quizzes entre bots fica em pvp_bot_match_log/<dia UTC>.
+  useEffect(() => {
+    if (!isAdminScreenOpen) return;
+    let cancelled = false;
+    const logError = (label) => (error) => {
+      if (!cancelled) console.error(`admin ${label} subscribe error:`, error);
+    };
+    const unsubscribeTeam = subscribePvpGroupMatchesForAdmin(
+      'pvp_team_matches',
+      (rows) => {
+        if (!cancelled) setAdminTeamMatches(Array.isArray(rows) ? rows : []);
+      },
+      logError('team matches')
+    );
+    const unsubscribeElimination = subscribePvpGroupMatchesForAdmin(
+      'pvp_elimination_matches',
+      (rows) => {
+        if (!cancelled) setAdminEliminationMatches(Array.isArray(rows) ? rows : []);
+      },
+      logError('elimination matches')
+    );
+    // O dia local pode cair em dois dias UTC.
+    const now = new Date();
+    const dayStartMs = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    const dayKeys = Array.from(new Set([
+      getBotMatchLogDayKey(dayStartMs),
+      getBotMatchLogDayKey(dayStartMs + (24 * 60 * 60 * 1000) - 1)
+    ]));
+    const unsubscribeLogs = dayKeys.map((dayKey) => subscribeBotMatchLogDay(
+      dayKey,
+      (rows) => {
+        if (cancelled) return;
+        setAdminBotLogRowsByDay((current) => ({ ...current, [dayKey]: Array.isArray(rows) ? rows : [] }));
+      },
+      logError('bot match log')
+    ));
+    return () => {
+      cancelled = true;
+      unsubscribeTeam();
+      unsubscribeElimination();
+      unsubscribeLogs.forEach((unsubscribe) => unsubscribe());
+    };
+  }, [isAdminScreenOpen]);
 
   useEffect(() => {
     if (!adminAuthorized) return;
@@ -4210,7 +4320,7 @@ export default function CodeQuizApp() {
         roundNo: pvpRoundNo,
         languageId: currentTheme.languageId || fallbackLanguage,
         topicId: currentTheme.topicId || fallbackTopic,
-        difficulty: pvpMatch?.difficulty || pvpConfig?.difficulty || 'easy'
+        difficulty: pvpQuestion?.difficulty || pvpMatch?.difficulty || pvpConfig?.difficulty || 'easy'
       },
       {
         durationMs: THEME_INTRO_PVP_DURATION_MS
@@ -4344,6 +4454,17 @@ export default function CodeQuizApp() {
     || String(pvpEliminationQueueState.status || '').trim().toLowerCase() === 'queueing'
   );
 
+  // O início compartilhado permanece o mesmo entre rodadas e após reconectar.
+  const pvpMusicMatch = !isBattleMusicFlow ? null
+    : (screen === 'pvp-team' || screen === 'pvp-team-result') ? pvpTeamMatch
+      : (screen === 'pvp-elimination' || screen === 'pvp-elimination-result') ? pvpEliminationMatch
+        : (screen === 'pvp' || screen === 'pvp-result') ? pvpState.match : null;
+  const pvpMusicMatchId = String(pvpMusicMatch?.id || '');
+  const pvpMusicStartedAtMs = Number(pvpMusicMatch?.music_started_at_ms || 0)
+    || (Number(pvpMusicMatch?.both_accepted_at_ms || 0) > 0
+      ? Number(pvpMusicMatch.both_accepted_at_ms) + PVP_MATCH_START_DELAY_MS
+      : toMillis(pvpMusicMatch?.created_at));
+
   const activeMusicTrack = musicMode === 'battle'
     ? BATTLE_MUSIC_TRACKS[battleTrackIndex % BATTLE_MUSIC_TRACKS.length]
     : MENU_MUSIC_TRACKS[menuTrackIndex % MENU_MUSIC_TRACKS.length];
@@ -4392,6 +4513,10 @@ export default function CodeQuizApp() {
       clearInterval(musicLoopTimerRef.current);
       musicLoopTimerRef.current = null;
     }
+    if (musicSongPlayerRef.current) {
+      musicSongPlayerRef.current.stop();
+      musicSongPlayerRef.current = null;
+    }
     if (musicAutoSkipTimerRef.current) {
       clearTimeout(musicAutoSkipTimerRef.current);
       musicAutoSkipTimerRef.current = null;
@@ -4405,6 +4530,7 @@ export default function CodeQuizApp() {
       musicSkipSwitchTimerRef.current = null;
     }
     musicSkipBusyRef.current = false;
+    musicPlaybackKeyRef.current = '';
   }
 
   function getMusicVolumeLevel(raw = audioSettingsRef.current?.musicVolume) {
@@ -4416,20 +4542,23 @@ export default function CodeQuizApp() {
     return Math.max(0, Math.min(1, Number(raw ?? AUDIO_DEFAULTS.sfxVolume)));
   }
 
-  function pickRandomTrackIndex(total, currentIndex = -1) {
-    const safeTotal = Math.max(1, Math.trunc(Number(total || 0)));
-    const safeCurrent = Math.max(0, Math.trunc(Number(currentIndex || 0)));
-    if (safeTotal <= 1) return 0;
-    let nextIndex = safeCurrent;
-    let attempts = 0;
-    while (nextIndex === safeCurrent && attempts < 8) {
-      nextIndex = Math.floor(Math.random() * safeTotal);
-      attempts += 1;
+  function getPvpMusicPlayback() {
+    const session = pvpMusicSessionRef.current;
+    return session ? getMatchMusicPlayback({
+      ...session,
+      nowMs: getServerNowMs(),
+      trackCount: BATTLE_MUSIC_TRACKS.length
+    }) : null;
+  }
+
+  function syncPvpMusic(force = false) {
+    const playback = getPvpMusicPlayback();
+    if (!playback || !audioSettingsRef.current.musicEnabled) return;
+    if (force || !musicLoopTimerRef.current || musicModeRef.current !== 'battle'
+      || musicPlaybackKeyRef.current !== playback.key) {
+      startMusicLoop('battle');
     }
-    if (nextIndex === safeCurrent) {
-      nextIndex = (safeCurrent + 1) % safeTotal;
-    }
-    return nextIndex;
+    setMusicGain(getMusicVolumeLevel(), 240);
   }
 
   function setMusicGain(target, durationMs = 450) {
@@ -4452,24 +4581,32 @@ export default function CodeQuizApp() {
     if (typeof window === 'undefined') return;
     if (!audioSettingsRef.current.musicEnabled) return;
     const safeMode = mode === 'battle' ? 'battle' : 'menu';
+    const playback = safeMode === 'battle' ? getPvpMusicPlayback() : null;
     musicAutoSkipTimerRef.current = window.setTimeout(() => {
       musicAutoSkipTimerRef.current = null;
       if (!audioSettingsRef.current.musicEnabled) return;
       if (musicModeRef.current !== safeMode) return;
+      if (safeMode === 'battle' && getPvpMusicPlayback()) {
+        syncPvpMusic();
+        // Um timer pode acordar ligeiramente antes da virada do relógio.
+        if (!musicAutoSkipTimerRef.current) scheduleMusicAutoSkip(safeMode);
+        return;
+      }
       triggerMusicTrackSkip({ mode: safeMode, auto: true });
-    }, MUSIC_AUTO_SKIP_INTERVAL_MS);
+    }, playback ? Math.max(25, playback.remainingMs)
+      : safeMode === 'battle' ? MUSIC_AUTO_SKIP_INTERVAL_MS : MUSIC_MENU_AUTO_SKIP_INTERVAL_MS);
   }
 
   function advanceMusicTrackIndex(mode) {
     if (mode === 'battle') {
       const total = Math.max(1, BATTLE_MUSIC_TRACKS.length);
-      const nextIndex = pickRandomTrackIndex(total, battleTrackIndexRef.current);
+      const nextIndex = (battleTrackIndexRef.current + 1) % total;
       battleTrackIndexRef.current = nextIndex;
       setBattleTrackIndex(nextIndex);
       return nextIndex;
     }
     const total = Math.max(1, MENU_MUSIC_TRACKS.length);
-    const nextIndex = pickRandomTrackIndex(total, menuTrackIndexRef.current);
+    const nextIndex = (menuTrackIndexRef.current + 1) % total;
     menuTrackIndexRef.current = nextIndex;
     setMenuTrackIndex(nextIndex);
     return nextIndex;
@@ -4482,6 +4619,8 @@ export default function CodeQuizApp() {
     const safeMode = mode === 'battle' || mode === 'menu'
       ? mode
       : (musicModeRef.current === 'battle' ? 'battle' : 'menu');
+    // Uma troca individual quebraria a trilha comum dos participantes.
+    if (safeMode === 'battle' && getPvpMusicPlayback()) return;
 
     if (musicAutoSkipTimerRef.current) {
       clearTimeout(musicAutoSkipTimerRef.current);
@@ -4499,6 +4638,10 @@ export default function CodeQuizApp() {
       musicSkipBusyRef.current = false;
       if (!audioSettingsRef.current.musicEnabled) return;
       if (musicModeRef.current !== safeMode) return;
+      if (safeMode === 'battle' && getPvpMusicPlayback()) {
+        syncPvpMusic();
+        return;
+      }
 
       advanceMusicTrackIndex(safeMode);
       startMusicLoop(safeMode);
@@ -4691,11 +4834,22 @@ export default function CodeQuizApp() {
     musicStepRef.current = 0;
 
     if (mode === 'battle') {
+      const playback = getPvpMusicPlayback();
+      if (playback) {
+        battleTrackIndexRef.current = playback.trackIndex;
+        setBattleTrackIndex(playback.trackIndex);
+        musicPlaybackKeyRef.current = playback.key;
+      }
       const track = BATTLE_MUSIC_TRACKS[battleTrackIndexRef.current % BATTLE_MUSIC_TRACKS.length];
       setMusicMode('battle');
       musicModeRef.current = 'battle';
-      playBattleMusicStep(track);
-      musicLoopTimerRef.current = setInterval(() => playBattleMusicStep(track), Math.max(180, Number(track.tempoMs || 360)));
+      if (track?.engine === CHIP_SONG_ENGINE) {
+        startChipSongLoop(ctx, track, (playback?.trackElapsedMs || 0) / 1000);
+      } else {
+        musicStepRef.current = Math.floor((playback?.trackElapsedMs || 0) / Math.max(180, Number(track.tempoMs || 360)));
+        playBattleMusicStep(track);
+        musicLoopTimerRef.current = setInterval(() => playBattleMusicStep(track), Math.max(180, Number(track.tempoMs || 360)));
+      }
       scheduleMusicAutoSkip('battle');
       return;
     }
@@ -4703,9 +4857,22 @@ export default function CodeQuizApp() {
     const track = MENU_MUSIC_TRACKS[menuTrackIndexRef.current % MENU_MUSIC_TRACKS.length];
     setMusicMode('menu');
     musicModeRef.current = 'menu';
-    playMenuMusicStep(track);
-    musicLoopTimerRef.current = setInterval(() => playMenuMusicStep(track), Math.max(420, Number(track.tempoMs || 620)));
+    if (track?.engine === CHIP_SONG_ENGINE) {
+      startChipSongLoop(ctx, track);
+    } else {
+      playMenuMusicStep(track);
+      musicLoopTimerRef.current = setInterval(() => playMenuMusicStep(track), Math.max(420, Number(track.tempoMs || 620)));
+    }
     scheduleMusicAutoSkip('menu');
+  }
+
+  // Trilhas compostas (lib/chipMusic): o player agenda as notas à frente no AudioContext
+  // e o intervalo só o mantém abastecido; musicLoopTimerRef segue marcando "tocando".
+  function startChipSongLoop(ctx, track, offsetSec = 0) {
+    const player = createChipSongPlayer({ ctx, output: musicGainRef.current, song: track, offsetSec });
+    musicSongPlayerRef.current = player;
+    player.tick();
+    musicLoopTimerRef.current = setInterval(() => player.tick(), CHIP_SONG_TICK_MS);
   }
 
   function bootstrapMusicIfNeeded(preferredMode) {
@@ -4717,7 +4884,7 @@ export default function CodeQuizApp() {
     setMusicGain(nextVolume, 320);
   }
 
-  function applyMusicMode(mode) {
+  function applyMusicMode(mode, restart = false) {
     const safeMode = mode === 'battle' ? 'battle' : 'menu';
     ensureAudioContext();
 
@@ -4728,13 +4895,29 @@ export default function CodeQuizApp() {
     }
 
     const nextVolume = getMusicVolumeLevel(audioSettingsRef.current?.musicVolume);
-    if (musicModeRef.current === safeMode && musicLoopTimerRef.current) {
+    if (!restart && musicModeRef.current === safeMode && musicLoopTimerRef.current) {
       setMusicGain(nextVolume, 240);
       return;
     }
 
-    // On each mode entry, jump to a different random track of that mode.
-    advanceMusicTrackIndex(safeMode);
+    // Cada nova playlist começa pelas faixas adicionadas por último.
+    if (safeMode === 'battle') {
+      battleTrackIndexRef.current = 0;
+      setBattleTrackIndex(0);
+    } else {
+      menuTrackIndexRef.current = 0;
+      setMenuTrackIndex(0);
+    }
+    if (musicAutoSkipTimerRef.current) {
+      clearTimeout(musicAutoSkipTimerRef.current);
+      musicAutoSkipTimerRef.current = null;
+    }
+    if (musicSkipSwitchTimerRef.current) {
+      clearTimeout(musicSkipSwitchTimerRef.current);
+      musicSkipSwitchTimerRef.current = null;
+    }
+    musicSkipBusyRef.current = false;
+    if (musicTransitionTimerRef.current) clearTimeout(musicTransitionTimerRef.current);
     setMusicGain(0, 420);
     musicTransitionTimerRef.current = setTimeout(() => {
       startMusicLoop(safeMode);
@@ -5419,7 +5602,9 @@ export default function CodeQuizApp() {
     });
     try {
       await updatePvpMatch(match.id, patch);
+      // Quem recusa não volta para a fila: o confronto fecha e ele fica na tela do modo.
       await leaveQueue(userId).catch(() => null);
+      showToast('Você recusou a partida. Sua fila foi cancelada.');
       playSfx('error');
     } catch (error) {
       if (previousMatch) {
@@ -5490,7 +5675,6 @@ export default function CodeQuizApp() {
     setAdminBusy(true);
     try {
       await cleanupStaleQueueEntries(8, authUser?.uid || '');
-      await cleanupDrawFinishedMatches(300).catch(() => null);
       await cleanupZeroScoreFinishedMatches(300).catch(() => null);
       await cleanupStalePendingBotUserMatches({
         maxBatch: 80,
@@ -5512,7 +5696,8 @@ export default function CodeQuizApp() {
     if (adminAccessBusy) return;
     setAdminAccessBusy(true);
     try {
-      const isAdmin = await isCurrentUserAdmin().catch(() => false);
+      const isAdmin = isAdminAccountEmail(authUser?.email)
+        && await isCurrentUserAdmin().catch(() => false);
       setIsAdminUser(isAdmin);
       if (!isAdmin) {
         setAdminAuthorized(false);
@@ -6259,6 +6444,9 @@ export default function CodeQuizApp() {
   }, [authUser?.uid, profile?.id, progressReady, shopReady, booting, screen]);
 
   useEffect(() => {
+    pvpMusicSessionRef.current = pvpMusicMatchId && pvpMusicStartedAtMs > 0
+      ? { matchId: pvpMusicMatchId, startedAtMs: pvpMusicStartedAtMs }
+      : null;
     const sfxBus = sfxGainRef.current;
     if (sfxBus && audioContextRef.current) {
       sfxBus.gain.setValueAtTime(
@@ -6279,6 +6467,16 @@ export default function CodeQuizApp() {
       return;
     }
 
+    if (getPvpMusicPlayback()) {
+      syncPvpMusic();
+      return;
+    }
+
+    if (musicPlaybackKeyRef.current) {
+      applyMusicMode(nextMode, true);
+      return;
+    }
+
     if (!musicLoopTimerRef.current) {
       startMusicLoop(nextMode);
       setMusicGain(getMusicVolumeLevel(audioSettings.musicVolume), 320);
@@ -6296,8 +6494,45 @@ export default function CodeQuizApp() {
     audioSettings.musicVolume,
     audioSettings.sfxEnabled,
     audioSettings.sfxVolume,
-    isBattleMusicFlow
+    isBattleMusicFlow,
+    pvpMusicMatchId,
+    pvpMusicStartedAtMs
   ]);
+
+  useEffect(() => {
+    syncServerClock();
+  }, []);
+
+  useEffect(() => {
+    if (!pvpMusicMatchId || !(pvpMusicStartedAtMs > 0) || !audioSettings.musicEnabled) return;
+    // Reconfere a faixa quando timers foram suspensos e retoma a posição comum
+    // ao voltar à aba ou reativar o AudioContext.
+    let disposed = false;
+    let waking = false;
+    const onWake = () => {
+      if (document.visibilityState === 'hidden' || waking) return;
+      waking = true;
+      syncServerClock().then(() => {
+        if (!disposed) syncPvpMusic(true);
+      }).finally(() => { waking = false; });
+    };
+    const ctx = audioContextRef.current;
+    const onAudioStateChange = () => {
+      if (ctx?.state === 'running') syncPvpMusic(true);
+    };
+    const timer = window.setInterval(() => syncPvpMusic(), 1000);
+    onWake();
+    window.addEventListener('focus', onWake);
+    document.addEventListener('visibilitychange', onWake);
+    ctx?.addEventListener('statechange', onAudioStateChange);
+    return () => {
+      disposed = true;
+      window.clearInterval(timer);
+      window.removeEventListener('focus', onWake);
+      document.removeEventListener('visibilitychange', onWake);
+      ctx?.removeEventListener('statechange', onAudioStateChange);
+    };
+  }, [pvpMusicMatchId, pvpMusicStartedAtMs, audioSettings.musicEnabled]);
 
   useEffect(() => {
     return () => {
@@ -7167,47 +7402,6 @@ export default function CodeQuizApp() {
     playSfx('success');
   }
 
-  function choosePvpDifficulty(difficulty = 'easy') {
-    const safeDifficulty = normalizeDifficulty(difficulty || 'easy');
-    const currentStatus = String(pvpStateRef.current?.status || '').trim().toLowerCase();
-    const eliminationStatus = String(pvpEliminationMatch?.status || '').trim().toLowerCase();
-    const difficultyLocked = (
-      currentStatus === 'queueing'
-      || currentStatus === 'pending_accept'
-      || currentStatus === 'active'
-      || currentStatus === 'round_result'
-      || queueActionBusy
-      || matchAcceptBusy
-    );
-    const eliminationLocked = pvpMode === PVP_MODE_ELIMINATION && (
-      pvpEliminationQueueStateRef.current?.status === 'queueing'
-      || pvpEliminationActionBusy
-      || !!String(pvpEliminationMatchId || '').trim()
-      || eliminationStatus === 'active'
-      || eliminationStatus === 'round_result'
-      || eliminationStatus === 'elimination_result'
-    );
-    if (difficultyLocked || eliminationLocked) {
-      playSfx('error');
-      return;
-    }
-
-    const preferredLanguage = getPreferredLanguageByKnowledgeArea(
-      pvpKnowledgeArea,
-      pvpConfig?.language || ''
-    );
-    const preferredTopics = getTopicsByLanguage(TOPICS, preferredLanguage);
-    const nextConfig = ensureValidPvpConfig({
-      ...pvpConfig,
-      language: preferredLanguage || pvpConfig?.language || '',
-      topic: preferredTopics[0]?.id || pvpConfig?.topic || '',
-      difficulty: safeDifficulty,
-      area: pvpKnowledgeArea
-    });
-    setPvpConfig(nextConfig);
-    playSfx('success');
-  }
-
   function buildPvpTeamMemberSnapshot() {
     return {
       user_id: String(authUser?.uid || '').trim(),
@@ -7449,17 +7643,9 @@ export default function CodeQuizApp() {
     playSfx('click');
   }
 
-  async function cancelPvpEliminationQueue(options = {}) {
-    const silent = options?.silent === true;
-    const room = pvpEliminationRoom && typeof pvpEliminationRoom === 'object'
-      ? pvpEliminationRoom
-      : null;
-    const roomId = String(pvpEliminationRoomId || pvpEliminationRoom?.id || '').trim();
-    const queueStatus = String(pvpEliminationQueueStateRef.current?.status || '').trim().toLowerCase();
-    if (queueStatus !== 'queueing' && !roomId) return;
-    if (pvpEliminationActionBusy) return;
-
-    setPvpEliminationActionBusy(true);
+  // Sai da fila do Um contra todos só neste aparelho: a tela volta para o modo na hora
+  // (quem chama tira o jogador da sala no servidor).
+  function stopPvpEliminationQueueLocally() {
     pvpEliminationQueueBusyRef.current = false;
     pvpEliminationQueueLastAttemptMsRef.current = 0;
     pvpEliminationQueueSyncLastRunMsRef.current = 0;
@@ -7473,6 +7659,24 @@ export default function CodeQuizApp() {
       sessionId: '',
       message: ''
     });
+    setPvpEliminationRoomId('');
+    setPvpEliminationRoom(null);
+    setPvpEliminationRooms([]);
+    setPvpEliminationRoomsLoading(false);
+  }
+
+  async function cancelPvpEliminationQueue(options = {}) {
+    const silent = options?.silent === true;
+    const room = pvpEliminationRoom && typeof pvpEliminationRoom === 'object'
+      ? pvpEliminationRoom
+      : null;
+    const roomId = String(pvpEliminationRoomId || pvpEliminationRoom?.id || '').trim();
+    const queueStatus = String(pvpEliminationQueueStateRef.current?.status || '').trim().toLowerCase();
+    if (queueStatus !== 'queueing' && !roomId) return;
+    if (pvpEliminationActionBusy) return;
+
+    setPvpEliminationActionBusy(true);
+    stopPvpEliminationQueueLocally();
     setPvpEliminationInviteBusy(false);
     try {
       // Os bots continuam com os outros humanos da sala (a liderança passa para um
@@ -7482,10 +7686,6 @@ export default function CodeQuizApp() {
           reason: 'queue_cancelled'
         }).catch(() => null);
       }
-      setPvpEliminationRoomId('');
-      setPvpEliminationRoom(null);
-      setPvpEliminationRooms([]);
-      setPvpEliminationRoomsLoading(false);
       if (!silent) {
         playSfx('notify');
       }
@@ -7607,20 +7807,16 @@ export default function CodeQuizApp() {
     if (String(room?.status || '').trim().toLowerCase() !== 'pending_accept') return;
     setPvpEliminationInviteBusy(true);
     try {
-      // Quem recusa sai deste grupo (que volta a procurar jogadores) e entra na fila de
-      // novo, sem cair neste mesmo grupo no próximo minuto.
+      // Quem recusa sai deste grupo (que volta a procurar jogadores com quem aceitou) e
+      // também da fila: volta para a tela do modo. Se entrar de novo logo em seguida, não
+      // cai neste mesmo grupo no próximo minuto.
       await setPvpEliminationRoomAcceptState(roomId, userId, 'rejected').catch(() => null);
       pvpEliminationExcludedRoomIdsRef.current.set(roomId, Date.now() + 60000);
-      setPvpEliminationRoomId('');
-      setPvpEliminationRoom(null);
-      setPvpEliminationQueueState((prev) => (
-        String(prev?.status || '').trim().toLowerCase() === 'queueing'
-          ? { ...prev, joinedAtMs: Date.now(), message: 'Partida recusada. Procurando outro grupo...' }
-          : prev
-      ));
+      stopPvpEliminationQueueLocally();
       await removePvpGroupRoomMembers(PVP_GROUP_MODE_ELIMINATION, roomId, [userId], {
         reason: 'match_refused'
       }).catch(() => null);
+      showToast('Você recusou a partida. Sua fila foi cancelada.');
       playSfx('notify');
     } catch (error) {
       console.error('reject elimination invite failed:', error);
@@ -8662,9 +8858,15 @@ export default function CodeQuizApp() {
     try {
       const matchId = buildPvpTeamMatchId(room.id);
       const schedule = buildPvpTeamBattleSchedule(room);
+      // Dificuldade pela liga: média dos pontos PvP dos 4 jogadores da sala.
+      const roomPvpPoints = getPvpAveragePoints(
+        [...getPvpTeamMembersBySide(room, 'red'), ...getPvpTeamMembersBySide(room, 'blue')]
+          .map((member) => Number(member?.pvp_points || 0))
+      );
+      const matchDifficulty = getPvpDifficultyFromPoints(roomPvpPoints);
       const questionSequence = resolvePvpMatchQuestionSequence({
         areaId: room.knowledge_area || pvpKnowledgeArea,
-        difficulty: room.difficulty || pvpConfig.difficulty,
+        pvpPoints: roomPvpPoints,
         language: room.language || pvpConfig.language,
         topic: room.topic || pvpConfig.topic,
         rounds: PVP_TEAM_BATTLE_TOTAL_ROUNDS,
@@ -8678,7 +8880,7 @@ export default function CodeQuizApp() {
       }
       const tiebreakQuestionSets = resolvePvpGroupTiebreakQuestionSets({
         areaId: room.knowledge_area || pvpKnowledgeArea,
-        difficulty: room.difficulty || pvpConfig.difficulty,
+        difficulty: matchDifficulty,
         language: room.language || pvpConfig.language,
         topic: room.topic || pvpConfig.topic,
         sequenceSeed: matchId,
@@ -8694,8 +8896,8 @@ export default function CodeQuizApp() {
         id: matchId,
         mode: PVP_MODE_TEAM_BATTLE,
         room_id: room.id,
-        difficulty: room.difficulty || pvpConfig.difficulty,
-        category: room.category || room.difficulty || pvpConfig.difficulty,
+        difficulty: matchDifficulty,
+        category: matchDifficulty,
         language: questionSequence?.resolvedLanguage || room.language || pvpConfig.language,
         topic: questionSequence?.resolvedTopic || room.topic || pvpConfig.topic,
         knowledge_area: room.knowledge_area || pvpKnowledgeArea,
@@ -8709,6 +8911,7 @@ export default function CodeQuizApp() {
         red_score: 0,
         blue_score: 0,
         member_scores: memberScores,
+        music_started_at_ms: getServerNowMs(),
         battle_started_at_ms: Date.now(),
         battle_started_at: nowIso()
       });
@@ -8782,9 +8985,12 @@ export default function CodeQuizApp() {
         throw new Error('elimination_room_invalid_setup');
       }
 
+      // Dificuldade pela liga: média dos pontos PvP dos 4 jogadores da sala.
+      const roomPvpPoints = getPvpAveragePoints(members.map((member) => Number(member?.pvp_points || 0)));
+      const matchDifficulty = getPvpDifficultyFromPoints(roomPvpPoints);
       const questionSequence = resolvePvpMatchQuestionSequence({
         areaId: room.knowledge_area || pvpKnowledgeArea,
-        difficulty: room.difficulty || pvpConfig.difficulty,
+        pvpPoints: roomPvpPoints,
         language: room.language || pvpConfig.language,
         topic: room.topic || pvpConfig.topic,
         rounds: PVP_ELIMINATION_MAX_TOTAL_BATTLES,
@@ -8798,7 +9004,7 @@ export default function CodeQuizApp() {
       }
       const tiebreakQuestionSets = resolvePvpGroupTiebreakQuestionSets({
         areaId: room.knowledge_area || pvpKnowledgeArea,
-        difficulty: room.difficulty || pvpConfig.difficulty,
+        difficulty: matchDifficulty,
         language: room.language || pvpConfig.language,
         topic: room.topic || pvpConfig.topic,
         sequenceSeed: matchId,
@@ -8815,8 +9021,8 @@ export default function CodeQuizApp() {
         id: matchId,
         mode: PVP_MODE_ELIMINATION,
         room_id: room.id,
-        difficulty: room.difficulty || pvpConfig.difficulty,
-        category: room.category || room.difficulty || pvpConfig.difficulty,
+        difficulty: matchDifficulty,
+        category: matchDifficulty,
         language: questionSequence?.resolvedLanguage || room.language || pvpConfig.language,
         topic: questionSequence?.resolvedTopic || room.topic || pvpConfig.topic,
         knowledge_area: room.knowledge_area || pvpKnowledgeArea,
@@ -8837,6 +9043,7 @@ export default function CodeQuizApp() {
         active_pair_user_ids: [firstPair.player1_user_id, firstPair.player2_user_id],
         member_scores: memberScores,
         cycle_member_scores: cycleScores,
+        music_started_at_ms: getServerNowMs(),
         battle_started_at_ms: Date.now(),
         battle_started_at: nowIso()
       });
@@ -9058,7 +9265,11 @@ export default function CodeQuizApp() {
       setScreen('home');
       return true;
     }
-    if (screen === 'admin-live' || screen === 'admin-history') {
+    if (screen === 'admin-bots' && adminSelectedBotId) {
+      setAdminSelectedBotId('');
+      return true;
+    }
+    if (screen === 'admin-live' || screen === 'admin-history' || screen === 'admin-bots') {
       setScreen('admin-monitor');
       return true;
     }
@@ -9940,6 +10151,18 @@ export default function CodeQuizApp() {
   async function resumeQueueAfterMatchRefused(endedReason = 'match_refused', matchRow = null) {
     if (!authUser?.uid || !profile?.id) return false;
     if (queueActionBusy) return false;
+    // O jogador saiu do radar (ou já está em outra partida) antes da volta começar.
+    const liveState = pvpStateRef.current;
+    const refusedMatchId = String(matchRow?.id || '').trim();
+    if (
+      refusedMatchId
+      && (
+        String(liveState?.status || '').trim().toLowerCase() !== 'finished'
+        || String(liveState?.match?.id || liveState?.matchId || '').trim() !== refusedMatchId
+      )
+    ) {
+      return false;
+    }
     setQueueActionBusy(true);
     setQueueActionPhase('resume');
     setQueueActionHint('');
@@ -10248,7 +10471,10 @@ export default function CodeQuizApp() {
     clearPvpQueueResumeSnapshot();
     setPvpState((prev) => {
       const safeStatus = String(prev?.status || '').trim().toLowerCase();
-      if (safeStatus !== 'queueing') return prev;
+      // Também sai da volta automática para a fila depois de uma recusa do oponente.
+      const resumingAfterRefusal = safeStatus === 'finished'
+        && shouldResumeQueueAfterMatchRefused(prev?.match, authUser?.uid || '');
+      if (safeStatus !== 'queueing' && !resumingAfterRefusal) return prev;
       return {
         ...prev,
         status: 'idle',
@@ -10523,7 +10749,8 @@ export default function CodeQuizApp() {
     const match = pvpTeamMatch;
     const status = String(match?.status || '').trim().toLowerCase();
     if (status !== 'active' || pvpTeamSubmitted) return;
-    if (Date.now() > getPvpGroupBattleTiming(match, PVP_GROUP_MODE_TEAM).closesAtMs) return;
+    const timing = getPvpGroupBattleTiming(match, PVP_GROUP_MODE_TEAM);
+    if (Date.now() < timing.opensAtMs || Date.now() > timing.closesAtMs) return;
     const activePair = getPvpTeamBattleEntry(match, match?.battle_no || 1);
     const myUserId = String(authUser?.uid || '').trim();
     if (myUserId !== String(activePair?.red_user_id || '').trim() && myUserId !== String(activePair?.blue_user_id || '').trim()) {
@@ -11089,10 +11316,21 @@ export default function CodeQuizApp() {
 
   }
 
+  // A volta automática para a fila falhou: tira o jogador do radar (que não está
+  // procurando nada) e o devolve para a tela do modo.
+  function dropRefusedMatchQueueResume(matchId = '') {
+    const live = pvpStateRef.current;
+    if (String(live?.status || '').trim().toLowerCase() !== 'finished') return false;
+    if (String(live?.match?.id || live?.matchId || '').trim() !== String(matchId || '').trim()) return false;
+    resetPvpState();
+    return true;
+  }
+
   async function handlePvpMatchFinished(matchRow) {
     const matchId = String(matchRow?.id || '');
     if (!matchId) return;
-    setPvpResultReward(null);
+    // A partida encerrada pode chegar mais de uma vez: só a primeira limpa a recompensa.
+    if (!handledMatchIdsRef.current.has(matchId)) setPvpResultReward(null);
 
     setPvpState((prev) => ({
       ...prev,
@@ -11141,7 +11379,8 @@ export default function CodeQuizApp() {
       }
       if (shouldResumeInvalidRefusal && shouldResumeQueueAfterMatchRefused(matchRow, authUser.uid)) {
         const resumed = await resumeQueueAfterMatchRefused(endedReason, matchRow);
-        if (!resumed) {
+        // Se a fila local já foi refeita (só a gravação falhou), o radar segue procurando.
+        if (!resumed && dropRefusedMatchQueueResume(matchId)) {
           const fallbackText = getMatchRefusalQueueStatusText(matchRow, authUser.uid, { resumed: false });
           showToast(fallbackText);
           playSfx('notify');
@@ -11171,7 +11410,8 @@ export default function CodeQuizApp() {
       await syncQueueStateAfterMatchRefusal(matchRow, endedReason).catch(() => null);
       if (shouldRequeue) {
         const resumed = await resumeQueueAfterMatchRefused(endedReason, matchRow);
-        if (!resumed) {
+        // Se a fila local já foi refeita (só a gravação falhou), o radar segue procurando.
+        if (!resumed && dropRefusedMatchQueueResume(matchId)) {
           const fallbackText = getMatchRefusalQueueStatusText(matchRow, authUser.uid, { resumed: false });
           showToast(fallbackText);
           playSfx('notify');
@@ -11231,6 +11471,36 @@ export default function CodeQuizApp() {
 
     setProgress(nextProgress);
 
+    // A recompensa (ou a compensação pelo abandono do oponente) aparece já com o progresso
+    // local atualizado: as gravações abaixo rodam depois e não seguram a tela.
+    setPvpResultTransitionMode('');
+    if (isOwnForfeit) {
+      setPvpCompensation(null);
+      showToast(`Você saiu da partida: ${formatSignedPoints(pvpPointsGain)} PvP · +${totalRewardXp} XP · +${totalRewardCoins} moedas`);
+    } else if (isOpponentForfeit) {
+      setPvpResultReward(null);
+      setPvpCompensation({
+        matchId,
+        title: 'O adversário deixou a partida',
+        subtitle: 'A partida foi encerrada e a vitória ficou com você. Colete a compensação para sair da partida.',
+        points: pvpPointsGain,
+        xp: totalRewardXp,
+        coins: totalRewardCoins,
+        roundsPlayed: rewards.roundsPlayed,
+        durationBonusPct: rewards.durationBonusPct
+      });
+    } else {
+      setPvpCompensation(null);
+      setPvpResultReward({
+        matchId,
+        points: pvpPointsGain,
+        xp: totalRewardXp,
+        coins: totalRewardCoins,
+        roundsPlayed: rewards.roundsPlayed,
+        durationBonusPct: rewards.durationBonusPct
+      });
+    }
+
     try {
       await upsertStatsFromProgress(authUser.uid, nextProgress);
     } catch {
@@ -11270,41 +11540,6 @@ export default function CodeQuizApp() {
         bot_user_stats_applied_at: nowIso()
       }).catch(() => null);
     }
-
-    if (isOwnForfeit) {
-      setPvpResultTransitionMode('');
-      setPvpCompensation(null);
-      showToast(`Você saiu da partida: ${formatSignedPoints(pvpPointsGain)} PvP · +${totalRewardXp} XP · +${totalRewardCoins} moedas`);
-      return;
-    }
-
-    if (isOpponentForfeit) {
-      setPvpResultTransitionMode('');
-      setPvpResultReward(null);
-      setPvpCompensation({
-        matchId,
-        title: 'Oponente saiu da partida',
-        subtitle: 'Você recebeu compensação por abandono do adversário. Toque em coletar para sair da partida.',
-        points: pvpPointsGain,
-        xp: totalRewardXp,
-        coins: totalRewardCoins,
-        roundsPlayed: rewards.roundsPlayed,
-        durationBonusPct: rewards.durationBonusPct
-      });
-      return;
-    }
-
-    setPvpResultTransitionMode('');
-    setPvpCompensation(null);
-    setPvpResultReward({
-      matchId,
-      points: pvpPointsGain,
-      xp: totalRewardXp,
-      coins: totalRewardCoins,
-      roundsPlayed: rewards.roundsPlayed,
-      durationBonusPct: rewards.durationBonusPct
-    });
-
   }
 
   // Abandono no meio de uma partida em grupo: -2 PvP (W.O.), sem XP/moedas, uma vez só.
@@ -12144,7 +12379,10 @@ export default function CodeQuizApp() {
               const matchId = buildMatchId(authUser.uid, opponentId);
               const questionSequence = resolvePvpMatchQuestionSequence({
                 areaId: sequenceArea,
-                difficulty: myQueueCategory,
+                pvpPoints: getPvpAveragePoints([
+                  Math.max(0, Number(progress.pvpPoints || myQueue.pvp_points || 0)),
+                  Math.max(0, Number(opponent.pvp_points || 0))
+                ]),
                 language: safeConfig.language,
                 topic: safeConfig.topic,
                 rounds: PVP_ROUNDS_PER_MATCH,
@@ -12156,7 +12394,6 @@ export default function CodeQuizApp() {
 
               if (!questionSet.length) continue;
               const sequenceStartCursor = normalizePvpSequenceCursorEntry(questionSequence?.startCursor);
-              const sequenceNextCursor = normalizePvpSequenceCursorEntry(questionSequence?.nextCursor);
               const sequenceLanguage = String(
                 questionSequence?.resolvedLanguage
                 || safeConfig.language
@@ -12177,10 +12414,10 @@ export default function CodeQuizApp() {
                 topic: sequenceTopic,
                 knowledge_area: sequenceArea,
                 pvp_sequence_area: sequenceArea,
-                pvp_sequence_difficulty: myQueueCategory,
+                pvp_sequence_difficulty: normalizeDifficulty(questionSequence?.difficulty || myQueueCategory),
                 pvp_sequence_pref_language: safeConfig.language,
                 pvp_sequence_pref_topic: safeConfig.topic,
-                pvp_sequence_seed: matchId,
+                pvp_sequence_seed: String(questionSequence?.sequenceSeed || matchId),
                 pvp_sequence_start_topic_index: sequenceStartCursor.topic_index,
                 pvp_sequence_start_question_index: sequenceStartCursor.question_index,
                 pvp_sequence_start_topic_key: sequenceStartCursor.topic_key,
@@ -12226,8 +12463,7 @@ export default function CodeQuizApp() {
               });
 
               if (!created?.id) continue;
-              rememberPvpSequenceStartTopic(sequenceArea, myQueueCategory, sequenceStartCursor.topic_key);
-              setPvpSequenceCursorEntry(sequenceArea, myQueueCategory, sequenceNextCursor);
+              rememberPvpMatchQuestionSequence(sequenceArea, questionSequence);
 
               await Promise.all([
                 markQueueMatched(authUser.uid, created.id).catch(() => null),
@@ -12540,7 +12776,7 @@ export default function CodeQuizApp() {
           const matchId = buildMatchId(authUser.uid, selectedBotId);
           const questionSequence = resolvePvpMatchQuestionSequence({
             areaId: sequenceArea,
-            difficulty: myQueueCategory,
+            pvpPoints: Math.max(0, Number(progress.pvpPoints || myQueue.pvp_points || 0)),
             language: safeConfig.language,
             topic: safeConfig.topic,
             rounds: PVP_ROUNDS_PER_MATCH,
@@ -12563,7 +12799,6 @@ export default function CodeQuizApp() {
             return;
           }
           const sequenceStartCursor = normalizePvpSequenceCursorEntry(questionSequence?.startCursor);
-          const sequenceNextCursor = normalizePvpSequenceCursorEntry(questionSequence?.nextCursor);
           const sequenceLanguage = String(
             questionSequence?.resolvedLanguage
             || safeConfig.language
@@ -12673,10 +12908,10 @@ export default function CodeQuizApp() {
             topic: sequenceTopic,
             knowledge_area: sequenceArea,
             pvp_sequence_area: sequenceArea,
-            pvp_sequence_difficulty: myQueueCategory,
+            pvp_sequence_difficulty: normalizeDifficulty(questionSequence?.difficulty || myQueueCategory),
             pvp_sequence_pref_language: safeConfig.language,
             pvp_sequence_pref_topic: safeConfig.topic,
-            pvp_sequence_seed: matchId,
+            pvp_sequence_seed: String(questionSequence?.sequenceSeed || matchId),
             pvp_sequence_start_topic_index: sequenceStartCursor.topic_index,
             pvp_sequence_start_question_index: sequenceStartCursor.question_index,
             pvp_sequence_start_topic_key: sequenceStartCursor.topic_key,
@@ -12812,8 +13047,7 @@ export default function CodeQuizApp() {
             await clearBotBusy(selectedBotId, created.id).catch(() => null);
             return;
           }
-          rememberPvpSequenceStartTopic(sequenceArea, myQueueCategory, sequenceStartCursor.topic_key);
-          setPvpSequenceCursorEntry(sequenceArea, myQueueCategory, sequenceNextCursor);
+          rememberPvpMatchQuestionSequence(sequenceArea, questionSequence);
           const queueElapsedMsAtMatch = queueSessionJoinedAtMs > 0
             ? Math.max(0, Date.now() - queueSessionJoinedAtMs)
             : 0;
@@ -13263,6 +13497,7 @@ export default function CodeQuizApp() {
       if (nowMs >= startCountdownMs) {
         updatePvpMatch(match.id, {
           status: 'active',
+          music_started_at_ms: Number(match.music_started_at_ms || getServerNowMs()),
           round_no: Math.max(1, Number(match.round_no || 1)),
           round_started_at_ms: nowMs,
           round_started_at: nowIso(),
@@ -14437,7 +14672,9 @@ export default function CodeQuizApp() {
   const matchAcceptCountdownLabel = matchBothAccepted
     ? `Começando a partida em ${Math.max(0, matchStartRemainingSec)}s.`
     : matchHasRejection
-      ? 'Confronto recusado.'
+      ? (matchMyAcceptState === 'rejected'
+        ? 'Você recusou. Saindo da fila...'
+        : 'Confronto recusado. Voltando para a fila...')
       : matchMyAcceptState === 'accepted'
         ? 'Aguardando oponente aceitar.'
         : `Tempo para aceitar: ${Math.max(0, matchAcceptRemainingSec)}s`;
@@ -14480,7 +14717,10 @@ export default function CodeQuizApp() {
   const pvpTeamBattleRemainingMs = pvpTeamBattleTiming.startedAtMs > 0
     ? Math.max(0, Math.min(pvpTeamBattleDuration, pvpTeamBattleTiming.closesAtMs - pvpClockMs))
     : pvpTeamBattleDuration;
-  const pvpTeamAnswerWindowOpen = pvpTeamBattleStatus === 'active' && pvpTeamBattleRemainingMs > 0;
+  // Com a roleta de temas, as respostas só abrem depois dela (opensAtMs).
+  const pvpTeamAnswerWindowOpen = pvpTeamBattleStatus === 'active'
+    && pvpClockMs >= pvpTeamBattleTiming.opensAtMs
+    && pvpTeamBattleRemainingMs > 0;
   // Quem da dupla atual já respondeu (só o "respondeu", nunca a alternativa).
   const pvpTeamAnsweredUserIds = pvpTeamBattleStatus === 'active'
     ? getPvpTeamCurrentBattleAnswers(pvpTeamAnswers, pvpTeamBattleNo)
@@ -14489,6 +14729,7 @@ export default function CodeQuizApp() {
       .filter(Boolean)
     : [];
   const pvpTeamLeftMemberIds = getPvpGroupMatchGoneIds(pvpTeamMatch, PVP_GROUP_MODE_TEAM);
+  const pvpTeamLeaverNotice = getPvpGroupMatchLeaverNotice(pvpTeamMatch, PVP_GROUP_MODE_TEAM, authUser?.uid || '');
   const pvpTeamBattleRemainingSec = Math.max(0, Math.ceil(pvpTeamBattleRemainingMs / 1000));
   const pvpTeamTimerPctRaw = (pvpTeamBattleRemainingMs / Math.max(1, pvpTeamBattleDuration)) * 100;
   const pvpTeamTimerPct = Number.isFinite(pvpTeamTimerPctRaw)
@@ -14637,6 +14878,7 @@ export default function CodeQuizApp() {
     : pvpEliminationBattleDuration;
   const pvpEliminationAnswerWindowOpen = pvpEliminationBattleStatus === 'active'
     && !pvpEliminationShowBattleIntro
+    && pvpClockMs >= pvpEliminationBattleTiming.opensAtMs
     && pvpEliminationBattleRemainingMs > 0;
   const pvpEliminationTimerPctRaw = (pvpEliminationBattleRemainingMs / Math.max(1, pvpEliminationBattleDuration)) * 100;
   const pvpEliminationTimerPct = Number.isFinite(pvpEliminationTimerPctRaw)
@@ -14654,6 +14896,52 @@ export default function CodeQuizApp() {
     && !(pvpEliminationHasPairUser1Answer && pvpEliminationHasPairUser2Answer);
   const pvpEliminationRoundLabel = getPvpEliminationRoundLabel(pvpEliminationMatch);
   const pvpEliminationBattleNo = Math.max(1, Number(pvpEliminationMatch?.battle_no || 1));
+
+  // Roleta de temas nos modos em grupo, como no duelo: no primeiro confronto e sempre
+  // que o tema muda. O motor reserva esse tempo antes de abrir as respostas
+  // (getPvpGroupBattleTiming); no Um contra todos ela entra depois da apresentação
+  // da dupla. Quem chega atrasado vê só o que resta dela.
+  const pvpGroupThemeIntroTarget = (screen === 'pvp-team' && pvpTeamBattleStatus === 'active')
+    ? { match: pvpTeamMatch, timing: pvpTeamBattleTiming }
+    : ((screen === 'pvp-elimination' && pvpEliminationBattleStatus === 'active')
+      ? { match: pvpEliminationMatch, timing: pvpEliminationBattleTiming }
+      : null);
+  const pvpGroupThemeIntroKey = pvpGroupThemeIntroTarget
+    && pvpGroupThemeIntroTarget.timing.themeIntroMs > 0
+    && pvpGroupThemeIntroTarget.timing.startedAtMs > 0
+    ? `${pvpGroupThemeIntroTarget.match?.id || ''}_${pvpGroupThemeIntroTarget.match?.battle_no || 1}_${pvpGroupThemeIntroTarget.timing.startedAtMs}`
+    : '';
+  useEffect(() => {
+    if (!pvpGroupThemeIntroKey || !pvpGroupThemeIntroTarget || typeof window === 'undefined') return undefined;
+    if (pvpGroupThemeIntroShownKeysRef.current.has(pvpGroupThemeIntroKey)) return undefined;
+    const { match, timing } = pvpGroupThemeIntroTarget;
+    const battleNo = Math.max(1, Number(match?.battle_no || 1));
+    const showIntro = () => {
+      const remainingMs = timing.opensAtMs - Date.now();
+      if (remainingMs < 900) return;
+      pvpGroupThemeIntroShownKeysRef.current.add(pvpGroupThemeIntroKey);
+      const question = getPvpGroupBattleQuestion(match, battleNo);
+      const theme = resolveQuestionThemeContext(question, match?.language || '', match?.topic || '');
+      runThemeIntroOverlay(
+        {
+          mode: 'pvp',
+          roundNo: battleNo,
+          languageId: theme.languageId,
+          topicId: theme.topicId,
+          difficulty: question?.difficulty || match?.difficulty || 'easy'
+        },
+        { durationMs: Math.min(THEME_INTRO_PVP_DURATION_MS, remainingMs) }
+      );
+    };
+    const delayMs = timing.themeIntroAtMs - Date.now();
+    if (delayMs <= 0) {
+      showIntro();
+      return undefined;
+    }
+    const timer = window.setTimeout(showIntro, delayMs);
+    return () => window.clearTimeout(timer);
+  }, [pvpGroupThemeIntroKey]);
+
   const pvpEliminationTiebreakDifficultyLabel = getPvpGroupTiebreakLabel(pvpEliminationMatch, pvpEliminationBattleNo);
   // Ao fim de um ciclo empatado, avisa a dificuldade do ciclo de desempate.
   const pvpEliminationNextTiebreakDifficultyLabel = pvpEliminationBattleStatus === 'elimination_result'
@@ -14692,6 +14980,11 @@ export default function CodeQuizApp() {
       : 'Eliminação concluída';
   const pvpEliminationWinnerUserId = String(pvpEliminationMatch?.winner_user_id || '').trim();
   const pvpEliminationWinnerMember = pvpEliminationMemberMap.get(pvpEliminationWinnerUserId) || null;
+  const pvpEliminationLeaverNotice = getPvpGroupMatchLeaverNotice(
+    pvpEliminationMatch,
+    PVP_GROUP_MODE_ELIMINATION,
+    authUser?.uid || ''
+  );
   const pvpEliminationPlacement = getPvpEliminationPlacementForUser(pvpEliminationMatch, authUser?.uid || '');
   const pvpEliminationPlacementLabel = getPvpEliminationPlacementLabel(pvpEliminationPlacement || 0);
   const pvpEliminationResultKey = getPvpEliminationResultKeyByPlacement(pvpEliminationPlacement || 0);
@@ -14896,6 +15189,7 @@ export default function CodeQuizApp() {
       bot_quiz_batch_id: rowId,
       bot_quiz_difficulty: difficulty,
       bot_quiz_assignments: assignments,
+      bot_planned_end_ms: Math.max(0, Number(state.ends_at_ms || 0)),
       player1_user_id: String(first.bot_id || ''),
       player2_user_id: hasSecondAssignment ? String(second?.bot_id || '') : '',
       player1_nickname: normalizeBotLabel(first.bot_id),
@@ -14913,11 +15207,17 @@ export default function CodeQuizApp() {
     }];
   }, [botArenaQuizState]);
 
+  const adminGroupMatchRows = useMemo(() => [
+    ...(Array.isArray(adminTeamMatches) ? adminTeamMatches : []).map((row) => toAdminGroupMatchRow(row, 'team')),
+    ...(Array.isArray(adminEliminationMatches) ? adminEliminationMatches : []).map((row) => toAdminGroupMatchRow(row, 'elimination'))
+  ], [adminTeamMatches, adminEliminationMatches]);
+
   const adminLiveMatches = useMemo(() => {
     const nowMs = Date.now();
     const rows = [
       ...(Array.isArray(adminMatches) ? adminMatches : []),
-      ...adminBotQuizLiveRows
+      ...adminBotQuizLiveRows,
+      ...adminGroupMatchRows
     ];
     const sorted = rows
       .filter((row) => isAdminLiveMatchRow(row, nowMs))
@@ -14945,29 +15245,48 @@ export default function CodeQuizApp() {
       deduped.push(row);
     });
     return deduped;
-  }, [adminMatches, adminBotQuizLiveRows]);
+  }, [adminMatches, adminBotQuizLiveRows, adminGroupMatchRows]);
 
   const adminHistoryTodayBaseMatches = useMemo(() => {
-    const rows = Array.isArray(adminMatches) ? adminMatches : [];
     const now = new Date();
     const dayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
     const dayEnd = dayStart + (24 * 60 * 60 * 1000);
-    return rows
-      .filter((row) => {
-        const status = String(row?.status || '').trim().toLowerCase();
-        if (status !== 'finished') return false;
-        if (row?.result_void === true || row?.history_hidden === true) return false;
-        const hasWinner = !!String(row?.winner_user_id || '').trim();
-        if (!hasWinner && row?.is_bot_quiz !== true) return false;
-        if (isInvalidFinishedMatch(row)) return false;
-        const endedMs = toMillis(row?.ended_at || row?.updated_at || row?.created_at);
-        return endedMs >= dayStart && endedMs < dayEnd;
-      })
+    // Um duelo entre bots pode estar em pvp_matches e já no histórico dos bots (arquivamento).
+    const byId = new Map();
+    [
+      ...Object.values(adminBotLogRowsByDay || {}).flat(),
+      ...(Array.isArray(adminMatches) ? adminMatches : []),
+      ...adminGroupMatchRows
+    ].forEach((row) => {
+      if (!row || typeof row !== 'object' || !row.id) return;
+      if (!isAdminHistoryMatchRow(row, dayStart, dayEnd)) return;
+      byId.set(String(row.id), row);
+    });
+    return Array.from(byId.values())
       .sort((a, b) => (
         toMillis(b?.ended_at || b?.updated_at || b?.created_at)
         - toMillis(a?.ended_at || a?.updated_at || a?.created_at)
       ));
-  }, [adminMatches]);
+  }, [adminMatches, adminBotLogRowsByDay, adminGroupMatchRows]);
+
+  const adminBotViews = useMemo(() => {
+    const data = adminBotsData && typeof adminBotsData === 'object' ? adminBotsData : null;
+    if (!data || !Array.isArray(data.bots)) return [];
+    const nowMs = Date.now();
+    const pace = data.daily_pace && typeof data.daily_pace === 'object' ? data.daily_pace : null;
+    const statsById = Object.fromEntries(data.bots.map((entry) => [entry.bot_id, entry.stats || {}]));
+    const context = {
+      busy: data.busy,
+      arenaState: data.arena_state,
+      quizState: data.quiz_state,
+      queueOrder: data.queue_order,
+      nowMs,
+      dailyCounts: pace && pace.day_key === getBrazilDayKey(nowMs)
+        ? buildBotDailyCounts(data.bots.map((entry) => entry.bot_id), { statsById, dayStart: pace.start })
+        : null
+    };
+    return data.bots.map((entry) => buildAdminBotView(entry, context));
+  }, [adminBotsData]);
 
   const adminHistoryTodayMatches = useMemo(() => (
     adminHistoryTodayBaseMatches.filter((row) => doesAdminHistoryRowMatchFilter(row, adminHistoryFilter))
@@ -14982,32 +15301,65 @@ export default function CodeQuizApp() {
   const botArenaPvpEnabled = botArenaDaemonMasterEnabled && botArenaDaemonControl?.pvp_enabled !== false;
   const botArenaQuizEnabled = botArenaDaemonMasterEnabled && botArenaDaemonControl?.quiz_enabled !== false;
   const botArenaBattlesEnabled = botArenaPvpEnabled || botArenaQuizEnabled;
-  const botArenaDaemonModeLabel = useMemo(() => {
+  // O servidor roda um ciclo a cada 2 min (pg_cron -> /api/bot-daemon); sem ciclo há
+  // mais de 5 min, algo parou. Calculado a cada render (o painel atualiza a cada 4 s).
+  const botArenaDaemonUpdatedAtMs = Math.max(
+    0,
+    Number(botArenaDaemonStatus?.updated_at_ms || toMillis(botArenaDaemonStatus?.updated_at))
+  );
+  const botArenaDaemonInfo = (() => {
     const status = String(botArenaDaemonStatus?.status || '').trim().toLowerCase();
-    if (status === 'running') return 'Ativo';
-    if (status === 'starting') return 'Inicializando';
-    if (status === 'idle') return 'Em espera';
-    return 'Indisponível';
-  }, [botArenaDaemonStatus?.status]);
-  const botArenaDaemonUpdatedAtLabel = useMemo(() => {
-    const stamp = Math.max(
-      0,
-      Number(botArenaDaemonStatus?.updated_at_ms || toMillis(botArenaDaemonStatus?.updated_at))
-    );
-    if (!stamp) return '--:--:--';
-    return new Date(stamp).toLocaleTimeString('pt-BR');
-  }, [botArenaDaemonStatus?.updated_at_ms, botArenaDaemonStatus?.updated_at]);
+    const ageMs = botArenaDaemonUpdatedAtMs ? Math.max(0, Date.now() - botArenaDaemonUpdatedAtMs) : 0;
+    const ageMinutes = Math.floor(ageMs / 60000);
+    let modeLabel = 'Ativo';
+    let tone = 'on';
+    if (!botArenaBattlesEnabled) {
+      modeLabel = 'Pausado';
+      tone = 'off';
+    } else if (!botArenaDaemonUpdatedAtMs) {
+      modeLabel = 'Aguardando o primeiro ciclo';
+      tone = 'warn';
+    } else if (ageMs > 5 * 60 * 1000) {
+      modeLabel = 'Sem resposta';
+      tone = 'warn';
+    } else if (status === 'error') {
+      modeLabel = 'Com erro';
+      tone = 'warn';
+    }
+    return {
+      modeLabel,
+      tone,
+      lastRunLabel: botArenaDaemonUpdatedAtMs
+        ? `${new Date(botArenaDaemonUpdatedAtMs).toLocaleTimeString('pt-BR')}${ageMinutes >= 1 ? ` (há ${ageMinutes} min)` : ''}`
+        : '--:--:--',
+      lastStateLabel: getBotDaemonStateLabel(botArenaDaemonStatus?.last_state),
+      lastQuizStateLabel: getBotDaemonStateLabel(botArenaDaemonStatus?.last_quiz_state),
+      createdMatches: Math.max(0, Number(botArenaDaemonStatus?.created_matches || 0)),
+      createdQuizzes: Math.max(0, Number(botArenaDaemonStatus?.created_quizzes || 0)),
+      paceLabel: (() => {
+        const pace = botArenaDaemonStatus?.pace;
+        if (!pace || typeof pace !== 'object' || pace.day_key !== getBrazilDayKey(Date.now())) return '--';
+        const n = (value) => Math.max(0, Math.trunc(Number(value || 0)));
+        return `${n(pace.duels)} duelo${n(pace.duels) === 1 ? '' : 's'} · ${n(pace.quizzes)} quiz${n(pace.quizzes) === 1 ? '' : 'zes'}`;
+      })(),
+      errorText: status === 'error' ? String(botArenaDaemonStatus?.last_error || '').trim() : ''
+    };
+  })();
 
   const adminMatchCodeById = useMemo(() => {
     const map = new Map();
-    const rows = Array.isArray(adminMatches)
-      ? adminMatches.filter((row) => {
-        if (!row || typeof row !== 'object' || !row.id) return false;
-        if (row.result_void === true || row.history_hidden === true) return false;
-        if (isInvalidFinishedMatch(row)) return false;
-        return true;
-      })
-      : [];
+    const byId = new Map();
+    [
+      ...Object.values(adminBotLogRowsByDay || {}).flat().filter((row) => row?.is_bot_quiz !== true),
+      ...(Array.isArray(adminMatches) ? adminMatches : [])
+    ].forEach((row) => {
+      if (row && typeof row === 'object' && row.id) byId.set(String(row.id), row);
+    });
+    const rows = Array.from(byId.values()).filter((row) => {
+      if (row.result_void === true || row.history_hidden === true) return false;
+      if (isInvalidFinishedMatch(row)) return false;
+      return true;
+    });
     const sorted = [...rows].sort((a, b) => (
       toMillis(a?.created_at || a?.round_started_at || a?.updated_at)
       - toMillis(b?.created_at || b?.round_started_at || b?.updated_at)
@@ -15021,7 +15373,7 @@ export default function CodeQuizApp() {
       map.set(String(row.id), `PVP${dayKey}-${seq}`);
     });
     return map;
-  }, [adminMatches]);
+  }, [adminMatches, adminBotLogRowsByDay]);
 
   const shouldKeepQueueButtonPressed = pvpState.status === 'queueing'
     || (
@@ -15029,6 +15381,10 @@ export default function CodeQuizApp() {
       && shouldResumeQueueAfterMatchRefused(pvpState.match, authUser?.uid || '')
     );
   const queueButtonAutoResuming = pvpState.status !== 'queueing' && shouldKeepQueueButtonPressed;
+  // Radar da fila: some só na entrada (botão "Entrando..."). Recusa do oponente volta
+  // direto para o radar enquanto a fila é refeita, sem passar pela tela do modo.
+  const pvpDuelQueueSearching = shouldKeepQueueButtonPressed
+    && !(queueActionBusy && queueActionPhase === 'join');
   const queueBusyLabel = queueActionPhase === 'cancel'
     ? 'Saindo...'
     : (queueActionPhase === 'resume'
@@ -15125,7 +15481,7 @@ export default function CodeQuizApp() {
   const pvpPlayer2BackgroundMeta = getBackgroundVisualMeta(pvpPlayer2Shop);
   const pveCategory = getCategoryByPoints(progress?.rankingPoints || 0);
   const pvpCategory = getCategoryByPoints(progress?.pvpPoints || 0);
-  const pvpSelectedDifficulty = getPvpQueueDifficultyFromConfig(pvpConfig, progress);
+  const pvpDifficultyMix = getPvpDifficultyMixFromPoints(progress?.pvpPoints || 0);
   const homeAuthUser = activeAuthUser;
 
   const safeShopTab = normalizeShopTab(shopTab);
@@ -15349,6 +15705,7 @@ export default function CodeQuizApp() {
     enabled: audioSettings.musicEnabled === true,
     mode: musicMode,
     trackName: activeMusicTrack?.name || '',
+    skipDisabled: Boolean(pvpMusicMatchId && pvpMusicStartedAtMs > 0),
     onToggle: (enabled) => updateAudioSetting('musicEnabled', enabled === true),
     onSkip: handleMusicSkip
   };
@@ -15586,8 +15943,8 @@ export default function CodeQuizApp() {
             adminMatchesUpdatedAtMs,
             arenaMetrics,
             botArenaBattlesEnabled,
-            botArenaDaemonModeLabel,
-            botArenaDaemonUpdatedAtLabel,
+            botArenaDaemonInfo,
+            botCount: SYSTEM_BOT_IDS.length,
             botArenaPvpEnabled,
             botArenaQuizEnabled,
             refreshAdminMetrics,
@@ -15615,6 +15972,20 @@ export default function CodeQuizApp() {
             adminMatchCodeById,
             adminMatchesLoading,
             setAdminHistoryFilter,
+            triggerAppBackNavigation
+          }} />
+        ) : null}
+
+        {screen === 'admin-bots' && adminAuthorized ? (
+          <AdminBotsScreen vm={{
+            adminBotMatchRows: adminHistoryTodayBaseMatches,
+            adminBotSort,
+            adminBotViews,
+            adminBotsLoading,
+            adminBotsUpdatedAtMs,
+            adminSelectedBotId,
+            setAdminBotSort,
+            setAdminSelectedBotId,
             triggerAppBackNavigation
           }} />
         ) : null}
@@ -15659,7 +16030,7 @@ export default function CodeQuizApp() {
             googleSignInBusy,
             handleSwitchGoogleAccount,
             homeAuthUser,
-            isAdminUser,
+            isAdminUser: isAdminUser && isAdminAccountEmail(googleAccountEmail),
             nicknameCanSave,
             nicknameHintClass,
             nicknameHintText,
@@ -15710,7 +16081,6 @@ export default function CodeQuizApp() {
             authUser,
             buildCosmeticSnapshot,
             chooseKnowledgeAreaForPvp,
-            choosePvpDifficulty,
             joinPvpTeamRoomSide,
             knowledgeAreaById,
             matchAcceptBusy,
@@ -15751,8 +16121,10 @@ export default function CodeQuizApp() {
             pvpPlayer2FrameClass,
             pvpPlayer2FrameStyle,
             pvpPlayer2Shop,
+            pvpDuelQueueSearching,
             pvpQueueTimeLabel,
-            pvpSelectedDifficulty,
+            pvpDifficultyMix,
+            pvpLeague: pvpCategory,
             pvpState,
             pvpTeamActionBusy,
             pvpTeamAutoStartPending,
@@ -15928,6 +16300,7 @@ export default function CodeQuizApp() {
           <PvpEliminationResultScreen vm={{
             buildCosmeticSnapshot,
             collectPvpEliminationResultRewards,
+            pvpEliminationLeaverNotice,
             pvpEliminationMyUserId,
             pvpEliminationPlacementLabel,
             pvpEliminationResultKey,
@@ -15948,6 +16321,7 @@ export default function CodeQuizApp() {
             buildCosmeticSnapshot,
             collectPvpTeamResultRewards,
             pvpTeamBlueMembers,
+            pvpTeamLeaverNotice,
             pvpTeamMatch,
             pvpTeamMySide,
             pvpTeamRedMembers,
@@ -15988,10 +16362,10 @@ export default function CodeQuizApp() {
       {pvpTeamCreateRoomOpen ? (
         <TeamRoomCreateModal vm={{
           chooseKnowledgeAreaForPvp,
-          choosePvpDifficulty,
           closePvpTeamRoomCreate,
           createPvpTeamRoomFromDraft,
-          pvpSelectedDifficulty,
+          pvpDifficultyMix,
+          pvpLeague: pvpCategory,
           pvpTeamActionBusy,
           pvpTeamDraftAreaMeta,
           pvpTeamRoomDraft,

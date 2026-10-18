@@ -1,7 +1,9 @@
 // Constantes e helpers do CodeQuizApp (extraídos do componente principal).
+import { CHIP_BATTLE_SONGS, CHIP_MENU_SONGS } from '../data/chip-songs';
 import { LANGUAGES, QUESTIONS, TOPICS } from '../data/questions-data';
-import { DIFFICULTY_LABELS, PVE_QUESTIONS_PER_ROUND, PVP_COINS_REWARD, PVP_XP_REWARD, QUESTIONS_PER_ROUND, TIMER_SECONDS } from '../lib/constants';
+import { ADMIN_ACCOUNT_EMAIL, DIFFICULTY_LABELS, PVE_QUESTIONS_PER_ROUND, PVP_COINS_REWARD, PVP_XP_REWARD, QUESTIONS_PER_ROUND, TIMER_SECONDS } from '../lib/constants';
 import { defaultProgress, normalizeProgress } from '../lib/progress';
+import { BATTLE_MUSIC_TRACK_DURATION_MS } from '../lib/musicPlayback';
 import { PVP_ROUNDS_PER_MATCH, applyPvpDurationBonus, getCategoryByPoints, getPvpDurationBonusPct, isPvpAnswerCorrect } from '../lib/pvp';
 import {
   areQuestionsSemanticallyEquivalent,
@@ -80,11 +82,62 @@ export function formatSignedPoints(value) {
   return String(safe);
 }
 
+// No PvP o jogador só escolhe a área: a dificuldade das perguntas sai da liga
+// (pontos PvP). Cada liga mistura as três dificuldades nesta proporção (%).
+export const PVP_LEAGUE_DIFFICULTY_MIX = Object.freeze({
+  bronze: Object.freeze({ easy: 70, medium: 30, hard: 0 }),
+  silver: Object.freeze({ easy: 50, medium: 40, hard: 10 }),
+  gold: Object.freeze({ easy: 30, medium: 50, hard: 20 }),
+  platinum: Object.freeze({ easy: 15, medium: 45, hard: 40 }),
+  diamond: Object.freeze({ easy: 0, medium: 40, hard: 60 })
+});
+
+const PVP_MIX_DIFFICULTIES = Object.freeze(['easy', 'medium', 'hard']);
+
+export function getPvpDifficultyMixFromPoints(pointsValue) {
+  const league = getCategoryByPoints(pointsValue);
+  return PVP_LEAGUE_DIFFICULTY_MIX[league?.key] || PVP_LEAGUE_DIFFICULTY_MIX.bronze;
+}
+
+// Faixa da partida (tempo da rodada, recompensas, fila e começo do desempate): a
+// dificuldade que predomina na mistura da liga (no empate, a mais fácil).
 export function getPvpDifficultyFromPoints(pointsValue) {
-  const points = Math.max(0, Number(pointsValue || 0));
-  if (points >= 400) return 'hard';
-  if (points >= 200) return 'medium';
-  return 'easy';
+  const mix = getPvpDifficultyMixFromPoints(pointsValue);
+  return PVP_MIX_DIFFICULTIES.reduce(
+    (best, difficulty) => (Number(mix[difficulty] || 0) > Number(mix[best] || 0) ? difficulty : best),
+    PVP_MIX_DIFFICULTIES[0]
+  );
+}
+
+// Pontos que definem a liga de uma partida: a média dos jogadores dela.
+export function getPvpAveragePoints(pointsList = []) {
+  const values = (Array.isArray(pointsList) ? pointsList : [])
+    .map((value) => Number(value))
+    .filter((value) => Number.isFinite(value) && value >= 0);
+  if (!values.length) return 0;
+  return Math.round(values.reduce((acc, value) => acc + value, 0) / values.length);
+}
+
+// Dificuldade de cada pergunta normal da partida: a mistura da liga convertida em
+// quantidades (maior resto; no empate, a mais fácil), da mais fácil para a mais
+// difícil, para a partida esquentar aos poucos.
+export function buildPvpDifficultyPlan(pointsValue, count = PVP_ROUNDS_PER_MATCH) {
+  const safeCount = Math.max(1, Math.trunc(Number(count || 1)));
+  const mix = getPvpDifficultyMixFromPoints(pointsValue);
+  const weights = PVP_MIX_DIFFICULTIES.map((difficulty) => Math.max(0, Math.trunc(Number(mix[difficulty] || 0))));
+  const total = weights.reduce((acc, weight) => acc + weight, 0);
+  if (!total) return Array(safeCount).fill(getPvpDifficultyFromPoints(pointsValue));
+  const counts = weights.map((weight) => Math.floor((weight * safeCount) / total));
+  const remainders = weights.map((weight) => (weight * safeCount) % total);
+  let missing = safeCount - counts.reduce((acc, value) => acc + value, 0);
+  const order = PVP_MIX_DIFFICULTIES
+    .map((_, index) => index)
+    .sort((a, b) => (remainders[b] - remainders[a]) || (a - b));
+  for (let step = 0; missing > 0; step += 1) {
+    counts[order[step % order.length]] += 1;
+    missing -= 1;
+  }
+  return PVP_MIX_DIFFICULTIES.flatMap((difficulty, index) => Array(counts[index]).fill(difficulty));
 }
 
 export function getPvpQueueDifficultyFromStats(statsRow = null) {
@@ -97,11 +150,8 @@ export function getPvpQueueDifficultyFromProgress(progressRow = null) {
   return getPvpDifficultyFromPoints(row.pvpPoints || 0);
 }
 
+// A dificuldade da fila não é mais escolha do jogador: vem sempre da liga dele.
 export function getPvpQueueDifficultyFromConfig(configRow = null, progressRow = null) {
-  const row = configRow && typeof configRow === 'object' ? configRow : {};
-  if (String(row.difficulty || '').trim()) {
-    return normalizeDifficulty(row.difficulty || 'easy');
-  }
   return getPvpQueueDifficultyFromProgress(progressRow);
 }
 
@@ -839,6 +889,88 @@ export function pickPvpQuestionSetBySequence(questionsMap, options = {}) {
   };
 }
 
+// Perguntas normais de uma partida com a mistura de dificuldades do plano
+// (buildPvpDifficultyPlan). Cada dificuldade segue a sua sequência de temas (com o
+// cursor e os temas recentes dela, em options.cursors / options.recentStartTopicKeys
+// por dificuldade) e as perguntas entram na ordem do plano. Se a área tiver poucas
+// perguntas de uma dificuldade, as vagas ficam com as dificuldades vizinhas.
+// Devolve também `sequences` (uma por dificuldade) para gravar os cursores.
+export function pickPvpMixedQuestionSet(questionsMap, options = {}) {
+  const plan = (Array.isArray(options?.difficultyPlan) ? options.difficultyPlan : [])
+    .map((difficulty) => normalizeDifficulty(difficulty || 'easy'));
+  if (!plan.length) {
+    const single = pickPvpQuestionSetBySequence(questionsMap, options);
+    return { ...single, sequences: [{ ...single }] };
+  }
+  const cursors = options?.cursors && typeof options.cursors === 'object' ? options.cursors : {};
+  const recentStarts = options?.recentStartTopicKeys && typeof options.recentStartTopicKeys === 'object'
+    && !Array.isArray(options.recentStartTopicKeys)
+    ? options.recentStartTopicKeys
+    : {};
+  const seed = String(options?.sequenceSeed || '').trim();
+  const needed = {};
+  plan.forEach((difficulty) => { needed[difficulty] = (needed[difficulty] || 0) + 1; });
+
+  const sequences = [];
+  const pools = {};
+  const used = [];
+  const takeSequence = (difficulty, count) => {
+    const sequence = pickPvpQuestionSetBySequence(questionsMap, {
+      ...options,
+      difficulty,
+      count,
+      cursor: cursors[difficulty],
+      recentStartTopicKeys: Array.isArray(recentStarts[difficulty]) ? recentStarts[difficulty] : [],
+      sequenceSeed: seed ? `${seed}::mix::${difficulty}` : ''
+    });
+    const questions = (Array.isArray(sequence.questions) ? sequence.questions : [])
+      .filter((question) => !used.some((current) => areQuestionsSemanticallyEquivalent(current, question)))
+      .map((question) => ({ ...question, difficulty }));
+    used.push(...questions);
+    return { sequence, questions };
+  };
+  PVP_MIX_DIFFICULTIES.forEach((difficulty) => {
+    if (!needed[difficulty]) return;
+    const { sequence, questions } = takeSequence(difficulty, needed[difficulty]);
+    sequences.push({ ...sequence, difficulty });
+    pools[difficulty] = questions;
+  });
+
+  const picked = [];
+  const missingDifficulties = [];
+  plan.forEach((difficulty) => {
+    const question = (pools[difficulty] || []).shift();
+    if (question) picked.push(question);
+    else missingDifficulties.push(difficulty);
+  });
+  missingDifficulties.forEach((difficulty) => {
+    const baseIndex = PVP_MIX_DIFFICULTIES.indexOf(difficulty);
+    const neighbors = [...PVP_MIX_DIFFICULTIES]
+      .sort((a, b) => Math.abs(PVP_MIX_DIFFICULTIES.indexOf(a) - baseIndex) - Math.abs(PVP_MIX_DIFFICULTIES.indexOf(b) - baseIndex))
+      .filter((candidate) => candidate !== difficulty);
+    for (const candidate of neighbors) {
+      const extra = takeSequence(candidate, (needed[candidate] || 0) + used.length + 1).questions[0];
+      if (!extra) continue;
+      const position = picked.findIndex((question) => (
+        PVP_MIX_DIFFICULTIES.indexOf(question.difficulty) > PVP_MIX_DIFFICULTIES.indexOf(candidate)
+      ));
+      picked.splice(position < 0 ? picked.length : position, 0, extra);
+      break;
+    }
+  });
+
+  const first = sequences[0] || {};
+  const firstQuestion = picked[0] || null;
+  return {
+    ...first,
+    questions: spreadPvpQuestionAnswers(picked),
+    difficultyPlan: plan,
+    sequences,
+    resolvedLanguage: String(firstQuestion?.language || first.resolvedLanguage || ''),
+    resolvedTopic: String(firstQuestion?.topic || first.resolvedTopic || '')
+  };
+}
+
 export function hasPvpMatchSequenceMetadata(matchRow) {
   const row = matchRow && typeof matchRow === 'object' ? matchRow : {};
   if (String(row.pvp_sequence_start_topic_key || '').trim()) return true;
@@ -1571,7 +1703,17 @@ export const BOT_EMOJI_POOL_BY_BOT_ID = {
   bot_sys_codequiz_thiagoara: ['😤', '💪', '🔥', '😎', '🏆', '🚀'],
   bot_sys_codequiz_bdevonly: ['🧠', '🤔', '💡', '🫡', '🤓', '✨'],
   bot_sys_codequiz_flakael: ['😉', '😏', '🙄', '🤭', '👎', '😈'],
-  bot_sys_codequiz_z3n: ['😏', '😉', '🙄', '🤭', '😈', '👀']
+  bot_sys_codequiz_z3n: ['😏', '😉', '🙄', '🤭', '😈', '👀'],
+  bot_sys_codequiz_capivara42: ['😌', '🙂', '👍', '🤝', '😴', '✨'],
+  bot_sys_codequiz_juhzinha: ['🤗', '🫶', '😊', '💖', '👏', '😅'],
+  bot_sys_codequiz_kaiqu3: ['😜', '😝', '🤣', '👀', '🔥', '😎'],
+  bot_sys_codequiz_l1via: ['🤨', '🧐', '💡', '🤔', '😬', '👌'],
+  bot_sys_codequiz_ma7eus: ['😤', '💪', '🧠', '🤔', '🤝', '🏆'],
+  bot_sys_codequiz_biaxs: ['🤭', '😏', '😹', '🙄', '🤡', '🥳'],
+  bot_sys_codequiz_nandobr: ['😁', '👍', '🙌', '😅', '🤝', '🙏'],
+  bot_sys_codequiz_nyx77: ['🙃', '🌙', '😈', '👀', '🤫', '💥'],
+  bot_sys_codequiz_melcosta: ['😇', '🤓', '💡', '✨', '🙈', '👏'],
+  bot_sys_codequiz_pipoca07: ['🤩', '😋', '🎉', '😮', '😂', '🙌']
 };
 
 export function normalizeBotPersonality(value) {
@@ -1807,7 +1949,17 @@ export const BOT_PLAY_STYLE_BY_BOT_ID = {
   bot_sys_codequiz_flakael: 'competitivo',
   bot_sys_codequiz_sopro: 'oscilante',
   bot_sys_codequiz_lua9: 'oscilante',
-  bot_sys_codequiz_z3n: 'oscilante'
+  bot_sys_codequiz_z3n: 'oscilante',
+  bot_sys_codequiz_l1via: 'elite',
+  bot_sys_codequiz_kaiqu3: 'competitivo',
+  bot_sys_codequiz_ma7eus: 'competitivo',
+  bot_sys_codequiz_biaxs: 'competitivo',
+  bot_sys_codequiz_nyx77: 'competitivo',
+  bot_sys_codequiz_capivara42: 'oscilante',
+  bot_sys_codequiz_juhzinha: 'oscilante',
+  bot_sys_codequiz_nandobr: 'oscilante',
+  bot_sys_codequiz_melcosta: 'oscilante',
+  bot_sys_codequiz_pipoca07: 'oscilante'
 };
 
 export function getBotPlayStyleKey(botUserId = '') {
@@ -2785,7 +2937,10 @@ export function getAdminMatchEndMs(matchRow, nowMs = Date.now()) {
       || getAdminMatchStartMs(matchRow)
     );
   }
-  return Math.max(0, Number(nowMs || Date.now()));
+  const safeNowMs = Math.max(0, Number(nowMs || Date.now()));
+  // Partida entre bots já acabou no fim previsto; o servidor só a fecha no ciclo seguinte.
+  const plannedEndMs = Math.max(0, Number(matchRow?.bot_planned_end_ms || 0));
+  return plannedEndMs > 0 ? Math.min(safeNowMs, plannedEndMs) : safeNowMs;
 }
 
 export function getAdminMatchDurationLabel(matchRow, nowMs = Date.now()) {
@@ -2796,6 +2951,7 @@ export function getAdminMatchDurationLabel(matchRow, nowMs = Date.now()) {
 }
 
 export function getAdminMatchRoundsLabel(matchRow) {
+  if (matchRow?.admin_group_kind) return String(matchRow.group_round_label || '--');
   const totalRounds = Math.max(1, Number(matchRow?.total_rounds || PVP_ROUNDS_PER_MATCH));
   const status = String(matchRow?.status || '').trim().toLowerCase();
   if (status === 'finished') {
@@ -3041,6 +3197,13 @@ export function getAdminBotClassSummary(matchRow) {
   const row = matchRow && typeof matchRow === 'object' ? matchRow : {};
   if (!row || typeof row !== 'object') return '';
 
+  if (row.admin_group_kind) {
+    const members = Array.isArray(row.group_members) ? row.group_members : [];
+    const botCount = members.filter((member) => member.is_bot).length;
+    if (!botCount) return '';
+    return `Bots: ${botCount} de ${members.length}`;
+  }
+
   if (row.is_bot_quiz === true) {
     const assignments = Array.isArray(row.bot_quiz_assignments) ? row.bot_quiz_assignments : [];
     const labels = assignments
@@ -3077,6 +3240,8 @@ export function getAdminMatchTypeKey(matchRow) {
   const row = matchRow && typeof matchRow === 'object' ? matchRow : {};
   if (!row || typeof row !== 'object') return 'unknown';
   if (row.is_bot_quiz === true) return 'bot_quiz';
+  if (row.admin_group_kind === 'team') return 'group_team';
+  if (row.admin_group_kind === 'elimination') return 'group_elimination';
 
   const player1Id = String(row.player1_user_id || '').trim();
   const player2Id = String(row.player2_user_id || '').trim();
@@ -3096,6 +3261,8 @@ export function getAdminMatchTypeKey(matchRow) {
 export function getAdminMatchTypeLabel(matchRow) {
   const type = getAdminMatchTypeKey(matchRow);
   if (type === 'bot_quiz') return 'Quiz solo';
+  if (type === 'group_team') return '2x2';
+  if (type === 'group_elimination') return 'Um contra todos';
   if (type === 'user_vs_user') return 'Usuário x Usuário';
   if (type === 'user_vs_bot') return 'Usuário x Bot';
   if (type === 'bot_vs_bot') return 'Bot x Bot';
@@ -3105,6 +3272,7 @@ export function getAdminMatchTypeLabel(matchRow) {
 export function isAdminQuizHistoryRow(matchRow) {
   const row = matchRow && typeof matchRow === 'object' ? matchRow : {};
   if (!row || typeof row !== 'object') return false;
+  if (row.admin_group_kind) return false;
   if (row.is_bot_quiz === true) return true;
   const endedReason = String(row.ended_reason || '').trim().toLowerCase();
   if (endedReason.includes('quiz')) return true;
@@ -3128,10 +3296,34 @@ export function doesAdminHistoryRowMatchFilter(matchRow, filterKey = 'all') {
   const type = getAdminMatchTypeKey(matchRow);
   const isQuiz = isAdminQuizHistoryRow(matchRow);
   if (key === 'pvp') return !isQuiz;
-  if (key === 'users') return !isQuiz && (type === 'user_vs_user' || type === 'user_vs_bot');
+  if (key === 'users') {
+    if (matchRow?.admin_group_kind) {
+      return (Array.isArray(matchRow.group_members) ? matchRow.group_members : []).some((member) => !member.is_bot);
+    }
+    return !isQuiz && (type === 'user_vs_user' || type === 'user_vs_bot');
+  }
+  if (key === 'group') return !!matchRow?.admin_group_kind;
   if (key === 'quiz') return isQuiz;
   if (key === 'user_quiz') return isAdminUserQuizHistoryRow(matchRow);
   return true;
+}
+
+// Partida "aberta" sem nenhuma escrita há esse tempo foi abandonada e não conta como ao vivo.
+export const ADMIN_LIVE_MATCH_STALE_MS = 5 * 60 * 1000;
+export const ADMIN_LIVE_GROUP_MATCH_STALE_MS = 120000;
+
+export function getAdminMatchLastTouchedMs(matchRow) {
+  const row = matchRow && typeof matchRow === 'object' ? matchRow : {};
+  return Math.max(
+    0,
+    toMillis(row.updated_at),
+    toMillis(row.round_started_at_ms),
+    toMillis(row.round_started_at),
+    toMillis(row.created_at),
+    Number(row.battle_started_at_ms || 0),
+    Number(row.round_result_until_ms || 0),
+    Number(row.elimination_until_ms || 0)
+  );
 }
 
 export function isAdminLiveMatchRow(matchRow, nowMs = Date.now()) {
@@ -3139,8 +3331,23 @@ export function isAdminLiveMatchRow(matchRow, nowMs = Date.now()) {
   if (!row || typeof row !== 'object') return false;
   if (row.result_void === true || row.history_hidden === true) return false;
 
+  const safeNowMs = Math.max(0, Number(nowMs || Date.now()));
   const status = String(row.status || '').trim().toLowerCase();
-  if (status === 'pending_accept' || status === 'active' || status === 'round_result') return true;
+  if (row.admin_group_kind) {
+    if (status !== 'active' && status !== 'round_result' && status !== 'elimination_result') return false;
+    const lastTouchedMs = getAdminMatchLastTouchedMs(row);
+    return lastTouchedMs > 0 && (safeNowMs - lastTouchedMs) < ADMIN_LIVE_GROUP_MATCH_STALE_MS;
+  }
+  if (status === 'pending_accept' || status === 'active' || status === 'round_result') {
+    // Duelo/quiz entre bots fica ao vivo até o fim previsto pelo placar.
+    const plannedEndMs = Math.max(0, Number(row.bot_planned_end_ms || 0));
+    if (plannedEndMs > 0) return safeNowMs < plannedEndMs;
+    if (row.is_bot_quiz === true) return true;
+    const acceptDeadlineMs = Math.max(0, Number(row.accept_deadline_ms || 0));
+    if (status === 'pending_accept' && acceptDeadlineMs > 0 && safeNowMs - acceptDeadlineMs > 30000) return false;
+    const lastTouchedMs = getAdminMatchLastTouchedMs(row);
+    return !lastTouchedMs || (safeNowMs - lastTouchedMs) < ADMIN_LIVE_MATCH_STALE_MS;
+  }
 
   // Include transitional states that may appear briefly during user-vs-user pairing.
   if (status === 'matched' || status === 'starting') return true;
@@ -3375,10 +3582,12 @@ export function isPvpDuelTiebreakRound(roundNo = 1) {
   return Math.floor(Number(roundNo || 1)) > PVP_ROUNDS_PER_MATCH;
 }
 
-// Dificuldade da rodada do duelo: a pergunta gravada guarda o nível do desempate.
+// Dificuldade da rodada do duelo: a pergunta gravada guarda a dificuldade dela (a
+// partida mistura dificuldades pela liga) e o nível do desempate.
 export function getPvpDuelRoundDifficulty(matchRow = null, roundNo = 1) {
   const questions = Array.isArray(matchRow?.question_set) ? matchRow.question_set : [];
   const question = questions[Math.max(1, Math.floor(Number(roundNo || 1))) - 1] || null;
+  if (String(question?.difficulty || '').trim()) return normalizeDifficulty(question.difficulty);
   return getPvpTiebreakDifficulty(
     matchRow?.difficulty || matchRow?.category || 'easy',
     getPvpQuestionTiebreakLevel(question)
@@ -3458,7 +3667,8 @@ export const AUDIO_DEFAULTS = {
   sfxEnabled: true,
   sfxVolume: 0.72
 };
-export const MUSIC_AUTO_SKIP_INTERVAL_MS = 40 * 1000;
+export const MUSIC_AUTO_SKIP_INTERVAL_MS = BATTLE_MUSIC_TRACK_DURATION_MS;
+export const MUSIC_MENU_AUTO_SKIP_INTERVAL_MS = 40 * 1000;
 export const MUSIC_SKIP_FADE_OUT_MS = 360;
 export const MUSIC_SKIP_FADE_IN_MS = 520;
 export const MUSIC_SKIP_SWITCH_DELAY_MS = MUSIC_SKIP_FADE_OUT_MS + 44;
@@ -3590,10 +3800,10 @@ export function getLeagueMetaByKey(value = '') {
   const key = normalizeLeagueKey(value);
   const lookupPoints = {
     bronze: 0,
-    silver: 30,
-    gold: 60,
-    platinum: 90,
-    diamond: 110
+    silver: 180,
+    gold: 360,
+    platinum: 540,
+    diamond: 710
   };
   return getCategoryByPoints(lookupPoints[key] || 0);
 }
@@ -3898,6 +4108,13 @@ export const LANGUAGE_THEME_GROUPS = [
     languages: ['ciencia_criatividade']
   },
   {
+    id: 'general_brazil_sports',
+    area: 'general_knowledge',
+    label: 'Brasil e Esportes',
+    desc: 'Geografia e cultura brasileira, futebol, Olimpíadas e outras competições.',
+    languages: ['brasil', 'esportes']
+  },
+  {
     id: 'bible',
     area: 'theology',
     label: 'Estudos Biblicos',
@@ -3955,9 +4172,321 @@ export const ADMIN_HISTORY_FILTER_OPTIONS = [
   { id: 'all', label: 'Todos' },
   { id: 'pvp', label: 'PvP' },
   { id: 'users', label: 'PvP de usuários' },
+  { id: 'group', label: '2x2 e Um contra todos' },
   { id: 'quiz', label: 'Quiz' },
   { id: 'user_quiz', label: 'Quiz de usuários' }
 ];
+
+export function isAdminAccountEmail(email = '') {
+  return String(email || '').trim().toLowerCase() === ADMIN_ACCOUNT_EMAIL;
+}
+
+function normalizeAdminGroupMembers(list) {
+  return (Array.isArray(list) ? list : [])
+    .filter((member) => member && typeof member === 'object' && member.user_id)
+    .map((member) => {
+      const userId = String(member.user_id || '').trim();
+      return {
+        user_id: userId,
+        nickname: String(member.nickname || '').trim() || 'Jogador',
+        is_bot: isSystemBotUserId(userId)
+      };
+    });
+}
+
+// Partida 2x2 (pvp_team_matches) ou Um contra todos (pvp_elimination_matches) no
+// formato das tabelas do painel admin.
+export function toAdminGroupMatchRow(matchRow, kind = 'team') {
+  const row = matchRow && typeof matchRow === 'object' ? matchRow : {};
+  const isTeam = kind !== 'elimination';
+  const redMembers = normalizeAdminGroupMembers(row.red_members);
+  const blueMembers = normalizeAdminGroupMembers(row.blue_members);
+  const members = isTeam ? [...redMembers, ...blueMembers] : normalizeAdminGroupMembers(row.members);
+  const nicknameById = new Map(members.map((member) => [member.user_id, member.nickname]));
+  const scores = row.member_scores && typeof row.member_scores === 'object' ? row.member_scores : {};
+  const status = String(row.status || '').trim().toLowerCase();
+  const battleNo = Math.max(1, Math.trunc(Number(row.ended_battle_no || row.battle_no || 1)));
+  const totalRounds = Math.max(0, Math.trunc(Number(row.total_rounds || 0)));
+  const joinNames = (list) => list.map((member) => member.nickname).join(' e ') || '--';
+
+  let title = '';
+  let scoreLabel = '';
+  let resultLabel = '';
+  let winnerUserId = '';
+  let winnerIds = [];
+  let isDraw = false;
+  if (isTeam) {
+    const redScore = Math.max(0, Math.trunc(Number(row.red_score || 0)));
+    const blueScore = Math.max(0, Math.trunc(Number(row.blue_score || 0)));
+    const winnerSide = String(row.winner_side || '').trim().toLowerCase();
+    title = `${joinNames(redMembers)} × ${joinNames(blueMembers)}`;
+    scoreLabel = `${redScore} × ${blueScore}`;
+    if (winnerSide === 'red') {
+      resultLabel = `Vitória: ${joinNames(redMembers)}`;
+      winnerIds = redMembers.map((member) => member.user_id);
+    } else if (winnerSide === 'blue') {
+      resultLabel = `Vitória: ${joinNames(blueMembers)}`;
+      winnerIds = blueMembers.map((member) => member.user_id);
+    } else {
+      resultLabel = status === 'finished' ? 'Empate' : 'Em andamento';
+      isDraw = status === 'finished';
+    }
+  } else {
+    const activeIds = (Array.isArray(row.active_member_ids) ? row.active_member_ids : [])
+      .map((id) => String(id || '').trim())
+      .filter(Boolean);
+    const pairIds = (Array.isArray(row.active_pair_user_ids) ? row.active_pair_user_ids : [])
+      .map((id) => String(id || '').trim())
+      .filter(Boolean);
+    winnerUserId = String(row.winner_user_id || '').trim();
+    winnerIds = winnerUserId ? [winnerUserId] : [];
+    title = members.map((member) => member.nickname).join(', ') || '--';
+    if (status === 'finished') {
+      const winnerScore = winnerUserId ? Math.max(0, Math.trunc(Number(scores[winnerUserId] || 0))) : 0;
+      scoreLabel = winnerUserId ? `${winnerScore} pts` : '—';
+      resultLabel = winnerUserId ? `Vencedor: ${nicknameById.get(winnerUserId) || 'Jogador'}` : 'Sem vencedor';
+    } else {
+      // Em andamento: quantos seguem na disputa e o confronto da vez.
+      scoreLabel = `${Math.max(activeIds.length, pairIds.length)}/${members.length}`;
+      resultLabel = pairIds.length === 2
+        ? `Agora: ${nicknameById.get(pairIds[0]) || 'Jogador'} × ${nicknameById.get(pairIds[1]) || 'Jogador'}`
+        : 'Entre confrontos';
+    }
+  }
+
+  return {
+    id: String(row.id || ''),
+    status,
+    admin_group_kind: isTeam ? 'team' : 'elimination',
+    group_members: members,
+    group_title: title,
+    group_score_label: scoreLabel,
+    group_result_label: resultLabel,
+    group_round_label: isTeam && totalRounds ? `${battleNo}/${totalRounds}` : `Confronto ${battleNo}`,
+    group_winner_ids: winnerIds,
+    group_is_draw: isDraw,
+    winner_user_id: winnerUserId,
+    difficulty: normalizeDifficulty(row.difficulty || row.category || 'easy'),
+    ended_reason: String(row.ended_reason || ''),
+    created_at: row.created_at || '',
+    updated_at: row.updated_at || '',
+    ended_at: row.ended_at || '',
+    battle_started_at_ms: Math.max(0, Number(row.battle_started_at_ms || 0)),
+    round_result_until_ms: Math.max(0, Number(row.round_result_until_ms || 0)),
+    elimination_until_ms: Math.max(0, Number(row.elimination_until_ms || 0))
+  };
+}
+
+// Partida finalizada que entra no "Histórico do dia" do admin (empates valem pontos e contam).
+export function isAdminHistoryMatchRow(matchRow, dayStartMs, dayEndMs) {
+  const row = matchRow && typeof matchRow === 'object' ? matchRow : null;
+  if (!row) return false;
+  if (String(row.status || '').trim().toLowerCase() !== 'finished') return false;
+  if (row.result_void === true || row.history_hidden === true) return false;
+  if (!row.admin_group_kind && isInvalidFinishedMatch(row)) return false;
+  const endedMs = toMillis(row.ended_at || row.updated_at || row.created_at);
+  return endedMs >= dayStartMs && endedMs < dayEndMs;
+}
+
+const BOT_DAEMON_STATE_LABELS = {
+  created: 'Duelo iniciado',
+  finalized_created: 'Duelo encerrado e outro iniciado',
+  stale_reset_created: 'Duelo travado encerrado e outro iniciado',
+  active: 'Duelo em andamento',
+  finalized: 'Duelo encerrado',
+  stale_reset: 'Duelo travado encerrado',
+  idle_no_pair: 'Sem dupla de bots livre',
+  idle_duel_already_active: 'Já há um duelo em andamento',
+  paused: 'Duelos pausados',
+  paused_finalized: 'Duelos pausados (duelo encerrado)',
+  lock_not_acquired: 'Outro ciclo em execução',
+  create_failed: 'Falha ao criar o duelo',
+  tick_error: 'Erro no ciclo',
+  quiz_created: 'Quiz iniciado',
+  quiz_finalized_created: 'Quiz encerrado e outro iniciado',
+  quiz_finalized: 'Quiz encerrado',
+  quiz_active: 'Quiz em andamento',
+  quiz_paused: 'Quizzes pausados (quiz encerrado)',
+  quiz_paused_idle: 'Quizzes pausados',
+  quiz_idle_no_available_bot: 'Sem bot livre para quiz',
+  quiz_idle_no_catalog: 'Sem perguntas para quiz'
+};
+
+export function getBotDaemonStateLabel(state = '') {
+  const key = String(state || '').trim();
+  if (!key) return '--';
+  return BOT_DAEMON_STATE_LABELS[key] || key;
+}
+
+const BOT_PERSONALITY_LABELS = {
+  provocador: 'Provocador',
+  analitico: 'Analítico',
+  calmo: 'Calmo'
+};
+
+// O que o bot está fazendo agora (tela Bots do admin): duelo/quiz da automação ou a
+// trava de ocupado (pvp_bots_state/busy) de uma partida com jogadores.
+export function getAdminBotStatus(botId, { busy = {}, arenaState = null, quizState = null, nowMs = Date.now() } = {}) {
+  const id = String(botId || '').trim();
+  const arena = arenaState && typeof arenaState === 'object' ? arenaState : {};
+  if (String(arena.status || '') === 'active' && id && (arena.bot_a_id === id || arena.bot_b_id === id)) {
+    return {
+      key: 'bot_duel',
+      label: 'Duelo entre bots',
+      tone: 'violet',
+      matchId: String(arena.match_id || ''),
+      rivalId: String((arena.bot_a_id === id ? arena.bot_b_id : arena.bot_a_id) || '')
+    };
+  }
+  const quiz = quizState && typeof quizState === 'object' ? quizState : {};
+  const quizAssignments = Array.isArray(quiz.assignments) ? quiz.assignments : [];
+  if (String(quiz.status || '') === 'active' && quizAssignments.some((item) => String(item?.bot_id || '') === id)) {
+    return { key: 'bot_quiz', label: 'Fazendo quiz', tone: 'cyan', matchId: String(quiz.batch_id || ''), rivalId: '' };
+  }
+  const row = busy && typeof busy === 'object' ? busy[id] : null;
+  const matchId = String(row?.match_id || '').trim();
+  const active = !!row && typeof row === 'object' && row.busy !== false
+    && (!!matchId || Math.max(0, Number(row.until_ms || 0)) > Math.max(0, Number(nowMs || 0)));
+  if (!active) return { key: 'free', label: 'Livre', tone: 'lime', matchId: '', rivalId: '' };
+  const reason = String(row.reason || '').trim();
+  if (reason === 'bot_duel') return { key: 'bot_duel', label: 'Duelo entre bots', tone: 'violet', matchId, rivalId: '' };
+  if (reason === 'bot_quiz') return { key: 'bot_quiz', label: 'Fazendo quiz', tone: 'cyan', matchId, rivalId: '' };
+  if (matchId.startsWith('pvp_team_room')) return { key: 'team', label: 'Sala 2x2', tone: 'gold', matchId, rivalId: '' };
+  if (matchId.startsWith('pvp_elimination_room')) return { key: 'elimination', label: 'Um contra todos', tone: 'gold', matchId, rivalId: '' };
+  return { key: 'user_match', label: 'Partida com jogador', tone: 'gold', matchId, rivalId: '' };
+}
+
+function getAdminBotPassLevel(stats = {}) {
+  const ids = Array.isArray(stats.achievement_ids) ? stats.achievement_ids : [];
+  return ids.reduce((best, achievementId) => {
+    const match = /^pass_lvl_(\d{1,2})$/i.exec(String(achievementId || '').trim());
+    return match ? Math.max(best, Number(match[1])) : best;
+  }, 0);
+}
+
+// Linha da tela Bots do admin a partir de users/user_stats/user_shop/config do bot.
+export function buildAdminBotView(entry, context = {}) {
+  const safe = entry && typeof entry === 'object' ? entry : {};
+  const botId = String(safe.bot_id || '').trim();
+  const roster = safe.roster && typeof safe.roster === 'object' ? safe.roster : {};
+  const profile = safe.profile && typeof safe.profile === 'object' ? safe.profile : {};
+  const stats = safe.stats && typeof safe.stats === 'object' ? safe.stats : {};
+  const shop = safe.shop && typeof safe.shop === 'object' ? safe.shop : {};
+  const config = safe.config && typeof safe.config === 'object' ? safe.config : {};
+  const inventory = stats.bot_inventory && typeof stats.bot_inventory === 'object' ? stats.bot_inventory : {};
+  const equipped = (shop.equipped && typeof shop.equipped === 'object' ? shop.equipped : null)
+    || (inventory.equipped && typeof inventory.equipped === 'object' ? inventory.equipped : {});
+  const owned = Array.isArray(shop.owned) ? shop.owned : (Array.isArray(inventory.owned) ? inventory.owned : []);
+  const count = (value) => Math.max(0, Math.trunc(Number(value || 0)));
+  const battles = count(stats.pvp_battles);
+  const wins = Math.min(battles, count(stats.pvp_wins));
+  const losses = Math.min(Math.max(0, battles - wins), count(stats.pvp_losses));
+  const totalAnswered = count(stats.total_answered);
+  const totalCorrect = count(stats.total_correct);
+  const pvpPoints = count(stats.pvp_points);
+  const strength = normalizeBotStrength(config.strength || profile.bot_strength || roster.default_strength || 'medio');
+  const personality = String(config.personality || profile.bot_personality || roster.default_personality || '').trim();
+  const frameId = String(equipped.frame || profile.equipped_frame || 'frame_default');
+  const backgroundId = String(equipped.background || profile.equipped_background || 'bg_default');
+  const emojiId = String(equipped.emoji || profile.equipped_emoji || 'emoji_profile');
+  const queueOrder = Array.isArray(context.queueOrder) ? context.queueOrder : [];
+  const queueIndex = queueOrder.indexOf(botId);
+  // Partidas de hoje (lib/botBalance.js buildBotDailyCounts).
+  const todayCounts = context.dailyCounts?.[botId] || null;
+  return {
+    id: botId,
+    nickname: String(profile.nickname || roster.nickname || 'Bot'),
+    fullName: String(profile.full_name || roster.full_name || ''),
+    avatar: String(profile.avatar || roster.avatar || '🤖'),
+    frameId,
+    backgroundId,
+    emojiId,
+    frameLabel: String(getShopItem(frameId)?.name || 'Padrão'),
+    backgroundLabel: String(getShopItem(backgroundId)?.name || 'Padrão'),
+    emojiLabel: String(getShopItem(emojiId)?.name || 'Padrão'),
+    level: Math.max(1, count(stats.level)),
+    totalXp: count(stats.total_xp),
+    coins: count(stats.coins),
+    pvpPoints,
+    tier: getCategoryByPoints(pvpPoints),
+    battles,
+    wins,
+    losses,
+    // Empates e colocações do Um contra todos (2º/3º lugar não são vitória nem derrota).
+    draws: Math.max(0, battles - wins - losses),
+    winRatePct: battles ? Math.round((wins / battles) * 100) : 0,
+    rankingPoints: count(stats.ranking_points),
+    quizzesCompleted: count(stats.quizzes_completed),
+    totalAnswered,
+    totalCorrect,
+    accuracyPct: totalAnswered ? Math.round((totalCorrect / totalAnswered) * 100) : 0,
+    bestStreak: count(stats.best_streak),
+    passLevel: getAdminBotPassLevel(stats),
+    ownedCount: owned.length,
+    strength,
+    strengthLabel: getBotStrengthLabel(strength),
+    personalityLabel: BOT_PERSONALITY_LABELS[personality] || personality || '--',
+    status: getAdminBotStatus(botId, context),
+    queuePosition: queueIndex >= 0 ? queueIndex + 1 : 0,
+    today: todayCounts ? { pvp: todayCounts.pvpToday, quiz: todayCounts.quizToday } : null,
+    updatedAtMs: Math.max(toMillis(stats.updated_at), toMillis(profile.updated_at)),
+    createdAtMs: toMillis(profile.created_at),
+    missing: !safe.profile && !safe.stats
+  };
+}
+
+// Partidas encerradas de um bot (duelos, quizzes e modos em grupo), mais recentes primeiro.
+export function getAdminBotRecentMatches(botId, rows = [], limit = 10) {
+  const id = String(botId || '').trim();
+  if (!id) return [];
+  const seen = new Set();
+  return (Array.isArray(rows) ? rows : [])
+    .filter((row) => {
+      if (!row || typeof row !== 'object' || !row.id || seen.has(String(row.id))) return false;
+      if (String(row.status || '').trim().toLowerCase() !== 'finished') return false;
+      if (row.result_void === true || row.history_hidden === true) return false;
+      const inMatch = row.admin_group_kind
+        ? (Array.isArray(row.group_members) ? row.group_members : []).some((member) => member.user_id === id)
+        : (String(row.player1_user_id || '') === id || String(row.player2_user_id || '') === id);
+      if (!inMatch) return false;
+      seen.add(String(row.id));
+      return true;
+    })
+    .sort((a, b) => toMillis(b.ended_at || b.updated_at || b.created_at) - toMillis(a.ended_at || a.updated_at || a.created_at))
+    .slice(0, Math.max(1, Number(limit || 10)))
+    .map((row) => {
+      const endedMs = toMillis(row.ended_at || row.updated_at || row.created_at);
+      if (row.admin_group_kind) {
+        const winnerIds = Array.isArray(row.group_winner_ids) ? row.group_winner_ids : [];
+        const result = winnerIds.includes(id) ? 'win' : (row.group_is_draw ? 'draw' : 'loss');
+        return { id: String(row.id), result, typeLabel: getAdminMatchTypeLabel(row), title: row.group_title, score: row.group_score_label, endedMs };
+      }
+      if (row.is_bot_quiz === true) {
+        const quiz = getAdminQuizCardData(row);
+        return {
+          id: String(row.id),
+          result: 'quiz',
+          typeLabel: 'Quiz solo',
+          title: `${quiz.languageLabel} · ${quiz.topicLabel}`,
+          score: `${quiz.correctCount}/${quiz.totalQuestions}`,
+          endedMs
+        };
+      }
+      const isPlayer1 = String(row.player1_user_id || '') === id;
+      const winnerId = String(row.winner_user_id || '').trim();
+      const result = !winnerId ? 'draw' : (winnerId === id ? 'win' : 'loss');
+      const ownScore = Math.max(0, Number(isPlayer1 ? row.player1_score : row.player2_score) || 0);
+      const rivalScore = Math.max(0, Number(isPlayer1 ? row.player2_score : row.player1_score) || 0);
+      return {
+        id: String(row.id),
+        result,
+        typeLabel: getAdminMatchTypeLabel(row),
+        title: `contra ${String((isPlayer1 ? row.player2_nickname : row.player1_nickname) || 'Jogador')}`,
+        score: `${ownScore} × ${rivalScore}`,
+        endedMs
+      };
+    });
+}
 
 export const QUEUE_DEBUG_LOG_MAX_ENTRIES = 1000;
 export const queueDebugLogBuffer = [];
@@ -4121,6 +4650,7 @@ export function queueFlowLog(step, meta = {}) {
 }
 
 export const MENU_MUSIC_TRACKS = [
+  ...[...CHIP_MENU_SONGS].reverse(),
   {
     id: 'skyline_arcade',
     name: 'Skyline Arcade',
@@ -4268,6 +4798,7 @@ export const MENU_MUSIC_TRACKS = [
 ];
 
 export const BATTLE_MUSIC_TRACKS = [
+  ...[...CHIP_BATTLE_SONGS].reverse(),
   {
     id: 'assault_convoy',
     name: 'Assault Convoy',

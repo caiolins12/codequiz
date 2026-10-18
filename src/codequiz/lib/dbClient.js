@@ -28,7 +28,7 @@ const DB_REQUEST_RETRY_JITTER_MS = Math.max(
   0,
   Number(process.env.NEXT_PUBLIC_DB_REQUEST_RETRY_JITTER_MS || 180)
 );
-const DB_GET_CACHE_TTL_MS = Math.max(
+let dbGetCacheTtlMs = Math.max(
   0,
   Number(process.env.NEXT_PUBLIC_DB_GET_CACHE_TTL_MS || 180)
 );
@@ -59,6 +59,10 @@ const ENABLE_MEMORY_FALLBACK = (
 // Operacoes do banco -> funcoes RPC do Supabase (supabase/migrations/*_codequiz_tree_db.sql).
 const DB_RPC_BY_OPERATION = Object.freeze({
   '/db/get': (payload) => ['db_get', { p_path: normalizePath(payload.path) }],
+  '/db/get_recent': (payload) => ['db_get_recent', {
+    p_path: normalizePath(payload.path),
+    p_window_ms: Math.max(0, Math.trunc(Number(payload.window_ms || 0)))
+  }],
   '/db/set': (payload) => ['db_set', { p_path: normalizePath(payload.path), p_value: payload.value ?? null }],
   '/db/update': (payload) => ['db_update', { p_path: normalizePath(payload.path), p_patch: payload.patch }],
   '/db/tx': (payload) => ['db_tx', {
@@ -68,12 +72,15 @@ const DB_RPC_BY_OPERATION = Object.freeze({
   }],
   '/db/revs': (payload) => ['db_revs', { p_paths: (payload.paths || []).map((path) => normalizePath(path)) }],
   '/db/ping': () => ['db_ping', {}],
-  '/db/is_admin': () => ['db_is_admin', {}]
+  '/db/is_admin': () => ['db_is_admin', {}],
+  '/db/daemon_check': () => ['db_daemon_check', {}]
 });
 
 let workerReachable = true;
 let warnedMissingWorkerUrl = false;
 const subscriptions = new Map();
+// Coleções lidas só pelas linhas abertas ou recentes (ver setDbRecentReadWindows).
+let recentReadWindows = {};
 const getPathInflight = new Map();
 const getPathCache = new Map();
 let getCacheVersion = 1;
@@ -206,7 +213,7 @@ function isRetryableWorkerError(error) {
 }
 
 function getCachedPathEntry(path = '') {
-  if (DB_GET_CACHE_TTL_MS <= 0) return null;
+  if (dbGetCacheTtlMs <= 0) return null;
   const safePath = normalizePath(path);
   const cached = getPathCache.get(safePath);
   if (!cached) return null;
@@ -221,12 +228,12 @@ function getCachedPathEntry(path = '') {
 }
 
 function setCachedPathEntry(path = '', value = null, rev = 0) {
-  if (DB_GET_CACHE_TTL_MS <= 0) return;
+  if (dbGetCacheTtlMs <= 0) return;
   const safePath = normalizePath(path);
   getPathCache.set(safePath, {
     value: deepClone(value),
     rev: Math.max(0, Number(rev || 0)),
-    expiresAtMs: Date.now() + DB_GET_CACHE_TTL_MS
+    expiresAtMs: Date.now() + dbGetCacheTtlMs
   });
 }
 
@@ -341,7 +348,7 @@ async function requestInMemory(pathname, payload = {}) {
   const body = payload && typeof payload === 'object' ? payload : {};
   const path = normalizePath(body.path);
 
-  if (pathname === '/db/get') {
+  if (pathname === '/db/get' || pathname === '/db/get_recent') {
     const value = readNodeValue(inMemoryState.data, path);
     const rev = getEffectiveRevision(path);
     return {
@@ -406,7 +413,7 @@ async function requestInMemory(pathname, payload = {}) {
     return { ok: true, now_ms: Date.now() };
   }
 
-  if (pathname === '/db/is_admin') {
+  if (pathname === '/db/is_admin' || pathname === '/db/daemon_check') {
     return false;
   }
 
@@ -528,6 +535,15 @@ function probeWorkerReachability(force = false) {
 async function fetchPathWithRevision(path = '', options = {}) {
   const safePath = normalizePath(path);
   const forceFresh = options?.forceFresh === true;
+  const recentWindowMs = Math.max(0, Number(recentReadWindows[safePath] || 0));
+  if (recentWindowMs && options?.full === true) {
+    // Transações gravam o valor lido de volta: leitura completa, fora do cache parcial.
+    const payload = await requestWorker('/db/get', { path: safePath });
+    return {
+      value: payload?.value ?? null,
+      rev: Math.max(0, Number(payload?.rev || 0))
+    };
+  }
   if (!forceFresh) {
     const cached = getCachedPathEntry(safePath);
     if (cached) return cached;
@@ -537,7 +553,9 @@ async function fetchPathWithRevision(path = '', options = {}) {
   if (inflight) return inflight;
 
   const requestVersion = getCacheVersion;
-  const requestPromise = requestWorker('/db/get', { path: safePath })
+  const requestPromise = (recentWindowMs
+    ? requestWorker('/db/get_recent', { path: safePath, window_ms: recentWindowMs })
+    : requestWorker('/db/get', { path: safePath }))
     .then((payload) => {
       const next = {
         value: payload?.value ?? null,
@@ -769,9 +787,36 @@ export async function get(targetRef) {
 }
 
 // Papel de admin vem do servidor (private.db_admins); o banco em memoria nunca e admin.
+export async function readServerTimeMs() {
+  const result = await requestWorker('/db/ping', {}, { maxRetries: 0, markReachability: false });
+  const nowMs = result?.now_ms;
+  if (!Number.isFinite(nowMs) || nowMs <= 0) throw new Error('Relogio do servidor invalido.');
+  return nowMs;
+}
+
 export async function isCurrentUserAdmin() {
   const result = await requestWorker('/db/is_admin', {}, { maxRetries: 1, markReachability: false });
   return result === true;
+}
+
+// Rota /api/bot-daemon: confere o token de vida curta enviado pelo pg_cron.
+export async function isDaemonTokenValid() {
+  const result = await requestWorker('/db/daemon_check', {}, { maxRetries: 1, markReachability: false });
+  return result === true;
+}
+
+// No servidor, um ciclo da automação relê as mesmas coleções várias vezes; um
+// cache maior evita baixar tudo de novo (as escritas do próprio ciclo o invalidam).
+export function setDbGetCacheTtlMs(ttlMs) {
+  dbGetCacheTtlMs = Math.max(0, Number(ttlMs || 0));
+  getPathCache.clear();
+}
+
+// No servidor: leituras de uma coleção inteira (ex.: pvp_matches) trazem só as linhas
+// com status de partida aberta ou gravadas na janela informada ({ caminho: ms }).
+export function setDbRecentReadWindows(windows = {}) {
+  recentReadWindows = windows && typeof windows === 'object' ? { ...windows } : {};
+  getPathCache.clear();
 }
 
 export async function set(targetRef, value) {
@@ -818,7 +863,7 @@ export async function runTransaction(targetRef, updaterFn) {
     return { committed: false, snapshot: makeSnapshot(resolveConnectionState()) };
   }
 
-  let current = await fetchPathWithRevision(safeRef.path, { forceFresh: true });
+  let current = await fetchPathWithRevision(safeRef.path, { forceFresh: true, full: true });
   let retries = 0;
 
   while (retries < DB_TX_MAX_RETRIES) {

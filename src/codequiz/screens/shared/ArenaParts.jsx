@@ -1,7 +1,7 @@
 import { Check, Clock, Flame, Radar, Sprout, Zap } from 'lucide-react';
 import { KNOWLEDGE_AREAS } from '../../app/helpers';
 import { DIFFICULTY_LABELS } from '../../lib/constants';
-import { Avatar, Badge, Button, cx } from '../../ui';
+import { Avatar, Badge, Button, TierBadge, cx } from '../../ui';
 import styles from './Arena.module.css';
 
 const STATE_BADGES = {
@@ -64,27 +64,28 @@ const DIFFICULTY_CHIPS = [
   { id: 'hard', icon: Zap, className: styles.chipHard }
 ];
 
-export function DifficultyPicker({ value, onChoose, disabled = false, label = 'Dificuldade' }) {
+// Dificuldade do PvP: não é escolha do jogador. Mostra a mistura de perguntas que a
+// liga dele define (na partida vale a média da liga de quem joga).
+export function DifficultyMix({ league, mix, label = 'Dificuldade pela sua liga' }) {
   return (
     <div className={styles.pickerGroup}>
-      <span className={styles.pickerLabel}>{label}</span>
-      <div className={styles.chips} role="radiogroup" aria-label={label}>
+      <span className={styles.mixHead}>
+        <span className={styles.pickerLabel}>{label}</span>
+        {league ? <TierBadge tierKey={league.key} label={`${league.emblem} ${league.label}`} size="sm" /> : null}
+      </span>
+      <div className={styles.chips} aria-label="Proporção das perguntas por dificuldade">
         {DIFFICULTY_CHIPS.map((chip) => {
           const Icon = chip.icon;
-          const active = value === chip.id;
+          const pct = Math.max(0, Math.round(Number(mix?.[chip.id] || 0)));
           return (
-            <button
+            <span
               key={chip.id}
-              type="button"
-              role="radio"
-              aria-checked={active}
-              className={cx(styles.chip, chip.className, active ? styles.chipActive : '')}
-              disabled={disabled}
-              onClick={() => onChoose(chip.id)}
+              className={cx(styles.chip, styles.mixChip, chip.className, pct ? '' : styles.mixChipOff)}
             >
               <Icon aria-hidden="true" strokeWidth={2.6} />
-              {DIFFICULTY_LABELS[chip.id]}
-            </button>
+              <span className={styles.mixPct}>{pct}%</span>
+              <span className={styles.mixName}>{DIFFICULTY_LABELS[chip.id]}</span>
+            </span>
           );
         })}
       </div>

@@ -15,7 +15,18 @@ O bot deve obedecer as mesmas regras de dados, ranking e partida que um usuario 
   - `bot_sys_codequiz_bdevonly` -> nickname `bDevOnly` -> gender `neutral`
   - `bot_sys_codequiz_flakael` -> nickname `Flakael` -> gender `male`
   - `bot_sys_codequiz_z3n` -> nickname `z3n` -> gender `neutral`
-- Total oficial: `9` bots.
+  - `bot_sys_codequiz_capivara42` -> nickname `capivara42` -> gender `neutral`
+  - `bot_sys_codequiz_juhzinha` -> nickname `Juhzinha` -> gender `female`
+  - `bot_sys_codequiz_kaiqu3` -> nickname `kaiqu3` -> gender `male`
+  - `bot_sys_codequiz_l1via` -> nickname `L1via` -> gender `female`
+  - `bot_sys_codequiz_ma7eus` -> nickname `Ma7eus` -> gender `male`
+  - `bot_sys_codequiz_biaxs` -> nickname `Biaxs` -> gender `female`
+  - `bot_sys_codequiz_nandobr` -> nickname `nandoBR` -> gender `male`
+  - `bot_sys_codequiz_nyx77` -> nickname `nyx77` -> gender `neutral`
+  - `bot_sys_codequiz_melcosta` -> nickname `MelCosta` -> gender `female`
+  - `bot_sys_codequiz_pipoca07` -> nickname `pipoca07` -> gender `neutral`
+- Total oficial: `19` bots.
+- As regras abaixo sao conferidas para todo o roster em `tests/system-bots-roster.test.cjs`.
 - Todos os bots oficiais estao com classe/forca travada em `forte`.
 - Cada bot tem personalidade valida (`provocador`, `analitico`, `calmo`).
 - Economia e visual individual (`src/codequiz/lib/botProgression.js`):
@@ -116,13 +127,15 @@ O bot deve obedecer as mesmas regras de dados, ranking e partida que um usuario 
   - Na pratica atual, bots oficiais ficam travados em `forte` (90%).
 - Estilo de jogo contra pessoas (duelo, 2x2 e Um contra todos), em
   `BOT_PLAY_STYLE_BY_BOT_ID` / `BOT_PLAY_STYLES` (`src/codequiz/app/helpers.js`):
-  - `elite` (ThiagoAra, bDevOnly, 0rbita): os melhores do jogo, 90% fixos; os erros
+  - `elite` (ThiagoAra, bDevOnly, 0rbita, L1via): os melhores do jogo, 90% fixos; os erros
     caem em rodadas sorteadas (exatamente 9 de 10), sem padrao para decorar.
-  - `competitivo` (tr3vo_azul, Zefira, Flakael): base 75%; com vantagem relaxa
-    (-8 pontos percentuais por ponto, ate -22), atras aperta (+5 por ponto, ate +12)
-    e na reta final empatado ou um ponto atras se concentra (+5).
-  - `oscilante` (Sopro, lua9, z3n): base 67%, fase do dia sorteada por partida (+-8)
-    e mais espaco para viradas.
+  - `competitivo` (tr3vo_azul, Zefira, Flakael, kaiqu3, Ma7eus, Biaxs, nyx77): base 75%;
+    com vantagem relaxa (-8 pontos percentuais por ponto, ate -22), atras aperta
+    (+5 por ponto, ate +12) e na reta final empatado ou um ponto atras se concentra (+5).
+  - `oscilante` (Sopro, lua9, z3n, capivara42, Juhzinha, nandoBR, MelCosta, pipoca07):
+    base 67%, fase do dia sorteada por partida (+-8) e mais espaco para viradas.
+  - Bot novo precisa entrar em um dos tres estilos; a maioria fica fora da elite, como
+    acontece entre jogadores de verdade.
   - No 2x2 o placar considerado e o do time; na eliminatoria, o do bot contra quem
     duela com ele. Bot contra bot nao se ajusta ao placar.
   - Tudo e sorteio fixo por partida/bot/rodada (todos os aparelhos chegam a mesma
@@ -232,6 +245,13 @@ O bot deve obedecer as mesmas regras de dados, ranking e partida que um usuario 
    - `users/<botId>` com moldura/fundo padrao e o emoji de assinatura do estilo do bot.
    - adicionar o estilo do bot em `SYSTEM_BOT_STYLES` (`src/codequiz/lib/botProgression.js`)
      com um emoji de assinatura que nenhum outro bot use.
+   - o emoji de assinatura tem de ser um emoji comum de 20 moedas da loja (o credito
+     inicial do jogador); se todos ja tiverem dono, criar um novo em `SHOP_ITEMS`
+     (`src/codequiz/lib/shop.js`), que tambem fica a venda para os jogadores.
+   - `avatar` do roster = icone do emoji de assinatura.
+   - pool de 6 emojis de batalha em `BOT_EMOJI_POOL_BY_BOT_ID` e estilo de jogo em
+     `BOT_PLAY_STYLE_BY_BOT_ID` (`src/codequiz/app/helpers.js`); os emojis do pool tem
+     de estar em `POPULAR_WHATSAPP_EMOJIS`, senao sao trocados por um padrao.
 5. Garantir seed de stats:
    - `user_stats/<botId>` com estado inicial completo.
 6. Confirmar matchmaking:

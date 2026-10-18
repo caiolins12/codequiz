@@ -18,6 +18,7 @@ export default function PvpEliminationResultScreen({ vm }) {
   const {
     buildCosmeticSnapshot,
     collectPvpEliminationResultRewards,
+    pvpEliminationLeaverNotice,
     pvpEliminationMyUserId,
     pvpEliminationPlacementLabel,
     pvpEliminationResultKey,
@@ -58,8 +59,10 @@ export default function PvpEliminationResultScreen({ vm }) {
           <section className={cx(outcome.hero, view.tone)}>
             <span className={outcome.heroIcon} aria-hidden="true"><Icon strokeWidth={2.4} /></span>
             <h1 className={outcome.heroTitle}>{view.title}</h1>
-            <p className={outcome.heroText}>
-              {key === 'win' ? 'Você venceu todos os ciclos da arena.' : `Você terminou em ${placementLabel}.`}
+            {/* Partida encerrada porque o adversário saiu: o aviso ocupa o lugar do texto padrão */}
+            <p className={outcome.heroText} role={pvpEliminationLeaverNotice ? 'status' : undefined}>
+              {pvpEliminationLeaverNotice
+                || (key === 'win' ? 'Você venceu todos os ciclos da arena.' : `Você terminou em ${placementLabel}.`)}
             </p>
             <div className={outcome.heroMeta}>
               <Badge tone={key === 'win' ? 'gold' : 'violet'} icon={Medal}>{placementLabel}</Badge>

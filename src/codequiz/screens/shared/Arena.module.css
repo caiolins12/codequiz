@@ -151,6 +151,36 @@
   color: #10092e;
 }
 
+/* Mistura automática de dificuldade (PvP): chips só de leitura */
+.mixHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--cq-space-2);
+}
+
+.mixChip {
+  gap: 0;
+  align-content: center;
+  cursor: default;
+}
+
+.mixPct {
+  font-size: var(--cq-text-lg);
+  line-height: 1.1;
+}
+
+.mixName {
+  color: var(--cq-text-2);
+  font-family: var(--cq-font-body);
+  font-size: var(--cq-text-xs);
+  font-weight: 700;
+}
+
+.mixChipOff {
+  opacity: 0.5;
+}
+
 .chipEasy { --chip-color: var(--cq-lime); --chip-shade: var(--cq-lime-dark); }
 .chipMedium { --chip-color: var(--cq-orange); --chip-shade: var(--cq-orange-dark); }
 .chipHard { --chip-color: var(--cq-pink); --chip-shade: var(--cq-pink-dark); }
@@ -601,6 +631,10 @@
     min-height: 52px;
     padding: 6px;
     font-size: var(--cq-text-sm);
+  }
+
+  .mixChip svg {
+    display: none;
   }
 
   .areas {

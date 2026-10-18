@@ -145,6 +145,114 @@ export const SYSTEM_BOT_STYLES = Object.freeze({
       'emoji_object_anchor', 'bg_aurora', 'frame_sakura'
     ],
     keepSignatureEmoji: true
+  },
+  bot_sys_codequiz_capivara42: {
+    label: 'Capivara tranquila',
+    signatureEmoji: 'emoji_common_calm',
+    spending: 'equilibrado',
+    reserveCoins: 5,
+    favorites: [
+      'frame_amber', 'bg_turquoise', 'frame_sunrise', 'bg_ocean', 'frame_lime', 'bg_sunset'
+    ],
+    keepSignatureEmoji: true
+  },
+  bot_sys_codequiz_juhzinha: {
+    label: 'Fofa colecionadora',
+    signatureEmoji: 'emoji_common_hug',
+    spending: 'colecionador',
+    reserveCoins: 0,
+    favorites: [
+      'emoji_animal_dog', 'bg_rose', 'frame_gold', 'emoji_animal_cat', 'bg_sunset',
+      'emoji_object_gem', 'frame_diamond'
+    ],
+    keepSignatureEmoji: false
+  },
+  bot_sys_codequiz_kaiqu3: {
+    label: 'Zoeiro impulsivo',
+    signatureEmoji: 'emoji_common_silly',
+    spending: 'impulsivo',
+    reserveCoins: 0,
+    favorites: [
+      'frame_amber', 'emoji_animal_monkey', 'bg_turquoise', 'emoji_figurative_goblin',
+      'frame_neonwave', 'bg_voltage', 'emoji_figurative_troll', 'bg_kanji_reactor'
+    ],
+    keepSignatureEmoji: false
+  },
+  bot_sys_codequiz_l1via: {
+    label: 'Analítica precisa',
+    signatureEmoji: 'emoji_common_doubt',
+    spending: 'poupador',
+    reserveCoins: 15,
+    favorites: [
+      'frame_slate', 'bg_violet', 'frame_ice', 'emoji_object_target', 'bg_aurora',
+      'frame_diamond', 'emoji_prof_detective'
+    ],
+    keepSignatureEmoji: false
+  },
+  bot_sys_codequiz_ma7eus: {
+    label: 'Focado na vitória',
+    signatureEmoji: 'emoji_common_determined',
+    spending: 'equilibrado',
+    reserveCoins: 0,
+    favorites: [
+      'bg_graphite', 'frame_gold', 'emoji_animal_tiger', 'frame_ruby', 'bg_voltage',
+      'emoji_object_shield', 'frame_diamond', 'bg_tribal_cipher'
+    ],
+    keepSignatureEmoji: false
+  },
+  bot_sys_codequiz_biaxs: {
+    label: 'Provocadora estilosa',
+    signatureEmoji: 'emoji_common_giggle',
+    spending: 'impulsivo',
+    reserveCoins: 0,
+    favorites: [
+      'bg_rose', 'frame_gold', 'emoji_animal_fox', 'bg_violet', 'frame_ruby',
+      'emoji_crown', 'bg_sunset', 'frame_phoenix'
+    ],
+    keepSignatureEmoji: false
+  },
+  bot_sys_codequiz_nandobr: {
+    label: 'Gente boa',
+    signatureEmoji: 'emoji_common_grin',
+    spending: 'poupador',
+    reserveCoins: 10,
+    favorites: [
+      'frame_amber', 'bg_dawn', 'emoji_animal_lion', 'frame_gold', 'bg_ocean',
+      'frame_lime', 'emoji_object_trophy'
+    ],
+    keepSignatureEmoji: false
+  },
+  bot_sys_codequiz_nyx77: {
+    label: 'Noturno',
+    signatureEmoji: 'emoji_common_upside',
+    spending: 'equilibrado',
+    reserveCoins: 5,
+    favorites: [
+      'bg_graphite', 'emoji_figurative_ghost', 'bg_violet', 'frame_neonwave',
+      'emoji_object_crystal', 'frame_arcane', 'bg_kanji_storm'
+    ],
+    keepSignatureEmoji: false
+  },
+  bot_sys_codequiz_melcosta: {
+    label: 'Estudiosa doce',
+    signatureEmoji: 'emoji_common_angel',
+    spending: 'poupador',
+    reserveCoins: 10,
+    favorites: [
+      'bg_turquoise', 'frame_mint', 'bg_dawn', 'frame_ice', 'bg_aurora', 'frame_aurora'
+    ],
+    keepSignatureEmoji: true
+  },
+  bot_sys_codequiz_pipoca07: {
+    label: 'Cinéfila animada',
+    signatureEmoji: 'emoji_common_star',
+    spending: 'colecionador',
+    reserveCoins: 0,
+    favorites: [
+      'emoji_animal_panda', 'frame_sunrise', 'emoji_figurative_monster', 'bg_violet',
+      'emoji_figurative_dragon', 'frame_fire', 'bg_sunset'
+    ],
+    keepSignatureEmoji: false
   }
 });
 
