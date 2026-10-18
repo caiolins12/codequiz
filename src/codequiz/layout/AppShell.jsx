@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Brain, History, Music, Music2, Settings, SkipForward, VolumeX } from 'lucide-react';
 import { Avatar, CoinIcon, IconButton, ProgressBar, StatPill, TierBadge, Toast, cx } from '../ui';
 import { NAV_TABS } from './nav';
+import ScreenTransition from './ScreenTransition';
 import styles from './AppShell.module.css';
 
 function Brand({ onClick }) {
@@ -228,8 +229,10 @@ export function SplashScreen({ message = 'Inicializando sua sessão...' }) {
 }
 
 // mode: 'tabs' (com navegação) | 'focus' (tela cheia, sem menus)
+// transitionKey: muda a cada troca de tela; dispara a transição suave entre elas
 export default function AppShell({
   mode = 'tabs',
+  transitionKey = '',
   activeTab = null,
   showTopBar = true,
   onNavigate,
@@ -241,6 +244,7 @@ export default function AppShell({
   children
 }) {
   const [menuPlacement, setMenuPlacement] = useState('');
+  const shellRef = useRef(null);
   const tabsMode = mode === 'tabs';
   const closeMenu = () => setMenuPlacement('');
 
@@ -255,7 +259,8 @@ export default function AppShell({
   }, [activeTab, mode]);
 
   return (
-    <div className={cx(styles.shell, className)} data-shell-mode={mode}>
+    <div className={cx(styles.shell, className)} data-shell-mode={mode} ref={shellRef}>
+      <ScreenTransition shellRef={shellRef} transitionKey={transitionKey} mode={mode} />
       <div className={styles.backdrop} aria-hidden="true">
         <div className={styles.grid} />
       </div>

@@ -3,6 +3,7 @@
   "private": true,
   "version": "1.0.0",
   "scripts": {
+    "test": "node --test tests/*.test.cjs",
     "dev": "node scripts/generate-build-meta.js && next dev",
     "build": "node scripts/generate-build-meta.js && next build",
     "build:vercel": "node scripts/generate-build-meta.js && next build",

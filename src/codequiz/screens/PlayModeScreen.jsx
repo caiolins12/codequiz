@@ -1,7 +1,5 @@
 import { ArrowRight, Check, Swords, Target } from 'lucide-react';
-import { KNOWLEDGE_AREAS } from '../app/helpers';
-import { PageHeader, SectionHeader, cx } from '../ui';
-import AreaCard, { getAreaSummary } from './shared/AreaCard';
+import { PageHeader, cx } from '../ui';
 import styles from './PlayModeScreen.module.css';
 
 function ModeCard({ variant, icon: Icon, kicker, title, points, cta, onClick }) {
@@ -32,12 +30,7 @@ function ModeCard({ variant, icon: Icon, kicker, title, points, cta, onClick }) 
 }
 
 export default function PlayModeScreen({ vm }) {
-  const {
-    chooseKnowledgeAreaForPve,
-    languageProgress,
-    startPveFlow,
-    startPvpFlow
-  } = vm;
+  const { startPveFlow, startPvpFlow } = vm;
 
   return (
     <div className={styles.screen}>
@@ -62,37 +55,6 @@ export default function PlayModeScreen({ vm }) {
           cta="Entrar na arena"
           onClick={startPvpFlow}
         />
-      </section>
-
-      {/* Mobile: atalhos das áreas em uma linha */}
-      <nav className={styles.areaTiles} aria-label="Atalhos do treino">
-        {KNOWLEDGE_AREAS.map((area) => {
-          const summary = getAreaSummary(area.id, languageProgress);
-          return (
-            <button
-              key={area.id}
-              type="button"
-              className={styles.areaTile}
-              style={{ '--area-color': area.color }}
-              onClick={() => chooseKnowledgeAreaForPve(area.id)}
-            >
-              <span className={styles.areaTileIcon} aria-hidden="true">{area.icon}</span>
-              <span className={styles.areaTileName}>{area.name}</span>
-              <span className={styles.areaTileMeta}>{summary.tracks} trilhas · {summary.progress}%</span>
-            </button>
-          );
-        })}
-      </nav>
-
-      <section className={styles.areas}>
-        <SectionHeader title="Atalhos do treino" subtitle="Vá direto para as trilhas de uma área." />
-        <ul className={styles.areaList}>
-          {KNOWLEDGE_AREAS.map((area) => (
-            <li key={area.id}>
-              <AreaCard area={area} summary={getAreaSummary(area.id, languageProgress)} onSelect={chooseKnowledgeAreaForPve} />
-            </li>
-          ))}
-        </ul>
       </section>
     </div>
   );

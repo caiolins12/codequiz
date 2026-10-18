@@ -5,8 +5,10 @@
 }
 
 /* Em sala, fila ou aceite o shell entra em modo foco (sem abas e sem margens):
-   a tela passa a trazer as próprias margens, como as telas de batalha */
-[data-shell-mode='focus'] .screen {
+   a tela passa a trazer as próprias margens, como as telas de batalha.
+   Só o div do shell (não o <html>) decide o modo: a cópia da tela anterior usada na
+   transição carrega o modo dela. */
+div[data-shell-mode='focus'] .screen {
   width: 100%;
   max-width: var(--cq-content-max);
   min-height: 100dvh;
@@ -19,14 +21,14 @@
 }
 
 @media (min-width: 768px) {
-  [data-shell-mode='focus'] .screen {
+  div[data-shell-mode='focus'] .screen {
     padding-left: calc(var(--cq-space-6) + var(--cq-safe-left));
     padding-right: calc(var(--cq-space-6) + var(--cq-safe-right));
   }
 }
 
 @media (min-width: 1024px) {
-  [data-shell-mode='focus'] .screen {
+  div[data-shell-mode='focus'] .screen {
     padding: var(--cq-space-8) var(--cq-space-8) var(--cq-space-12);
   }
 }
@@ -174,6 +176,47 @@
   font-size: 24px;
 }
 
+/* Sala 2x2: faixa compacta com os emojis da partida entre os times e o botão de iniciar */
+.emojiStrip {
+  display: flex;
+  align-items: center;
+  gap: var(--cq-space-3);
+  min-width: 0;
+  padding: var(--cq-space-3) var(--cq-space-4);
+  border-radius: var(--cq-radius-lg);
+  background: var(--cq-surface-1);
+  background-image: var(--cq-grad-surface);
+  box-shadow: var(--cq-shadow-card), inset 0 0 0 1px var(--cq-border);
+}
+
+.emojiStripLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  font-family: var(--cq-font-display);
+  font-size: var(--cq-text-md);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.emojiStripLabel svg {
+  width: 20px;
+  height: 20px;
+  color: var(--cq-violet-light);
+}
+
+.emojiStrip .emojiRow {
+  flex: 1 1 auto;
+  justify-content: center;
+  flex-wrap: nowrap;
+  min-width: 0;
+}
+
+.emojiStrip > button {
+  flex-shrink: 0;
+}
+
 .muted {
   color: var(--cq-text-3);
   font-weight: 700;
@@ -266,64 +309,247 @@ button.room:hover {
 .dotRed { background: var(--cq-red); }
 .dotBlue { background: var(--cq-blue); }
 
-.sides {
+/* Sala 2x2 "frente a frente": um time em cada faixa e o VS na costura entre elas.
+   Do tablet para cima as faixas ficam lado a lado com a borda de dentro inclinada;
+   no celular elas empilham (ver o bloco mobile). */
+.arena {
   display: grid;
-  gap: var(--cq-space-4);
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: stretch;
 }
 
-.sidePanel {
+.band {
   --side-color: var(--cq-red);
-  display: grid;
-  gap: var(--cq-space-3);
-  padding: var(--cq-space-4);
+  --slant: 36px;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--cq-space-4);
+  min-width: 0;
+  min-height: 0;
+  padding: var(--cq-space-5);
   border-radius: var(--cq-radius-xl);
   background:
-    linear-gradient(160deg, color-mix(in srgb, var(--side-color) 22%, transparent), transparent 60%),
+    radial-gradient(circle at 12% 0%, rgba(255, 255, 255, 0.16), transparent 42%),
+    linear-gradient(160deg, color-mix(in srgb, var(--side-color) 58%, transparent), color-mix(in srgb, var(--side-color) 10%, transparent) 78%),
     var(--cq-surface-1);
-  box-shadow: var(--cq-shadow-card), inset 0 0 0 2px color-mix(in srgb, var(--side-color) 35%, transparent);
+  transition: filter var(--cq-dur-base) var(--cq-ease-out);
 }
 
-.sideBlue {
+.bandRed {
+  padding-right: calc(var(--cq-space-5) + var(--slant));
+  clip-path: polygon(0 0, 100% 0, calc(100% - var(--slant)) 100%, 0 100%);
+}
+
+.bandBlue {
   --side-color: var(--cq-blue);
+  padding-left: calc(var(--cq-space-5) + var(--slant));
+  background:
+    radial-gradient(circle at 88% 0%, rgba(255, 255, 255, 0.16), transparent 42%),
+    linear-gradient(200deg, color-mix(in srgb, var(--side-color) 58%, transparent), color-mix(in srgb, var(--side-color) 10%, transparent) 78%),
+    var(--cq-surface-1);
+  clip-path: polygon(var(--slant) 0, 100% 0, 100% 100%, 0 100%);
 }
 
-.sideMine {
-  box-shadow: var(--cq-shadow-card), inset 0 0 0 3px var(--side-color);
+.bandJoinable {
+  cursor: pointer;
 }
 
-.sideHead {
+.bandJoinable:hover {
+  filter: brightness(1.1);
+}
+
+.bandHead {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: var(--cq-space-2);
+  min-width: 0;
+  flex-shrink: 0;
+}
+
+.bandName {
   font-family: var(--cq-font-display);
-  font-size: var(--cq-text-lg);
+  font-size: var(--cq-text-2xl);
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.25);
+}
+
+.bandCount {
+  padding: 3px 8px;
+  border-radius: var(--cq-radius-pill);
+  background: rgba(10, 6, 34, 0.35);
+  font-family: var(--cq-font-mono);
+  font-size: var(--cq-text-xs);
   font-weight: 700;
 }
 
-.slot {
+.bandAside {
   display: flex;
   align-items: center;
-  gap: var(--cq-space-3);
-  min-height: 68px;
-  padding: var(--cq-space-3);
-  border-radius: var(--cq-radius-lg);
-  border: 2px dashed rgba(255, 255, 255, 0.16);
-  color: var(--cq-text-3);
+  gap: 6px;
+  min-width: 0;
+  margin-left: auto;
+}
+
+.bandTag {
+  padding: 5px 10px;
+  border-radius: var(--cq-radius-pill);
+  background: rgba(10, 6, 34, 0.35);
+  color: var(--cq-text-2);
+  font-size: var(--cq-text-xs);
   font-weight: 800;
+  white-space: nowrap;
+}
+
+.bandSwap {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 34px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: var(--cq-radius-pill);
+  background: rgba(255, 255, 255, 0.2);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.28);
+  color: #fff;
+  font-family: var(--cq-font-body);
+  font-size: var(--cq-text-sm);
+  font-weight: 800;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background var(--cq-dur-fast) var(--cq-ease-out);
+}
+
+.bandSwap:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+.bandSwap:focus-visible {
+  outline: 3px solid #fff;
+  outline-offset: 2px;
+}
+
+.bandSwap svg {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+.bandPlayers {
+  flex: 1 1 auto;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--cq-space-3);
+  min-height: 0;
+}
+
+.bandPlayers > div {
+  min-width: 0;
+  min-height: 0;
+}
+
+.bandPlayers > div :global(.cq-avatar) {
+  --avatar-size: 64px;
+}
+
+.seam {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--cq-space-3);
+  margin-inline: -44px;
+  pointer-events: none;
+}
+
+.vs {
+  display: grid;
+  place-items: center;
+  width: 76px;
+  height: 76px;
+  border-radius: 50%;
+  background: var(--cq-grad-gold);
+  color: var(--cq-text-inverse);
+  font-family: var(--cq-font-display);
+  font-size: var(--cq-text-2xl);
+  font-weight: 700;
+  box-shadow:
+    0 0 0 5px var(--cq-bg-0),
+    0 0 0 8px rgba(255, 210, 74, 0.3),
+    0 10px 26px rgba(255, 173, 31, 0.42);
+  transform: rotate(-8deg);
+  animation: vsIn var(--cq-dur-slow) var(--cq-ease-bounce);
+}
+
+@keyframes vsIn {
+  0% { opacity: 0; transform: rotate(-8deg) scale(0.6); }
+  70% { opacity: 1; transform: rotate(-8deg) scale(1.08); }
+  100% { opacity: 1; transform: rotate(-8deg) scale(1); }
+}
+
+.seamPill {
+  padding: 5px 11px;
+  border-radius: var(--cq-radius-pill);
+  background: var(--cq-bg-0);
+  box-shadow: inset 0 0 0 1px var(--cq-border-strong);
+  color: var(--cq-text-2);
+  font-size: var(--cq-text-xs);
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.seamPillReady {
+  color: var(--cq-lime);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cq-lime) 55%, transparent);
+}
+
+/* Vaga aberta: mesmo tamanho do cartão de jogador */
+.slot {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--cq-space-2);
+  padding: var(--cq-space-4) var(--cq-space-2);
+  border-radius: var(--cq-radius-lg);
+  border: 2px dashed rgba(255, 255, 255, 0.3);
+  background: rgba(10, 6, 34, 0.22);
+  color: var(--cq-text-1);
+  font-weight: 800;
+  text-align: center;
+  overflow: hidden;
 }
 
 .slotPlus {
   display: grid;
   place-items: center;
-  width: 40px;
-  height: 40px;
+  flex-shrink: 0;
+  width: 48px;
+  height: 48px;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.1);
 }
 
 .slotPlus svg {
-  width: 20px;
-  height: 20px;
+  width: 22px;
+  height: 22px;
+}
+
+.slotText {
+  display: grid;
+  gap: 2px;
+  line-height: 1.2;
+}
+
+.slotText small {
+  color: rgba(255, 255, 255, 0.7);
+  font-size: var(--cq-text-xs);
+  font-weight: 700;
 }
 
 .roomActions {
@@ -353,10 +579,6 @@ button.room:hover {
 }
 
 @media (min-width: 768px) {
-  .sides {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
   .rooms {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -388,6 +610,11 @@ button.room:hover {
 
   .roomActions > button {
     width: min(100%, 420px);
+  }
+
+  .emojiStrip {
+    justify-self: center;
+    width: min(100%, 640px);
   }
 }
 
@@ -506,10 +733,10 @@ button.room:hover {
   }
 
   /* Modo foco (sala, fila, aceite): a tela tem exatamente a altura do celular e o miolo
-     se ajusta a ela, sem rolagem. Na sala 2x2: título (nome da sala), etiquetas, os dois
-     times lado a lado ocupando o espaço livre e o botão no rodapé; os cartões encolhem
-     quando a tela é baixa. */
-  [data-shell-mode='focus'] .screen {
+     se ajusta a ela, sem rolagem. Na sala 2x2: título (nome da sala), etiquetas, as duas
+     faixas dos times empilhadas com o VS na costura ocupando o espaço livre, e o botão no
+     rodapé; os cartões encolhem quando a tela é baixa. */
+  div[data-shell-mode='focus'] .screen {
     height: 100dvh;
   }
 
@@ -525,59 +752,99 @@ button.room:hover {
     margin-top: -2px;
   }
 
-  .sides {
+  .arena {
     flex: 1 1 auto;
     min-height: 0;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 10px;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) auto minmax(0, 1fr);
   }
 
-  .sidePanel {
-    grid-template-rows: auto repeat(2, minmax(0, 1fr)) auto;
-    min-height: 0;
+  .band {
+    --slant: 22px;
     gap: var(--cq-space-2);
-    padding: var(--cq-space-2);
+    padding: 10px;
     border-radius: var(--cq-radius-lg);
   }
 
-  .sideHead {
+  .bandRed {
+    padding-right: 10px;
+    padding-bottom: calc(10px + var(--slant));
+    clip-path: polygon(0 0, 100% 0, 100% calc(100% - var(--slant)), 0 100%);
+  }
+
+  .bandBlue {
+    padding-left: 10px;
+    padding-top: calc(10px + var(--slant));
+    clip-path: polygon(0 var(--slant), 100% 0, 100% 100%, 0 100%);
+  }
+
+  /* Azul espelhado: o nome do time fica embaixo, longe do VS */
+  .bandBlue .bandHead {
+    order: 2;
+  }
+
+  .bandHead {
+    padding-inline: 4px;
+  }
+
+  .bandName {
+    font-size: var(--cq-text-xl);
+  }
+
+  .bandSwap {
+    min-height: 32px;
+    padding: 0 10px;
+  }
+
+  .bandPlayers {
+    grid-template-rows: minmax(0, 1fr);
+    gap: var(--cq-space-2);
+  }
+
+  /* Cartão do jogador e vaga aberta preenchem a faixa e não vazam dela */
+  .bandPlayers > div {
     gap: 4px;
-    min-width: 0;
-    padding: 4px 2px 0 6px;
-    font-size: var(--cq-text-md);
-  }
-
-  .sideHead > span:first-child {
+    padding: var(--cq-space-2) 6px;
     overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
   }
 
-  /* Cartão do jogador e vaga aberta preenchem a linha do grid e não vazam dela */
-  .sidePanel > div {
-    min-height: 0;
+  .bandPlayers > div :global(.cq-avatar) {
+    --avatar-size: 52px;
+  }
+
+  .seam {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    gap: var(--cq-space-2);
+    margin: -28px 0;
+  }
+
+  .seam > :first-child {
+    justify-self: end;
+  }
+
+  .seam > :last-child {
+    justify-self: start;
+  }
+
+  .vs {
+    width: 56px;
+    height: 56px;
+    font-size: var(--cq-text-xl);
+    box-shadow:
+      0 0 0 4px var(--cq-bg-0),
+      0 0 0 6px rgba(255, 210, 74, 0.3),
+      0 8px 20px rgba(255, 173, 31, 0.42);
   }
 
   .slot {
-    flex-direction: column;
-    justify-content: center;
     gap: 6px;
-    min-height: 0;
-    padding: var(--cq-space-2);
-    overflow: hidden;
     font-size: var(--cq-text-sm);
-    text-align: center;
   }
 
   .slotPlus {
-    flex-shrink: 0;
     width: 40px;
     height: 40px;
-  }
-
-  .sidePanel > button {
-    min-height: 44px;
-    padding-inline: var(--cq-space-2);
   }
 
   .labelLong {
@@ -591,6 +858,32 @@ button.room:hover {
   .roomActions {
     flex-shrink: 0;
     gap: var(--cq-space-2);
+  }
+
+  /* Faixa de emojis da sala: os emojis encolhem juntos para caber em uma linha */
+  .emojiStrip {
+    flex-shrink: 0;
+    gap: var(--cq-space-2);
+    padding: var(--cq-space-2) var(--cq-space-3);
+  }
+
+  .emojiStrip .emojiRow {
+    gap: 4px;
+  }
+
+  .emojiStrip .emoji {
+    flex: 1 1 0;
+    min-width: 0;
+    max-width: 34px;
+    height: auto;
+    aspect-ratio: 1;
+    font-size: 18px;
+    line-height: 1;
+  }
+
+  /* No celular o rótulo fica só com o ícone: o espaço vai para os emojis */
+  .emojiStripLabel > span {
+    display: none;
   }
 
   .roomActions > p {
@@ -648,11 +941,6 @@ button.room:hover {
   .groupGrid > div {
     min-height: 0;
   }
-
-  /* Jogadores da sala: avatar maior quando há altura de sobra */
-  .sidePanel :global(.cq-avatar) {
-    --avatar-size: 52px;
-  }
 }
 
 /* Dentro da sala, o título e as etiquetas ficam juntos */
@@ -662,14 +950,14 @@ button.room:hover {
 
 /* Celulares altos: cartões dos jogadores com mais presença */
 @media (max-width: 767px) and (min-height: 800px) {
-  .sidePanel :global(.cq-avatar) {
+  .bandPlayers > div :global(.cq-avatar) {
     --avatar-size: 64px;
   }
 }
 
 /* Celulares baixos (ex.: navegador com barras visíveis): sala e fila mais compactas */
 @media (max-width: 767px) and (max-height: 720px) {
-  .sidePanel :global(.cq-avatar) {
+  .bandPlayers > div :global(.cq-avatar) {
     --avatar-size: 42px;
   }
 
@@ -679,22 +967,68 @@ button.room:hover {
   }
 }
 
+/* Celular baixo: o cartão do jogador fica só com avatar, apelido e etiqueta (Líder/Pronto).
+   Filhos do texto do PlayerCard: apelido, "Nv. · pts" e etiquetas. */
+@media (max-width: 767px) and (max-height: 700px) {
+  .bandPlayers > div {
+    gap: 2px;
+    padding: 4px;
+  }
+
+  .bandPlayers > div :global(.cq-avatar) {
+    --avatar-size: 38px;
+  }
+
+  .bandPlayers > div :global(.cq-avatar) + span > :nth-child(2):not(:last-child) {
+    display: none;
+  }
+
+  .bandPlayers > div :global(.cq-avatar) + span > :last-child {
+    margin-top: 2px;
+  }
+}
+
 @media (max-width: 767px) and (max-height: 620px) {
   .screenRoom {
     gap: 10px;
   }
 
-  .sidePanel {
-    gap: 6px;
+  .band {
+    --slant: 14px;
+    gap: 4px;
     padding: 6px;
   }
 
-  .sidePanel :global(.cq-avatar) {
-    --avatar-size: 36px;
+  .bandRed {
+    padding-right: 6px;
+    padding-bottom: calc(6px + var(--slant));
   }
 
-  .sidePanel > button {
-    min-height: 40px;
+  .bandBlue {
+    padding-left: 6px;
+    padding-top: calc(6px + var(--slant));
+  }
+
+  .bandName {
+    font-size: var(--cq-text-lg);
+  }
+
+  .bandSwap {
+    min-height: 28px;
+  }
+
+  .bandPlayers > div :global(.cq-avatar) {
+    --avatar-size: 30px;
+  }
+
+  .seam {
+    margin: -22px 0;
+  }
+
+  .vs {
+    width: 44px;
+    height: 44px;
+    font-size: var(--cq-text-md);
   }
 
   .slot {

@@ -123,14 +123,17 @@ import {
   touchPvpTeamRoomPresence
 } from './lib/repository';
 import {
+  PVP_GROUP_BOT_AMBIENT_TICK_MS,
   PVP_GROUP_BOT_FIRST_ANSWER_EMOJI_CHANCE,
   PVP_GROUP_MODE_ELIMINATION,
   PVP_GROUP_MODE_TEAM,
   PVP_GROUP_PRESENCE_HEARTBEAT_MS,
+  PVP_GROUP_RESULT_BOT_EMOJI_WINDOW_MS,
   advancePvpGroupMatch,
   applyPvpGroupMatchBotRewards,
   finalizePvpGroupBattle,
   getPvpGroupBattlePairIds,
+  getPvpGroupBattleQuestion,
   getPvpGroupBattleTiming,
   getPvpGroupEmojiDriverId,
   getPvpGroupForfeitOutcome,
@@ -142,8 +145,10 @@ import {
   isPvpEliminationBattleReadyToFinalize,
   isPvpTeamBattleReadyToFinalize,
   leavePvpGroupMatch,
-  pickPvpGroupBotEmojiReply,
+  pickPvpGroupBotEmojiReplies,
+  planPvpGroupBotAmbientEmoji,
   planPvpGroupBotEliminationEmojis,
+  planPvpGroupBotFinalEmojis,
   planPvpGroupBotRoundEmojis,
   releasePvpGroupBots,
   removePvpGroupRoomMembers,
@@ -185,6 +190,7 @@ import {
   getPvpResultForUser,
   getRoundDurationSeconds,
   isPvpAnswerCorrect,
+  isPvpDuelMatchSnapshotObsolete,
   PVP_ROUNDS_PER_MATCH,
   resolvePvpCorrectIndex,
   resolveMatchWinner,
@@ -243,6 +249,7 @@ import {
   PVP_ELIMINATION_ROUNDS_PER_CYCLE,
   PVP_EMOJI_PICKER_OPTIONS,
   PVP_EMOJI_SPAM_BURST_LIMIT,
+  PVP_EMOJI_FX_DURATION_MS,
   PVP_EMOJI_SPAM_COOLDOWN_MS,
   PVP_EMOJI_SPAM_WINDOW_MS,
   PVP_EMOJI_STORAGE_PREFIX,
@@ -402,7 +409,9 @@ import {
   normalizeShopTab,
   nowIso,
   pickBotAnswerIndex,
+  pickBotMoodEmoji,
   pickPveRoundQuestionsByTopicSequence,
+  pickPvpEmojiFxLane,
   pickPvpQuestionSetBySequence,
   queueFlowLog,
   readHomeTourSeenLocal,
@@ -413,6 +422,7 @@ import {
   resolveKnowledgeAreaByLanguageId,
   resolveMatchQueueJoinedAtMs,
   resolveQuestionThemeContext,
+  schedulePvpEmojiReplay,
   shouldResumeQueueAfterMatchRefused,
   toAdminDayKey,
   toMillis,
@@ -745,6 +755,7 @@ export default function CodeQuizApp() {
   const pvpEliminationQueueStateRef = useRef(pvpEliminationQueueState);
   const pvpTeamRoomAccessHashRef = useRef({});
   const pvpTeamFinalizeBusyRef = useRef(false);
+  const pvpTeamAnswerBattleKeyRef = useRef('');
   const handledPvpTeamMatchIdsRef = useRef(new Set());
   const seenPvpTeamRoomNoticeIdsRef = useRef(new Set());
   const pvpEliminationQueueBusyRef = useRef(false);
@@ -755,6 +766,7 @@ export default function CodeQuizApp() {
   const pvpEliminationBotDecisionKeyRef = useRef('');
   const pvpEliminationBotDecisionRejectedIdsRef = useRef([]);
   const pvpEliminationFinalizeBusyRef = useRef(false);
+  const pvpEliminationAnswerBattleKeyRef = useRef('');
   const handledPvpEliminationMatchIdsRef = useRef(new Set());
   const seenPvpEliminationRoomNoticeIdsRef = useRef(new Set());
   const dismissedPvpEliminationExitPromptIdsRef = useRef(new Set());
@@ -795,6 +807,11 @@ export default function CodeQuizApp() {
   const pvpRealtimeAnswersUpdateAtRef = useRef(0);
   const pvpSeenEmojiEventIdsRef = useRef(new Set());
   const pvpSeenEmojiEventOrderRef = useRef([]);
+  // Ritmo de exibição por remetente, timers dos emojis na tela e, por partida, os ids
+  // de emoji já lidos (o histórico não reaparece ao reabrir o canal).
+  const pvpEmojiReplayLanesRef = useRef(new Map());
+  const pvpEmojiFxTimersRef = useRef({ duel: [], group: [] });
+  const pvpEmojiKnownIdsRef = useRef(new Map());
   const pvpEmojiSendQueueRef = useRef([]);
   const pvpEmojiSendBusyRef = useRef(false);
   const pvpEmojiSendCountRef = useRef(0);
@@ -907,6 +924,10 @@ export default function CodeQuizApp() {
   const pvpGroupBotEmojiTimersRef = useRef([]);
   const pvpGroupBotEmojiKeysRef = useRef(new Set());
   const pvpGroupBotEmojiReplyAtRef = useRef(0);
+  const pvpGroupBotEmojiChatAtRef = useRef(0);
+  const pvpGroupBotEmojiLastAtRef = useRef(0);
+  const pvpGroupResultScreenModeRef = useRef('');
+  const pvpGroupAmbientAnswersRef = useRef({ team: [], elimination: [] });
   const swRegRef = useRef(null);
   const waitingWorkerRef = useRef(null);
   const updateCheckBusyRef = useRef(false);
@@ -1552,6 +1573,8 @@ export default function CodeQuizApp() {
           setPvpTeamMatch(null);
           return;
         }
+        if (isPvpGroupMatchSnapshotObsolete(pvpTeamMatchRef.current, row)) return;
+        pvpTeamMatchRef.current = row;
         if (String(row?.room_id || '').trim()) {
           setPvpTeamRoomId(String(row.room_id).trim());
         }
@@ -1577,18 +1600,33 @@ export default function CodeQuizApp() {
     const matchId = String(match?.id || pvpTeamMatchId || '').trim();
     const battleNo = getPvpTeamMatchBattleNo(match, status);
     if (!matchId || !battleNo) return;
+    const answerBattleKey = JSON.stringify([matchId, battleNo, authUser?.uid || '']);
+    if (status === 'active' && pvpTeamAnswerBattleKeyRef.current !== answerBattleKey) {
+      pvpTeamAnswerBattleKeyRef.current = answerBattleKey;
+      setPvpTeamAnswers([]);
+      setPvpTeamSubmitted(false);
+      setPvpTeamSelectedIndex(null);
+    }
 
     const unsubscribe = subscribePvpTeamBattleAnswers(
       matchId,
       battleNo,
       (rows) => {
+        const live = pvpTeamMatchRef.current;
+        const liveStatus = String(live?.status || '').trim().toLowerCase();
+        if (String(live?.id || '') !== matchId || liveStatus !== status
+          || getPvpTeamMatchBattleNo(live, liveStatus) !== battleNo) return;
         const safeRows = getPvpTeamCurrentBattleAnswers(rows, battleNo);
         const myAnswer = safeRows.find((row) => String(row?.user_id || '').trim() === String(authUser?.uid || '').trim());
         const answerIdx = Number(myAnswer?.answer_idx ?? -1);
-        const hasCommittedAnswer = !!myAnswer;
+        const hasCommittedAnswer = !!myAnswer && Number.isFinite(answerIdx) && answerIdx >= 0;
         setPvpTeamAnswers(safeRows);
-        setPvpTeamSubmitted(hasCommittedAnswer);
-        setPvpTeamSelectedIndex(hasCommittedAnswer ? answerIdx : null);
+        // O snapshot também chega quando só o adversário responde. A escolha local
+        // e o bloqueio de um envio pendente pertencem a esta rodada até confirmá-la.
+        if (hasCommittedAnswer) {
+          setPvpTeamSubmitted(true);
+          setPvpTeamSelectedIndex(answerIdx);
+        }
       },
       (error) => {
         console.error('team answers subscription failed:', error);
@@ -1754,7 +1792,9 @@ export default function CodeQuizApp() {
         }
         setPvpEliminationRoom(row);
         const matchId = String(row.match_id || '').trim();
-        if (matchId && String(row.status || '').trim().toLowerCase() === 'active') {
+        const knownMatchFinished = String(pvpEliminationMatchRef.current?.id || '') === matchId
+          && String(pvpEliminationMatchRef.current?.status || '').trim().toLowerCase() === 'finished';
+        if (matchId && String(row.status || '').trim().toLowerCase() === 'active' && !knownMatchFinished) {
           const roomMemberIds = getPvpEliminationMembers(row).map((member) => String(member?.user_id || '').trim()).filter(Boolean);
           const myUserId = String(authUser?.uid || '').trim();
           if (myUserId && !roomMemberIds.includes(myUserId)) return;
@@ -1855,6 +1895,8 @@ export default function CodeQuizApp() {
           setPvpEliminationMatchId('');
           return;
         }
+        if (isPvpGroupMatchSnapshotObsolete(pvpEliminationMatchRef.current, row)) return;
+        pvpEliminationMatchRef.current = row;
         if (String(row?.room_id || '').trim()) {
           setPvpEliminationRoomId(String(row.room_id).trim());
         }
@@ -1918,11 +1960,24 @@ export default function CodeQuizApp() {
       Number(status === 'active' ? match?.battle_no : (match?.result_battle_no || match?.battle_no || 1))
     );
     if (!matchId || !battleNo) return;
+    const answerBattleKey = JSON.stringify([matchId, battleNo, authUser?.uid || '']);
+    if (status === 'active' && pvpEliminationAnswerBattleKeyRef.current !== answerBattleKey) {
+      pvpEliminationAnswerBattleKeyRef.current = answerBattleKey;
+      setPvpEliminationAnswers([]);
+      setPvpEliminationSubmitted(false);
+      setPvpEliminationSelectedIndex(null);
+    }
 
     const unsubscribe = subscribePvpEliminationBattleAnswers(
       matchId,
       battleNo,
       (rows) => {
+        const live = pvpEliminationMatchRef.current;
+        const liveStatus = String(live?.status || '').trim().toLowerCase();
+        const liveBattleNo = Math.max(1, Number(liveStatus === 'active'
+          ? live?.battle_no
+          : (live?.result_battle_no || live?.battle_no || 1)));
+        if (String(live?.id || '') !== matchId || liveStatus !== status || liveBattleNo !== battleNo) return;
         const safeRows = (Array.isArray(rows) ? rows : [])
           .filter((row) => row && typeof row === 'object')
           .map((row) => ({
@@ -1930,15 +1985,17 @@ export default function CodeQuizApp() {
             battle_no: Math.max(1, Number(row?.battle_no || battleNo)),
             user_id: String(row?.user_id || '').trim()
           }))
-          .filter((row) => !!row.user_id);
+          .filter((row) => !!row.user_id && row.battle_no === battleNo);
         const myUserId = String(authUser?.uid || '').trim();
         const myAnswer = safeRows.find((row) => row.user_id === myUserId);
         const answerIdx = Number(myAnswer?.answer_idx ?? -1);
         const hasCommittedAnswer = !!myAnswer && Number.isFinite(answerIdx) && answerIdx >= 0;
         setPvpEliminationAnswers(safeRows);
         if (status === 'active') {
-          setPvpEliminationSubmitted(hasCommittedAnswer);
-          setPvpEliminationSelectedIndex(hasCommittedAnswer ? answerIdx : null);
+          if (hasCommittedAnswer) {
+            setPvpEliminationSubmitted(true);
+            setPvpEliminationSelectedIndex(answerIdx);
+          }
         } else {
           setPvpEliminationSubmitted(false);
           setPvpEliminationSelectedIndex(null);
@@ -2007,11 +2064,19 @@ export default function CodeQuizApp() {
       });
   }, [pvpEliminationMatch?.id, pvpEliminationMatch?.updated_at, pvpEliminationMatch?.status, pvpClockMs]);
 
-  // Emojis nas partidas 2x2 e Um contra todos: canal aberto enquanto há confronto ou resultado na tela.
-  const pvpTeamEmojiChannelOpen = ['active', 'round_result']
-    .includes(String(pvpTeamMatch?.status || '').trim().toLowerCase());
-  const pvpEliminationEmojiChannelOpen = ['active', 'round_result', 'elimination_result']
-    .includes(String(pvpEliminationMatch?.status || '').trim().toLowerCase());
+  // Emojis nas partidas 2x2 e Um contra todos: canal aberto enquanto há confronto ou
+  // resultado na tela, inclusive na tela de resultado final da partida.
+  const pvpGroupResultScreenMode = screen === 'pvp-team-result'
+    ? PVP_GROUP_MODE_TEAM
+    : (screen === 'pvp-elimination-result' ? PVP_GROUP_MODE_ELIMINATION : '');
+  pvpGroupResultScreenModeRef.current = pvpGroupResultScreenMode;
+  pvpGroupAmbientAnswersRef.current = { team: pvpTeamAnswers, elimination: pvpEliminationAnswers };
+  const pvpTeamMatchStatus = String(pvpTeamMatch?.status || '').trim().toLowerCase();
+  const pvpEliminationMatchStatus = String(pvpEliminationMatch?.status || '').trim().toLowerCase();
+  const pvpTeamEmojiChannelOpen = ['active', 'round_result'].includes(pvpTeamMatchStatus)
+    || (pvpTeamMatchStatus === 'finished' && pvpGroupResultScreenMode === PVP_GROUP_MODE_TEAM);
+  const pvpEliminationEmojiChannelOpen = ['active', 'round_result', 'elimination_result'].includes(pvpEliminationMatchStatus)
+    || (pvpEliminationMatchStatus === 'finished' && pvpGroupResultScreenMode === PVP_GROUP_MODE_ELIMINATION);
 
   useEffect(() => {
     const matchId = String(pvpTeamMatch?.id || '').trim();
@@ -2028,9 +2093,12 @@ export default function CodeQuizApp() {
   // Trocou de partida (ou saiu): limpa os emojis na tela e as reações agendadas dos bots.
   useEffect(() => {
     setPvpGroupEmojiFx([]);
+    clearPvpEmojiFxTimers('group');
     clearPvpGroupBotEmojiTimers();
     pvpGroupBotEmojiKeysRef.current = new Set();
     pvpGroupBotEmojiReplyAtRef.current = 0;
+    pvpGroupBotEmojiChatAtRef.current = 0;
+    pvpGroupBotEmojiLastAtRef.current = 0;
     return () => clearPvpGroupBotEmojiTimers();
   }, [pvpTeamMatch?.id, pvpEliminationMatch?.id]);
 
@@ -2040,9 +2108,7 @@ export default function CodeQuizApp() {
     if (String(match?.status || '').trim().toLowerCase() !== 'round_result' || !match?.id) return;
     if (!isPvpGroupEmojiDriver(PVP_GROUP_MODE_TEAM, match)) return;
     if (!rememberPvpGroupBotEmojiKey(`${match.id}_round_${match.result_battle_no || match.battle_no}`)) return;
-    planPvpGroupBotRoundEmojis(match, PVP_GROUP_MODE_TEAM).forEach((entry) => {
-      queuePvpGroupBotEmojis(PVP_GROUP_MODE_TEAM, match.id, entry.botId, entry.count, entry.delayMs);
-    });
+    queuePvpGroupBotEmojiPlan(PVP_GROUP_MODE_TEAM, match.id, planPvpGroupBotRoundEmojis(match, PVP_GROUP_MODE_TEAM));
   }, [pvpTeamMatch?.id, pvpTeamMatch?.status, pvpTeamMatch?.result_battle_no, authUser?.uid]);
 
   useEffect(() => {
@@ -2054,10 +2120,45 @@ export default function CodeQuizApp() {
     const plan = status === 'elimination_result'
       ? planPvpGroupBotEliminationEmojis(match)
       : planPvpGroupBotRoundEmojis(match, PVP_GROUP_MODE_ELIMINATION);
-    plan.forEach((entry) => {
-      queuePvpGroupBotEmojis(PVP_GROUP_MODE_ELIMINATION, match.id, entry.botId, entry.count, entry.delayMs);
-    });
+    queuePvpGroupBotEmojiPlan(PVP_GROUP_MODE_ELIMINATION, match.id, plan);
   }, [pvpEliminationMatch?.id, pvpEliminationMatch?.status, pvpEliminationMatch?.result_battle_no, authUser?.uid]);
+
+  // Tela de resultado final: os bots comemoram ou cumprimentam assim que ela abre.
+  useEffect(() => {
+    const mode = pvpGroupResultScreenMode;
+    if (!mode) return;
+    const match = mode === PVP_GROUP_MODE_TEAM ? pvpTeamMatch : pvpEliminationMatch;
+    if (String(match?.status || '').trim().toLowerCase() !== 'finished' || !match?.id) return;
+    if (!isPvpGroupEmojiDriver(mode, match)) return;
+    if (!rememberPvpGroupBotEmojiKey(`${match.id}_final`)) return;
+    queuePvpGroupBotEmojiPlan(mode, match.id, planPvpGroupBotFinalEmojis(match, mode));
+  }, [
+    pvpGroupResultScreenMode,
+    pvpTeamMatch?.id,
+    pvpTeamMatch?.status,
+    pvpEliminationMatch?.id,
+    pvpEliminationMatch?.status,
+    authUser?.uid
+  ]);
+
+  // Conversa de fundo dos bots enquanto o canal de emojis está aberto.
+  useEffect(() => {
+    const matchId = String(pvpTeamMatch?.id || '').trim();
+    if (!matchId || !pvpTeamEmojiChannelOpen || typeof window === 'undefined') return undefined;
+    const intervalId = window.setInterval(() => {
+      tickPvpGroupBotAmbientEmoji(PVP_GROUP_MODE_TEAM, pvpGroupAmbientAnswersRef.current.team);
+    }, PVP_GROUP_BOT_AMBIENT_TICK_MS);
+    return () => window.clearInterval(intervalId);
+  }, [pvpTeamMatch?.id, pvpTeamEmojiChannelOpen, authUser?.uid]);
+
+  useEffect(() => {
+    const matchId = String(pvpEliminationMatch?.id || '').trim();
+    if (!matchId || !pvpEliminationEmojiChannelOpen || typeof window === 'undefined') return undefined;
+    const intervalId = window.setInterval(() => {
+      tickPvpGroupBotAmbientEmoji(PVP_GROUP_MODE_ELIMINATION, pvpGroupAmbientAnswersRef.current.elimination);
+    }, PVP_GROUP_BOT_AMBIENT_TICK_MS);
+    return () => window.clearInterval(intervalId);
+  }, [pvpEliminationMatch?.id, pvpEliminationEmojiChannelOpen, authUser?.uid]);
 
   useEffect(() => {
     schedulePvpGroupFirstAnswerEmojis(PVP_GROUP_MODE_TEAM, pvpTeamMatch, pvpTeamAnswers);
@@ -2155,6 +2256,18 @@ export default function CodeQuizApp() {
 
   useEffect(() => {
     pvpEmojiCooldownUntilRef.current = Math.max(0, Number(pvpEmojiCooldownUntilMs || 0));
+  }, [pvpEmojiCooldownUntilMs]);
+
+  // Na tela de resultado o relógio do PvP está parado: durante a pausa anti-spam dos
+  // emojis ele anda para a contagem da pausa nos botões aparecer e terminar.
+  useEffect(() => {
+    const untilMs = Math.max(0, Number(pvpEmojiCooldownUntilMs || 0));
+    if (!untilMs || untilMs <= Date.now()) return undefined;
+    const timer = setInterval(() => {
+      setPvpClockMs(Date.now());
+      if (Date.now() >= untilMs) clearInterval(timer);
+    }, 150);
+    return () => clearInterval(timer);
   }, [pvpEmojiCooldownUntilMs]);
 
   useEffect(() => {
@@ -6489,18 +6602,62 @@ export default function CodeQuizApp() {
     return true;
   }
 
-  function buildPvpEmojiFxEntry(id, emoji, side, currentFx = []) {
-    const safeSide = String(side || '').trim() === 'left' ? 'left' : 'right';
-    const safeFx = Array.isArray(currentFx) ? currentFx : [];
-    const sameSideCount = safeFx.filter((item) => item?.side === safeSide).length;
-    const lane = sameSideCount % 3;
-    return {
-      id,
-      emoji,
-      side: safeSide,
-      topPct: 58 - (lane * 7),
-      offsetPx: lane * 10
+  // Emojis na tela de dois canais: o duelo 1x1 e as partidas em grupo. Cada canal tem
+  // os próprios timers, para limpar um sem deixar emojis do outro presos na tela.
+  function getPvpEmojiFxSetter(channel) {
+    return channel === 'group' ? setPvpGroupEmojiFx : setPvpEmojiFx;
+  }
+
+  function trackPvpEmojiFxTimer(channel, callback, delayMs) {
+    const timers = pvpEmojiFxTimersRef.current;
+    const timerId = window.setTimeout(() => {
+      timers[channel] = (timers[channel] || []).filter((id) => id !== timerId);
+      callback();
+    }, Math.max(0, delayMs));
+    timers[channel] = [...(timers[channel] || []), timerId];
+  }
+
+  function clearPvpEmojiFxTimers(channel) {
+    const timers = pvpEmojiFxTimersRef.current;
+    if (typeof window !== 'undefined') {
+      (timers[channel] || []).forEach((timerId) => window.clearTimeout(timerId));
+    }
+    timers[channel] = [];
+    Array.from(pvpEmojiReplayLanesRef.current.keys())
+      .filter((key) => key.startsWith(`${channel}|`))
+      .forEach((key) => pvpEmojiReplayLanesRef.current.delete(key));
+  }
+
+  // Mostra um emoji no ritmo em que o remetente mandou: um lote que chega junto pelo
+  // polling sai espaçado como foi enviado, cada emoji numa faixa livre do seu lado,
+  // e só sai da tela depois da animação completa.
+  function showPvpEmojiFx(channel, { fxId, emoji, side, label = '', senderKey = '', sentAtMs = 0 }) {
+    if (typeof window === 'undefined') return;
+    const setFx = getPvpEmojiFxSetter(channel);
+    const nowMs = Date.now();
+    const laneKey = `${channel}|${String(senderKey || side || '')}`;
+    const replay = schedulePvpEmojiReplay(pvpEmojiReplayLanesRef.current.get(laneKey), sentAtMs, nowMs);
+    if (replay.drop) return;
+    pvpEmojiReplayLanesRef.current.set(laneKey, replay.lane);
+    const safeSide = side === 'left' ? 'left' : 'right';
+    const appear = () => {
+      setFx((prev) => {
+        if (prev.some((item) => item.id === fxId)) return prev;
+        return [
+          ...prev,
+          { id: fxId, emoji, side: safeSide, label, shownAtMs: Date.now(), ...pickPvpEmojiFxLane(prev, safeSide) }
+        ];
+      });
+      trackPvpEmojiFxTimer(channel, () => {
+        setFx((prev) => prev.filter((item) => item.id !== fxId));
+      }, PVP_EMOJI_FX_DURATION_MS + 120);
     };
+    const waitMs = replay.showAtMs - nowMs;
+    if (waitMs < 16) {
+      appear();
+      return;
+    }
+    trackPvpEmojiFxTimer(channel, appear, waitMs);
   }
 
   function addPvpEmojiFxFromEvent(event) {
@@ -6509,16 +6666,17 @@ export default function CodeQuizApp() {
     if (!rememberPvpEmojiEventId(eventId)) return;
     const senderId = String(safeEvent.sender_user_id || '').trim();
     const emoji = String(safeEvent.emoji || '').trim() || '💬';
-    const side = senderId && senderId === String(pvpStateRef.current?.match?.player1_user_id || '').trim()
+    const match = pvpStateRef.current?.match;
+    const side = senderId && senderId === String(match?.player1_user_id || '').trim()
       ? 'left'
       : 'right';
-    const fxId = `pvp_emoji_${eventId}`;
-    setPvpEmojiFx((prev) => [...prev, buildPvpEmojiFxEntry(fxId, emoji, side, prev)]);
-    if (typeof window !== 'undefined') {
-      window.setTimeout(() => {
-        setPvpEmojiFx((prev) => prev.filter((item) => item.id !== fxId));
-      }, 1350);
-    }
+    showPvpEmojiFx('duel', {
+      fxId: `pvp_emoji_${eventId}`,
+      emoji,
+      side,
+      senderKey: `${String(match?.id || '')}:${senderId}`,
+      sentAtMs: safeEvent.sent_at_ms
+    });
     setLatestPvpEmojiEvent({
       id: eventId,
       sender_user_id: senderId,
@@ -6571,7 +6729,9 @@ export default function CodeQuizApp() {
       const openStatuses = mode === PVP_GROUP_MODE_TEAM
         ? ['active', 'round_result']
         : ['active', 'round_result', 'elimination_result'];
-      return String(match?.id || '').trim() === safeMatchId && openStatuses.includes(status);
+      // Na tela de resultado final o canal continua aberto para comemorar e cumprimentar.
+      const onResultScreen = status === 'finished' && pvpGroupResultScreenModeRef.current === mode;
+      return String(match?.id || '').trim() === safeMatchId && (openStatuses.includes(status) || onResultScreen);
     }
     const current = pvpStateRef.current;
     const currentMatchId = String(current?.match?.id || current?.matchId || '').trim();
@@ -6684,21 +6844,25 @@ export default function CodeQuizApp() {
     return { label, side: memberIndex % 2 === 0 ? 'left' : 'right' };
   }
 
-  function showPvpGroupEmojiFx(fxId, emoji, placement) {
-    setPvpGroupEmojiFx((prev) => [
-      ...prev,
-      { ...buildPvpEmojiFxEntry(fxId, emoji, placement.side, prev), label: placement.label }
-    ]);
-    if (typeof window !== 'undefined') {
-      window.setTimeout(() => {
-        setPvpGroupEmojiFx((prev) => prev.filter((item) => item.id !== fxId));
-      }, 1700);
-    }
+  function showPvpGroupEmojiFx(fxId, emoji, placement, senderKey = '', sentAtMs = 0) {
+    showPvpEmojiFx('group', {
+      fxId,
+      emoji,
+      side: placement.side,
+      label: placement.label,
+      senderKey,
+      sentAtMs
+    });
   }
 
   function isPvpGroupEmojiDriver(mode, match) {
     const myUserId = String(authUser?.uid || '').trim();
-    return !!myUserId && getPvpGroupEmojiDriverId(match, mode) === myUserId;
+    if (!myUserId) return false;
+    const driverId = getPvpGroupEmojiDriverId(match, mode);
+    if (driverId) return driverId === myUserId;
+    // Ninguém mais conta como presente (ex.: saíram com a colocação na eliminatória):
+    // quem ainda está vendo a partida conduz os bots.
+    return getPvpGroupMatchMemberIds(match, mode).includes(myUserId);
   }
 
   function rememberPvpGroupBotEmojiKey(key) {
@@ -6714,35 +6878,51 @@ export default function CodeQuizApp() {
     pvpGroupBotEmojiTimersRef.current = [];
   }
 
-  function queuePvpGroupBotEmojis(mode, matchId, botId, count = 1, initialDelayMs = 0) {
+  // Agenda os emojis de um bot. O emoji combina com o clima do momento (comemorar,
+  // lamentar, provocar, torcer, pensar, cumprimentar) ou repete o emoji indicado.
+  function queuePvpGroupBotEmojis(mode, matchId, botId, count = 1, initialDelayMs = 0, mood = '', fixedEmoji = '') {
     const safeMatchId = String(matchId || '').trim();
     const safeBotId = String(botId || '').trim();
     if (!safeMatchId || !isSystemBotUserId(safeBotId) || typeof window === 'undefined') return;
-    const pool = getBotEmojiPool(BOT_CONFIG_DEFAULT.personality, safeBotId);
-    if (!pool.length) return;
     let delayMs = Math.max(0, Number(initialDelayMs || 0));
-    for (let index = 0; index < Math.max(1, Number(count || 1)); index += 1) {
+    const total = Math.max(1, Math.min(3, Number(count || 1)));
+    for (let index = 0; index < total; index += 1) {
       const timerId = window.setTimeout(() => {
+        pvpGroupBotEmojiTimersRef.current = pvpGroupBotEmojiTimersRef.current.filter((id) => id !== timerId);
         if (!isPvpEmojiChannelOpen(mode, safeMatchId)) return;
-        const emoji = pool[Math.floor(Math.random() * pool.length)];
+        const emoji = (index === 0 && String(fixedEmoji || '').trim())
+          || pickBotMoodEmoji(safeBotId, mood, Math.random, BOT_CONFIG_DEFAULT.personality);
         const eventId = `${safeBotId}_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
         queuePvpEmojiSend(safeMatchId, safeBotId, emoji, eventId, mode);
       }, delayMs);
       pvpGroupBotEmojiTimersRef.current.push(timerId);
+      // A conversa de fundo espera os emojis já agendados saírem.
+      pvpGroupBotEmojiLastAtRef.current = Math.max(pvpGroupBotEmojiLastAtRef.current, Date.now() + delayMs);
       delayMs += Math.round(900 + Math.random() * 900);
     }
   }
 
-  // Alguém mandou emoji: às vezes um bot responde (no máximo uma resposta a cada 3s).
-  function queuePvpGroupBotEmojiReply(mode, senderId) {
+  function queuePvpGroupBotEmojiPlan(mode, matchId, plan) {
+    (Array.isArray(plan) ? plan : []).forEach((entry) => {
+      queuePvpGroupBotEmojis(mode, matchId, entry?.botId, entry?.count, entry?.delayMs, entry?.mood, entry?.emoji);
+    });
+  }
+
+  // Alguém mandou emoji e os bots respondem. Emoji de pessoa: quem agenda a resposta é o
+  // aparelho de quem mandou (sempre presente, e cada emoji puxa uma única rodada de
+  // respostas). Emoji de bot: o aparelho que conduz os bots, bem de vez em quando.
+  function queuePvpGroupBotEmojiReplies(mode, senderId, emoji = '') {
     const match = getPvpGroupEmojiMatch(mode);
-    if (!match?.id || !isPvpGroupEmojiDriver(mode, match)) return;
+    if (!match?.id || !isPvpEmojiChannelOpen(mode, match.id)) return;
+    const fromBot = isSystemBotUserId(senderId);
+    if (fromBot && !isPvpGroupEmojiDriver(mode, match)) return;
     const nowMs = Date.now();
-    if (nowMs - pvpGroupBotEmojiReplyAtRef.current < 3000) return;
-    const reply = pickPvpGroupBotEmojiReply(match, mode, senderId);
-    if (!reply) return;
-    pvpGroupBotEmojiReplyAtRef.current = nowMs;
-    queuePvpGroupBotEmojis(mode, match.id, reply.botId, reply.count, reply.delayMs);
+    const throttleRef = fromBot ? pvpGroupBotEmojiChatAtRef : pvpGroupBotEmojiReplyAtRef;
+    if (nowMs - throttleRef.current < (fromBot ? 8000 : 2500)) return;
+    const replies = pickPvpGroupBotEmojiReplies(match, mode, senderId, { emoji });
+    if (!replies.length) return;
+    throttleRef.current = nowMs;
+    queuePvpGroupBotEmojiPlan(mode, match.id, replies);
   }
 
   function sendPvpGroupEmoji(mode, emoji) {
@@ -6760,37 +6940,58 @@ export default function CodeQuizApp() {
     registerPvpEmojiSend(nowMs);
     const eventId = `${userId}_${nowMs}_${Math.floor(Math.random() * 10000)}`;
     rememberPvpEmojiEventId(eventId);
-    showPvpGroupEmojiFx(`pvp_group_emoji_local_${eventId}`, safeEmoji, getPvpGroupEmojiPlacement(match, mode, userId));
+    showPvpGroupEmojiFx(
+      `pvp_group_emoji_local_${eventId}`,
+      safeEmoji,
+      getPvpGroupEmojiPlacement(match, mode, userId),
+      `${match.id}:${userId}`,
+      nowMs
+    );
     queuePvpEmojiSend(String(match.id), userId, safeEmoji, eventId, mode);
-    queuePvpGroupBotEmojiReply(mode, userId);
+    queuePvpGroupBotEmojiReplies(mode, userId, safeEmoji);
     playSfx('notify');
   }
 
-  // Ouve os emojis da partida. A primeira leitura traz o histórico: só marca como visto,
-  // para não soltar de uma vez os emojis antigos ao entrar ou recarregar a página.
+  // Separa, numa leitura da lista de emojis da partida, só os que chegaram desde a
+  // leitura anterior. A primeira leitura de cada partida traz o histórico, que só é
+  // marcado como visto: não reaparece de uma vez ao entrar, recarregar a página ou
+  // reabrir o canal (na tela de resultado, por exemplo).
+  function takeNewPvpEmojiEvents(channelKey, events) {
+    const knownByChannel = pvpEmojiKnownIdsRef.current;
+    const safeEvents = Array.isArray(events) ? events : [];
+    const known = knownByChannel.get(channelKey);
+    if (!known) {
+      knownByChannel.set(channelKey, new Set(safeEvents.map((event) => String(event?.id || '').trim()).filter(Boolean)));
+      if (knownByChannel.size > 8) knownByChannel.delete(knownByChannel.keys().next().value);
+      return [];
+    }
+    return safeEvents.filter((event) => {
+      const eventId = String(event?.id || '').trim();
+      if (!eventId || known.has(eventId)) return false;
+      known.add(eventId);
+      return true;
+    });
+  }
+
   function subscribePvpGroupEmojis(mode, matchId) {
-    let primed = false;
     return subscribePvpEmojiEvents(
       matchId,
       (events) => {
-        const safeEvents = Array.isArray(events) ? events : [];
-        if (!primed) {
-          primed = true;
-          safeEvents.forEach((event) => rememberPvpEmojiEventId(event?.id));
-          return;
-        }
-        safeEvents.forEach((event) => {
+        takeNewPvpEmojiEvents(`${mode}:${matchId}`, events).forEach((event) => {
           const eventId = String(event?.id || '').trim();
           if (!rememberPvpEmojiEventId(eventId)) return;
           const match = getPvpGroupEmojiMatch(mode);
           const senderId = String(event?.sender_user_id || '').trim();
           if (!senderId || String(match?.id || '').trim() !== String(matchId)) return;
+          const emoji = String(event?.emoji || '').trim() || '💬';
           showPvpGroupEmojiFx(
             `pvp_group_emoji_${eventId}`,
-            String(event?.emoji || '').trim() || '💬',
-            getPvpGroupEmojiPlacement(match, mode, senderId)
+            emoji,
+            getPvpGroupEmojiPlacement(match, mode, senderId),
+            `${matchId}:${senderId}`,
+            event?.sent_at_ms
           );
-          if (!isSystemBotUserId(senderId)) queuePvpGroupBotEmojiReply(mode, senderId);
+          if (isSystemBotUserId(senderId)) queuePvpGroupBotEmojiReplies(mode, senderId, emoji);
         });
       },
       (error) => {
@@ -6814,9 +7015,29 @@ export default function CodeQuizApp() {
       if (answeredIds.includes(rivalId)) return;
       if (!rememberPvpGroupBotEmojiKey(`${match.id}_first_${battleNo}_${botId}`)) return;
       if (Math.random() < PVP_GROUP_BOT_FIRST_ANSWER_EMOJI_CHANCE) {
-        queuePvpGroupBotEmojis(mode, match.id, botId, 1, 1200 + Math.round(Math.random() * 1300));
+        queuePvpGroupBotEmojis(mode, match.id, botId, 1, 1200 + Math.round(Math.random() * 1300), 'tease');
       }
     });
+  }
+
+  // Conversa de fundo dos bots: a cada tique, quem conduz os bots sorteia se algum deles
+  // manda um emoji agora (durante o confronto, no resultado e na tela final).
+  function tickPvpGroupBotAmbientEmoji(mode, answers = []) {
+    const match = getPvpGroupEmojiMatch(mode);
+    if (!match?.id || !isPvpEmojiChannelOpen(mode, match.id) || !isPvpGroupEmojiDriver(mode, match)) return;
+    const nowMs = Date.now();
+    if (nowMs - pvpGroupBotEmojiLastAtRef.current < 2500) return;
+    const phase = String(match.status || '').trim().toLowerCase();
+    if (phase === 'finished') {
+      const endedAtMs = Math.max(0, Number(match.ended_at_ms || toMillis(match.ended_at) || 0));
+      if (endedAtMs && nowMs - endedAtMs > PVP_GROUP_RESULT_BOT_EMOJI_WINDOW_MS) return;
+    }
+    const battleNo = Math.max(1, Number(match.battle_no || 1));
+    const answeredIds = (Array.isArray(answers) ? answers : [])
+      .filter((row) => Math.max(1, Number(row?.battle_no || battleNo)) === battleNo && Number(row?.answer_idx ?? -1) >= 0)
+      .map((row) => String(row?.user_id || '').trim());
+    const entry = planPvpGroupBotAmbientEmoji(match, mode, { phase, answeredIds });
+    if (entry) queuePvpGroupBotEmojiPlan(mode, match.id, [entry]);
   }
 
   function resetQuizFlow() {
@@ -6853,6 +7074,7 @@ export default function CodeQuizApp() {
     setPvpResultReward(null);
     setPvpRewardCollecting(false);
     setRewardFxParticles([]);
+    clearPvpEmojiFxTimers('duel');
     setPvpEmojiFx([]);
     setLatestPvpEmojiEvent(null);
     setPvpEmojiCooldownUntilMs(0);
@@ -6890,6 +7112,7 @@ export default function CodeQuizApp() {
   function resetPvpTeamState() {
     pvpTeamRoomAccessHashRef.current = {};
     pvpTeamFinalizeBusyRef.current = false;
+    pvpTeamAnswerBattleKeyRef.current = '';
     pvpTeamBotFillRef.current = { roomId: '', membershipKey: '', dueAtMs: 0, busy: false };
     pvpTeamAutoStartRoomIdRef.current = '';
     setPvpTeamAutoStartPending(false);
@@ -6934,6 +7157,7 @@ export default function CodeQuizApp() {
     pvpEliminationBotDecisionKeyRef.current = '';
     pvpEliminationBotDecisionRejectedIdsRef.current = [];
     pvpEliminationFinalizeBusyRef.current = false;
+    pvpEliminationAnswerBattleKeyRef.current = '';
     handledPvpEliminationMatchIdsRef.current = new Set();
     seenPvpEliminationRoomNoticeIdsRef.current = new Set();
     dismissedPvpEliminationExitPromptIdsRef.current = new Set();
@@ -7189,9 +7413,7 @@ export default function CodeQuizApp() {
   }
 
   async function exitPvpEliminationWithPlacement() {
-    const match = pvpEliminationMatch && typeof pvpEliminationMatch === 'object'
-      ? pvpEliminationMatch
-      : null;
+    const match = pvpEliminationMatchRef.current || pvpEliminationMatch || null;
     const matchId = String(match?.id || '').trim();
     const myUserId = String(authUser?.uid || '').trim();
     if (!matchId || !myUserId) return;
@@ -10399,6 +10621,26 @@ export default function CodeQuizApp() {
     playSfx('notify');
   }
 
+  function isPvpGroupMatchSnapshotObsolete(current, incoming) {
+    if (!current?.id || String(current.id) !== String(incoming?.id || '')) return false;
+    const currentStatus = String(current.status || '').trim().toLowerCase();
+    const incomingStatus = String(incoming.status || '').trim().toLowerCase();
+    if (currentStatus === 'finished' && incomingStatus !== 'finished') return true;
+    if (current.winner_user_id && (incomingStatus === 'active' || incomingStatus === 'round_result')) return true;
+    const currentBattleNo = Number(current.battle_no || 1);
+    const incomingBattleNo = Number(incoming.battle_no || 1);
+    if (incomingBattleNo !== currentBattleNo) return incomingBattleNo < currentBattleNo;
+    const phaseOrder = { active: 0, round_result: 1, elimination_result: 2, finished: 3 };
+    return (phaseOrder[incomingStatus] ?? -1) < (phaseOrder[currentStatus] ?? -1);
+  }
+
+  function isPvpGroupAnswerBattleCurrent(mode, matchId, battleNo) {
+    const current = mode === PVP_GROUP_MODE_TEAM ? pvpTeamMatchRef.current : pvpEliminationMatchRef.current;
+    return String(current?.id || '') === String(matchId || '')
+      && String(current?.status || '').trim().toLowerCase() === 'active'
+      && Math.max(1, Number(current?.battle_no || 1)) === battleNo;
+  }
+
   async function submitPvpTeamAnswer(selectedIndex) {
     const match = pvpTeamMatch;
     const status = String(match?.status || '').trim().toLowerCase();
@@ -10415,7 +10657,7 @@ export default function CodeQuizApp() {
       return;
     }
 
-    const question = match?.question_set?.[battleNo - 1];
+    const question = getPvpGroupBattleQuestion(match, battleNo);
     const safeIndex = Math.max(0, Number(selectedIndex || 0));
     const isCorrect = safeIndex >= 0 && safeIndex === Number(question?.answer ?? -1);
     const nowMs = Date.now();
@@ -10443,16 +10685,21 @@ export default function CodeQuizApp() {
         answered_at: new Date(nowMs).toISOString(),
         created_at: new Date(nowMs).toISOString()
       });
+      if (!isPvpGroupAnswerBattleCurrent(PVP_GROUP_MODE_TEAM, match.id, battleNo)) return;
       if (!persistedAnswer || typeof persistedAnswer !== 'object') {
         throw new Error('missing_persisted_team_answer');
       }
       setPvpTeamAnswers((prev) => {
         const currentAnswers = Array.isArray(prev) ? prev : [];
-        const filtered = currentAnswers.filter((row) => String(row?.user_id || '').trim() !== myUserId);
+        const filtered = currentAnswers.filter((row) => Number(row?.battle_no || battleNo) === battleNo
+          && String(row?.user_id || '').trim() !== myUserId);
         return [...filtered, persistedAnswer];
       });
+      setPvpTeamSubmitted(true);
+      setPvpTeamSelectedIndex(Number(persistedAnswer.answer_idx));
     } catch (error) {
       console.error('submit team answer failed:', error);
+      if (!isPvpGroupAnswerBattleCurrent(PVP_GROUP_MODE_TEAM, match.id, battleNo)) return;
       setPvpTeamAnswers(previousAnswers);
       setPvpTeamSubmitted(previousSubmitted);
       setPvpTeamSelectedIndex(previousSelectedIndex);
@@ -10507,7 +10754,7 @@ export default function CodeQuizApp() {
       return;
     }
 
-    const question = match?.question_set?.[battleNo - 1];
+    const question = getPvpGroupBattleQuestion(match, battleNo);
     const safeIndex = Math.max(0, Number(selectedIndex || 0));
     const isCorrect = safeIndex >= 0 && safeIndex === Number(question?.answer ?? -1);
     const nowMs = Date.now();
@@ -10535,16 +10782,21 @@ export default function CodeQuizApp() {
         answered_at: new Date(nowMs).toISOString(),
         created_at: new Date(nowMs).toISOString()
       });
+      if (!isPvpGroupAnswerBattleCurrent(PVP_GROUP_MODE_ELIMINATION, match.id, battleNo)) return;
       if (!persistedAnswer || typeof persistedAnswer !== 'object') {
         throw new Error('missing_persisted_elimination_answer');
       }
       setPvpEliminationAnswers((prev) => {
         const currentAnswers = Array.isArray(prev) ? prev : [];
-        const filtered = currentAnswers.filter((row) => String(row?.user_id || '').trim() !== myUserId);
+        const filtered = currentAnswers.filter((row) => Number(row?.battle_no || battleNo) === battleNo
+          && String(row?.user_id || '').trim() !== myUserId);
         return [...filtered, persistedAnswer];
       });
+      setPvpEliminationSubmitted(true);
+      setPvpEliminationSelectedIndex(Number(persistedAnswer.answer_idx));
     } catch (error) {
       console.error('submit elimination answer failed:', error);
+      if (!isPvpGroupAnswerBattleCurrent(PVP_GROUP_MODE_ELIMINATION, match.id, battleNo)) return;
       setPvpEliminationAnswers(previousAnswers);
       setPvpEliminationSubmitted(previousSubmitted);
       setPvpEliminationSelectedIndex(previousSelectedIndex);
@@ -10583,9 +10835,14 @@ export default function CodeQuizApp() {
     registerPvpEmojiSend(nowMs);
 
     const eventId = `${userId}_${nowMs}_${Math.floor(Math.random() * 10000)}`;
-    const localFxId = `pvp_emoji_local_${eventId}`;
     const side = userId === String(match.player1_user_id || '').trim() ? 'left' : 'right';
-    setPvpEmojiFx((prev) => [...prev, buildPvpEmojiFxEntry(localFxId, safeEmoji, side, prev)]);
+    showPvpEmojiFx('duel', {
+      fxId: `pvp_emoji_local_${eventId}`,
+      emoji: safeEmoji,
+      side,
+      senderKey: `${String(match.id)}:${userId}`,
+      sentAtMs: nowMs
+    });
     rememberPvpEmojiEventId(eventId);
     setLatestPvpEmojiEvent({
       id: eventId,
@@ -10593,11 +10850,6 @@ export default function CodeQuizApp() {
       emoji: safeEmoji,
       sent_at_ms: Date.now()
     });
-    if (typeof window !== 'undefined') {
-      window.setTimeout(() => {
-        setPvpEmojiFx((prev) => prev.filter((item) => item.id !== localFxId));
-      }, 1200);
-    }
     queuePvpEmojiSend(String(match.id), userId, safeEmoji, eventId);
     playSfx('notify');
   }
@@ -10770,6 +11022,10 @@ export default function CodeQuizApp() {
     // Qualquer humano que viu o fim aplica o resultado dos bots (uma vez só por bot).
     applyPvpGroupBotRewardsOnce(PVP_GROUP_MODE_TEAM, matchRow);
 
+    if (matchRow.result_void === true) {
+      handledPvpTeamMatchIdsRef.current.add(matchId);
+      return;
+    }
     if (!authUser?.uid) return;
     if (handledPvpTeamMatchIdsRef.current.has(matchId)) return;
 
@@ -11243,7 +11499,7 @@ export default function CodeQuizApp() {
   }
 
   function leavePvpEliminationFlow() {
-    const activeMatch = pvpEliminationMatch && typeof pvpEliminationMatch === 'object' ? pvpEliminationMatch : null;
+    const activeMatch = pvpEliminationMatchRef.current || pvpEliminationMatch || null;
     const activeRoom = pvpEliminationRoom && typeof pvpEliminationRoom === 'object' ? pvpEliminationRoom : null;
     const roomId = String(activeRoom?.id || activeMatch?.room_id || pvpEliminationRoomId || '').trim();
     const matchId = String(activeMatch?.id || pvpEliminationMatchId || '').trim();
@@ -11256,8 +11512,9 @@ export default function CodeQuizApp() {
     );
     const alreadyLeft = !!myUserId && getPvpGroupMatchGoneIds(activeMatch, PVP_GROUP_MODE_ELIMINATION).includes(myUserId);
     const stillAlive = !!myUserId && getPvpEliminationActiveMemberIds(activeMatch).includes(myUserId);
-    const placementDecided = matchStatus === 'elimination_result'
-      && String(activeMatch?.next_status || '').trim().toLowerCase() === 'finished';
+    const placementDecided = !!String(activeMatch?.winner_user_id || '').trim()
+      || String(activeMatch?.next_status || '').trim().toLowerCase() === 'finished'
+      || matchStatus === 'finished';
 
     // Já eliminado (assistindo) ou com a colocação decidida: sai recebendo a colocação.
     if (hasLiveMatch && !alreadyLeft && (!stillAlive || placementDecided) && getPvpEliminationMemberById(activeMatch, myUserId)) {
@@ -11265,7 +11522,7 @@ export default function CodeQuizApp() {
       return;
     }
 
-    const leavingAlive = hasLiveMatch && !alreadyLeft && stillAlive;
+    const leavingAlive = hasLiveMatch && !alreadyLeft && stillAlive && !placementDecided;
     if (leavingAlive) {
       const outcome = applyPvpGroupForfeitPenalty(matchId);
       if (outcome) showToast(`Você abandonou a eliminatória. ${formatSignedPoints(outcome.points)} PvP`);
@@ -12770,8 +13027,11 @@ export default function CodeQuizApp() {
     const unsubscribe = subscribeMatch(
       matchId,
       (matchRow) => {
-        pvpRealtimeMatchUpdateAtRef.current = Date.now();
+        const live = pvpStateRef.current;
+        const liveMatchId = String(live?.matchId || live?.match?.id || '').trim();
+        if (liveMatchId !== matchId) return;
         if (!matchRow) {
+          if (String(live?.status || '').trim().toLowerCase() === 'finished') return;
           setPvpState((prev) => ({
             ...prev,
             status: 'idle',
@@ -12783,6 +13043,9 @@ export default function CodeQuizApp() {
           setScreen('challenge');
           return;
         }
+        if (String(matchRow.id || matchId).trim() !== matchId
+          || isPvpDuelMatchSnapshotObsolete(live?.match, matchRow)) return;
+        pvpRealtimeMatchUpdateAtRef.current = Date.now();
 
         const status = String(matchRow.status || '');
         const roundNo = Math.max(1, Number(matchRow.round_no || 1));
@@ -12791,7 +13054,9 @@ export default function CodeQuizApp() {
           Number(matchRow.round_started_at_ms || toMillis(matchRow.round_started_at) || 0)
         );
 
-        setPvpState((prev) => {
+        const applySnapshot = (prev) => {
+          const prevMatchId = String(prev?.matchId || prev?.match?.id || '').trim();
+          if (prevMatchId !== matchId || isPvpDuelMatchSnapshotObsolete(prev?.match, matchRow)) return prev;
           const prevRound = Math.max(1, Number(prev.match?.round_no || 1));
           const roundChanged = prevRound !== roundNo;
           const nextStatus = status === 'finished'
@@ -12808,7 +13073,9 @@ export default function CodeQuizApp() {
             status: resolvedStatus,
             error: ''
           };
-        });
+        };
+        pvpStateRef.current = applySnapshot(pvpStateRef.current);
+        setPvpState(applySnapshot);
 
         if (status === 'finished') {
           openFinishedPvpMatch(matchRow);
@@ -12846,15 +13113,21 @@ export default function CodeQuizApp() {
 
       const latest = await getPvpMatch(matchId).catch(() => null);
       if (cancelled || !latest) return;
+      const live = pvpStateRef.current;
+      const liveMatchId = String(live?.matchId || live?.match?.id || '').trim();
+      if (liveMatchId !== matchId || String(latest.id || matchId).trim() !== matchId
+        || isPvpDuelMatchSnapshotObsolete(live?.match, latest)) return;
       pvpRealtimeMatchUpdateAtRef.current = Date.now();
       const latestStatus = String(latest.status || '').trim().toLowerCase();
 
       if (latestStatus === 'finished') {
-        setPvpState((prev) => ({
-          ...prev,
-          status: 'finished',
-          match: latest
-        }));
+        const applyFinishedSnapshot = (prev) => {
+          const prevMatchId = String(prev?.matchId || prev?.match?.id || '').trim();
+          if (prevMatchId !== matchId || isPvpDuelMatchSnapshotObsolete(prev?.match, latest)) return prev;
+          return { ...prev, status: 'finished', match: latest };
+        };
+        pvpStateRef.current = applyFinishedSnapshot(pvpStateRef.current);
+        setPvpState(applyFinishedSnapshot);
 
         openFinishedPvpMatch(latest);
         return;
@@ -12867,9 +13140,9 @@ export default function CodeQuizApp() {
         Number(latest.round_started_at_ms || toMillis(latest.round_started_at) || 0)
       );
 
-      setPvpState((prev) => {
+      const applySnapshot = (prev) => {
         const prevMatchId = String(prev.matchId || prev.match?.id || '').trim();
-        if (prevMatchId && prevMatchId !== matchId) return prev;
+        if (prevMatchId !== matchId || isPvpDuelMatchSnapshotObsolete(prev?.match, latest)) return prev;
 
         const prevRow = prev.match && typeof prev.match === 'object' ? prev.match : {};
         const prevUpdatedMs = toMillis(prevRow.updated_at || prevRow.round_started_at || prevRow.created_at);
@@ -12902,7 +13175,9 @@ export default function CodeQuizApp() {
           selectedIndex: roundChanged ? null : prev.selectedIndex,
           error: ''
         };
-      });
+      };
+      pvpStateRef.current = applySnapshot(pvpStateRef.current);
+      setPvpState(applySnapshot);
     };
 
     syncMatchFallback().catch(() => null);
@@ -12944,7 +13219,7 @@ export default function CodeQuizApp() {
 
         const myAnswer = safeRows.find((row) => String(row.user_id || '') === String(authUser?.uid || ''));
         const answerIdx = Number(myAnswer?.answer_idx ?? -1);
-        const hasCommittedAnswer = !!myAnswer;
+        const hasCommittedAnswer = !!myAnswer && Number.isFinite(answerIdx) && answerIdx >= 0;
         const toSig = (list) => (Array.isArray(list) ? list : [])
           .map((row) => {
             const uid = String(row?.user_id || '').trim();
@@ -13199,7 +13474,7 @@ export default function CodeQuizApp() {
           if (currentRoundNo !== roundNo) return prev;
           const myAnswer = safeRows.find((row) => String(row.user_id || '') === String(authUser?.uid || ''));
           const answerIdx = Number(myAnswer?.answer_idx ?? -1);
-          const hasCommittedAnswer = !!myAnswer;
+          const hasCommittedAnswer = !!myAnswer && Number.isFinite(answerIdx) && answerIdx >= 0;
           return {
             ...prev,
             answers: safeRows,
@@ -13326,17 +13601,19 @@ export default function CodeQuizApp() {
     authUser?.uid
   ]);
 
+  // Canal de emojis do duelo: uma assinatura só durante toda a partida (rodada e
+  // resultado da rodada), sem reabrir a cada troca de fase.
+  const pvpDuelEmojiStatus = String(pvpState.status || '').toLowerCase();
+  const pvpDuelEmojiChannelOpen = pvpDuelEmojiStatus === 'active' || pvpDuelEmojiStatus === 'round_result';
   useEffect(() => {
-    const status = String(pvpState.status || '').toLowerCase();
-    if (status !== 'active' && status !== 'round_result') return;
+    if (!pvpDuelEmojiChannelOpen) return;
     const matchId = String(pvpState.match?.id || pvpState.matchId || '').trim();
     if (!matchId) return;
 
     const unsubscribe = subscribePvpEmojiEvents(
       matchId,
       (events) => {
-        const safeEvents = Array.isArray(events) ? events : [];
-        safeEvents.forEach((event) => {
+        takeNewPvpEmojiEvents(`duel:${matchId}`, events).forEach((event) => {
           addPvpEmojiFxFromEvent(event);
         });
       },
@@ -13348,7 +13625,7 @@ export default function CodeQuizApp() {
     return () => {
       unsubscribe();
     };
-  }, [pvpState.status, pvpState.match?.id, pvpState.matchId]);
+  }, [pvpDuelEmojiChannelOpen, pvpState.match?.id, pvpState.matchId]);
 
   useEffect(() => {
     const match = pvpState.match;
@@ -14294,7 +14571,7 @@ export default function CodeQuizApp() {
   const pvpTeamBattleNo = getPvpTeamMatchBattleNo(pvpTeamMatch, pvpTeamBattleStatus);
   const pvpTeamBattleEntry = getPvpTeamBattleEntry(pvpTeamMatch, pvpTeamBattleNo);
   const pvpTeamActivePair = getPvpTeamActivePairMembers(pvpTeamMatch, pvpTeamBattleNo);
-  const pvpTeamQuestion = pvpTeamMatch?.question_set?.[pvpTeamBattleNo - 1] || null;
+  const pvpTeamQuestion = getPvpGroupBattleQuestion(pvpTeamMatch, pvpTeamBattleNo);
   // Mesmo relógio que o motor usa para fechar o confronto.
   const pvpTeamBattleTiming = getPvpGroupBattleTiming(pvpTeamMatch, PVP_GROUP_MODE_TEAM);
   const pvpTeamBattleDuration = pvpTeamBattleTiming.answerMs;
@@ -14325,7 +14602,7 @@ export default function CodeQuizApp() {
   const pvpTeamResultBattleNo = Math.max(1, Number(pvpTeamMatch?.result_battle_no || pvpTeamBattleNo || 1));
   const pvpTeamResultEntry = getPvpTeamBattleEntry(pvpTeamMatch, pvpTeamResultBattleNo);
   const pvpTeamResultPair = getPvpTeamActivePairMembers(pvpTeamMatch, pvpTeamResultBattleNo);
-  const pvpTeamResultQuestion = pvpTeamMatch?.question_set?.[pvpTeamResultBattleNo - 1] || null;
+  const pvpTeamResultQuestion = getPvpGroupBattleQuestion(pvpTeamMatch, pvpTeamResultBattleNo);
   const pvpTeamResultAnswers = getPvpTeamCurrentBattleAnswers(pvpTeamAnswers, pvpTeamResultBattleNo);
   const pvpTeamResultAnswersByUser = new Map(
     pvpTeamResultAnswers.map((answer) => [String(answer?.user_id || '').trim(), answer])
@@ -14367,7 +14644,8 @@ export default function CodeQuizApp() {
     || null;
   const pvpTeamResultKey = pvpTeamResult || getPvpTeamResultForUser(pvpTeamMatch, authUser?.uid || '');
   const pvpTeamResultMatchId = String(pvpTeamMatch?.id || '').trim();
-  const pvpTeamResultProcessed = !!(pvpTeamResultMatchId && progress?.pvpProcessedMatches?.[pvpTeamResultMatchId]);
+  const pvpTeamResultProcessed = pvpTeamMatch?.result_void === true
+    || !!(pvpTeamResultMatchId && progress?.pvpProcessedMatches?.[pvpTeamResultMatchId]);
   const pvpEliminationMatchMembers = getPvpEliminationMembers(pvpEliminationMatch);
   const pvpEliminationRoomMembers = getPvpEliminationMembers(pvpEliminationRoom);
   const pvpEliminationMemberMap = new Map();
@@ -14426,9 +14704,7 @@ export default function CodeQuizApp() {
   const pvpEliminationPairUser2FrameClass = getAvatarFrameClass(pvpEliminationPairUser2Shop);
   const pvpEliminationIsActivePairMember = pvpEliminationMyUserId === pvpEliminationPairUser1Id
     || pvpEliminationMyUserId === pvpEliminationPairUser2Id;
-  const pvpEliminationQuestion = pvpEliminationMatch?.question_set?.[
-    Math.max(1, Number(pvpEliminationMatch?.battle_no || 1)) - 1
-  ] || null;
+  const pvpEliminationQuestion = getPvpGroupBattleQuestion(pvpEliminationMatch);
   const pvpEliminationBattleTiming = getPvpGroupBattleTiming(pvpEliminationMatch, PVP_GROUP_MODE_ELIMINATION);
   const pvpEliminationBattleDuration = pvpEliminationBattleTiming.answerMs;
   const pvpEliminationBattleStartedAtMs = pvpEliminationBattleTiming.startedAtMs;
@@ -14486,7 +14762,9 @@ export default function CodeQuizApp() {
         ? `${pvpEliminationEliminatedMember?.nickname || 'Jogador'} saiu da partida`
         : `${pvpEliminationEliminatedMember?.nickname || 'Jogador'} foi eliminado`
     )
-    : 'Eliminação concluída';
+    : pvpEliminationMatch?.cycle_tiebreak === true
+      ? 'Empate no placar · ninguém foi eliminado'
+      : 'Eliminação concluída';
   const pvpEliminationWinnerUserId = String(pvpEliminationMatch?.winner_user_id || '').trim();
   const pvpEliminationWinnerMember = pvpEliminationMemberMap.get(pvpEliminationWinnerUserId) || null;
   const pvpEliminationPlacement = getPvpEliminationPlacementForUser(pvpEliminationMatch, authUser?.uid || '');
@@ -14984,6 +15262,21 @@ export default function CodeQuizApp() {
   const pvpEmojiCooldownLabel = pvpEmojiCooldownActive
     ? `${(pvpEmojiCooldownRemainingMs / 1000).toFixed(1)}s`
     : '';
+  // Tela de resultado final: todos veem as reações; só quem ainda está na partida manda.
+  const buildPvpGroupResultEmojis = (mode, match, channelOpen) => {
+    const myUserId = String(authUser?.uid || '').trim();
+    const canSend = channelOpen && !!myUserId
+      && getPvpGroupMatchMemberIds(match, mode).includes(myUserId)
+      && !getPvpGroupMatchGoneIds(match, mode).includes(myUserId);
+    return {
+      list: pvpBattleEmojis,
+      onSend: canSend ? (emoji) => sendPvpGroupEmoji(mode, emoji) : null,
+      cooldownActive: pvpEmojiCooldownActive,
+      cooldownPct: pvpEmojiCooldownFillPct,
+      cooldownLabel: pvpEmojiCooldownLabel,
+      fx: pvpGroupEmojiFx
+    };
+  };
   const pvpAreaSelectionLocked = (
     pvpState.status === 'queueing'
     || pvpState.status === 'pending_accept'
@@ -15112,6 +15405,10 @@ export default function CodeQuizApp() {
     || String(pvpEliminationQueueState?.status || '').trim().toLowerCase() === 'queueing'
   );
   const shellMode = getShellMode(screen, { pvpLobbyBusy });
+  // Cada troca de tela (e de etapa dentro da arena) ganha uma transição suave no shell.
+  const screenTransitionKey = screen === 'challenge'
+    ? `challenge:${pvpMode || 'menu'}:${pvpTeamRoomId ? 'room' : 'lobby'}`
+    : screen;
   const shellProfile = activeAuthUser ? {
     avatar: displayAvatar,
     frameClass: avatarFrameClass,
@@ -15187,6 +15484,7 @@ export default function CodeQuizApp() {
     <>
       <AppShell
         mode={shellMode}
+        transitionKey={screenTransitionKey}
         activeTab={getTabForScreen(screen)}
         showTopBar={TAB_ROOT_SCREENS.has(screen)}
         onNavigate={navigateToTab}
@@ -15229,8 +15527,6 @@ export default function CodeQuizApp() {
 
         {screen === 'play-mode' ? (
           <PlayModeScreen vm={{
-            chooseKnowledgeAreaForPve,
-            languageProgress,
             startPveFlow,
             startPvpFlow
           }} />
@@ -15703,6 +15999,7 @@ export default function CodeQuizApp() {
           <PvpEliminationResultScreen vm={{
             buildCosmeticSnapshot,
             collectPvpEliminationResultRewards,
+            emojis: buildPvpGroupResultEmojis(PVP_GROUP_MODE_ELIMINATION, pvpEliminationMatch, pvpEliminationEmojiChannelOpen),
             pvpEliminationMyUserId,
             pvpEliminationPlacementLabel,
             pvpEliminationResultKey,
@@ -15722,6 +16019,7 @@ export default function CodeQuizApp() {
           <PvpTeamResultScreen vm={{
             buildCosmeticSnapshot,
             collectPvpTeamResultRewards,
+            emojis: buildPvpGroupResultEmojis(PVP_GROUP_MODE_TEAM, pvpTeamMatch, pvpTeamEmojiChannelOpen),
             pvpTeamBlueMembers,
             pvpTeamMatch,
             pvpTeamMySide,

@@ -21,6 +21,24 @@ export function getRoundDurationSeconds(difficulty) {
   return Number(PVP_ROUND_SECONDS[safe] || PVP_ROUND_SECONDS.easy);
 }
 
+// Assinatura e polling podem entregar a mesma partida fora de ordem.
+export function isPvpDuelMatchSnapshotObsolete(current = null, incoming = null) {
+  const currentId = String(current?.id || current?.match_id || '').trim();
+  const incomingId = String(incoming?.id || incoming?.match_id || '').trim();
+  if (!currentId || !incomingId || currentId !== incomingId) return false;
+
+  const currentStatus = String(current?.status || '').trim().toLowerCase();
+  const incomingStatus = String(incoming?.status || '').trim().toLowerCase();
+  if (currentStatus === 'finished' && incomingStatus !== 'finished') return true;
+
+  const currentRound = Math.max(1, Number(current?.round_no || 1));
+  const incomingRound = Math.max(1, Number(incoming?.round_no || 1));
+  if (incomingRound !== currentRound) return incomingRound < currentRound;
+
+  const phaseOrder = { pending_accept: 0, active: 1, round_result: 2, finished: 3 };
+  return (phaseOrder[incomingStatus] ?? -1) < (phaseOrder[currentStatus] ?? -1);
+}
+
 function normalizeAnswer(answer) {
   const safe = answer && typeof answer === 'object' ? answer : {};
   const idx = Number(safe.answer_idx ?? -1);

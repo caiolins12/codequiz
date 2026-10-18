@@ -107,6 +107,9 @@ export default function PvpEliminationScreen({ vm }) {
   const hasSelection = Number.isFinite(selected) && selected >= 0 && pvpEliminationSelectedIndex !== null;
   const timerLevel = pvpEliminationTimerClass === 'danger' ? 'danger' : (pvpEliminationTimerClass === 'warning' ? 'warning' : '');
   const countdown = Math.max(0, Number(pvpEliminationCountdownSec || 0));
+  const cycleTiebreak = pvpEliminationMatch?.cycle_tiebreak === true
+    && !pvpEliminationEliminatedUserId
+    && !pvpEliminationWinnerUserId;
   // Durante o duelo todos veem se cada um já respondeu (como no duelo 1x1).
   const showAnswerState = active && !pvpEliminationShowBattleIntro;
   const leftAnswered = showAnswerState && left ? left.answered : null;
@@ -221,14 +224,14 @@ export default function PvpEliminationScreen({ vm }) {
       ) : null}
 
       {pvpEliminationBattleStatus === 'elimination_result' ? (
-        <Modal title={pvpEliminationEliminationLabel} subtitle="Fim do ciclo" icon={Skull} tone="red" size="sm" centered>
+        <Modal title={pvpEliminationEliminationLabel} subtitle={cycleTiebreak ? 'Desempate' : 'Fim do ciclo'} icon={cycleTiebreak ? Swords : Skull} tone={cycleTiebreak ? 'gold' : 'red'} size="sm" centered>
           <div className={styles.roundResult}>
             <ScoreRows rows={Array.isArray(pvpEliminationResultRows) ? pvpEliminationResultRows : []} highlightId={pvpEliminationMyUserId} eliminatedId={pvpEliminationEliminatedUserId} />
             {pvpEliminationWinnerUserId ? (
               <span className={team.spectator}><Crown size={18} strokeWidth={2.6} aria-hidden="true" /> Campeão: {pvpEliminationWinnerMember?.nickname || 'Jogador'}</span>
             ) : null}
             <span className={cx(styles.nextIn, pvpEliminationCountdownClass ? styles.nextInUrgent : '')} role="timer">
-              {pvpEliminationWinnerUserId ? 'Resultado final em ' : 'Novo ciclo em '}{countdown}s
+              {pvpEliminationWinnerUserId ? 'Resultado final em ' : cycleTiebreak ? 'Desempate em ' : 'Novo ciclo em '}{countdown}s
             </span>
             {emojiProps ? <EmojiBar {...emojiProps} /> : null}
           </div>

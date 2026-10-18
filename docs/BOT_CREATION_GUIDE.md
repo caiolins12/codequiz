@@ -114,9 +114,29 @@ O bot deve obedecer as mesmas regras de dados, ranking e partida que um usuario 
 - Taxa de acerto:
   - `fraco: 40%`, `medio: 70%`, `forte: 90%`.
   - Na pratica atual, bots oficiais ficam travados em `forte` (90%).
+- Estilo de jogo contra pessoas (duelo, 2x2 e Um contra todos), em
+  `BOT_PLAY_STYLE_BY_BOT_ID` / `BOT_PLAY_STYLES` (`src/codequiz/app/helpers.js`):
+  - `elite` (ThiagoAra, bDevOnly, 0rbita): os melhores do jogo, 90% fixos; os erros
+    caem em rodadas sorteadas (exatamente 9 de 10), sem padrao para decorar.
+  - `competitivo` (tr3vo_azul, Zefira, Flakael): base 75%; com vantagem relaxa
+    (-8 pontos percentuais por ponto, ate -22), atras aperta (+5 por ponto, ate +12)
+    e na reta final empatado ou um ponto atras se concentra (+5).
+  - `oscilante` (Sopro, lua9, z3n): base 67%, fase do dia sorteada por partida (+-8)
+    e mais espaco para viradas.
+  - No 2x2 o placar considerado e o do time; na eliminatoria, o do bot contra quem
+    duela com ele. Bot contra bot nao se ajusta ao placar.
+  - Tudo e sorteio fixo por partida/bot/rodada (todos os aparelhos chegam a mesma
+    resposta). Arena bot-vs-bot e quizzes dos bots continuam usando a forca.
 
 ### 4) Reacoes e emojis do bot
 - Pool de emojis depende da personalidade.
+- 2x2 e Um contra todos (`src/codequiz/app/pvpGroupMatch.js`, secao "Emojis dos bots"):
+  - cada emoji tem um clima (`BOT_EMOJI_MOODS`: comemorar, lamentar, provocar, torcer,
+    pensar, cumprimentar); o bot prefere os do proprio repertorio que combinam;
+  - reagem ao fim de cada confronto, ao fim de ciclo, na tela de resultado final e
+    mandam emojis de fundo durante a partida (`PVP_GROUP_BOT_AMBIENT_TICK_MS`);
+  - emoji de pessoa quase sempre recebe resposta (o aparelho de quem mandou agenda);
+    as vezes o bot devolve o mesmo emoji.
 - Pode reagir:
   - quando usuario envia emoji.
   - quando bot responde primeiro.

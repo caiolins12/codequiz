@@ -674,3 +674,53 @@
   0% { transform: translateX(-110%); }
   100% { transform: translateX(260%); }
 }
+
+/* ------------------------------------------------------------------ */
+/* Transição entre telas (ScreenTransition.jsx): a cópia estática da tela anterior
+   fica por cima da nova e some. Fica abaixo das abas, modais e avisos. */
+
+.screenGhost {
+  position: fixed;
+  inset: 0;
+  z-index: 2;
+  overflow: hidden;
+  pointer-events: none;
+  contain: strict;
+}
+
+/* A cópia não reinicia as animações da tela: tudo fica parado no estado final */
+.screenGhost *,
+.screenGhost *::before,
+.screenGhost *::after {
+  animation-delay: -60s !important;
+  animation-play-state: paused !important;
+  transition: none !important;
+}
+
+/* Barras que voltam numa troca de tela entram suavemente */
+.topBar {
+  animation: cq-fade-in 240ms var(--cq-ease-out);
+}
+
+.tabBar {
+  animation: cq-shell-bar-up 320ms var(--cq-ease-out);
+}
+
+@media (min-width: 1024px) {
+  .sidebar {
+    animation: cq-fade-in 260ms var(--cq-ease-out);
+  }
+}
+
+@keyframes cq-shell-bar-up {
+  from { transform: translateY(100%); }
+  to { transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .topBar,
+  .tabBar,
+  .sidebar {
+    animation: none;
+  }
+}

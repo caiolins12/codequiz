@@ -151,7 +151,7 @@ export default function RankingsScreen({ vm }) {
         subtitle={mode === 'pvp' ? 'Pontos de liga conquistados na arena.' : 'Pontos acumulados nos treinos das trilhas.'}
       />
 
-      <Tabs className={styles.modeTabs} items={MODE_TABS} value={mode} onChange={setRankingsMode} ariaLabel="Modo do ranking" />
+      <Tabs className={styles.modeTabs} block items={MODE_TABS} value={mode} onChange={setRankingsMode} ariaLabel="Modo do ranking" />
 
       {loading ? (
         <Card padding="lg"><LoadingList /></Card>

@@ -8,8 +8,10 @@
   margin-bottom: 0;
 }
 
-.modeTabs {
-  justify-self: stretch;
+/* PvE e PvP com a mesma largura, centralizados acima do ranking */
+.screen > .modeTabs {
+  justify-self: center;
+  width: min(100%, 420px);
 }
 
 .layout {
@@ -317,11 +319,6 @@
 }
 
 @media (min-width: 768px) {
-  .modeTabs {
-    justify-self: start;
-    min-width: 340px;
-  }
-
   .podium {
     gap: var(--cq-space-3);
   }

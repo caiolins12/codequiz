@@ -1,4 +1,5 @@
-import { Crown, Lock, Plus, Smile, Swords, UserCheck, Users } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { ArrowLeftRight, Crown, Lock, Plus, Smile, Swords, UserCheck, Users } from 'lucide-react';
 import { DIFFICULTY_LABELS } from '../lib/constants';
 import { normalizeDifficulty } from '../lib/utils';
 import {
@@ -6,6 +7,7 @@ import {
   PVP_MODE_ELIMINATION,
   PVP_MODE_TEAM_BATTLE,
   PVP_TEAM_ROOM_SIDE_CAPACITY,
+  getPvpTeamMemberReadyAtMs,
   getPvpTeamMembersBySide,
   getPvpTeamRoomStatusLabel,
   getPvpTeamSideColorLabel,
@@ -97,17 +99,37 @@ function QueueChoice({ difficulty, areaId, knowledgeAreaById }) {
   );
 }
 
-function EmojiCard({ emojis, onEdit }) {
+function EmojiList({ emojis }) {
+  return (
+    <div className={styles.emojiRow}>
+      {(Array.isArray(emojis) ? emojis : []).map((emoji) => (
+        <span key={`emoji_${emoji}`} className={styles.emoji} aria-hidden="true">{emoji}</span>
+      ))}
+    </div>
+  );
+}
+
+function EmojiCard({ emojis, onEdit, subtitle = 'Reaja durante o duelo.' }) {
   return (
     <Card padding="lg" className={styles.emojiCard}>
-      <SectionHeader title="Emojis da partida" subtitle="Reaja durante o duelo." icon={Smile} />
-      <div className={styles.emojiRow}>
-        {(Array.isArray(emojis) ? emojis : []).map((emoji) => (
-          <span key={`emoji_${emoji}`} className={styles.emoji} aria-hidden="true">{emoji}</span>
-        ))}
-      </div>
+      <SectionHeader title="Emojis da partida" subtitle={subtitle} icon={Smile} />
+      <EmojiList emojis={emojis} />
       <Button variant="secondary" size="sm" onClick={onEdit}>Editar emojis</Button>
     </Card>
+  );
+}
+
+// Faixa compacta para a sala 2x2: os emojis que você leva para a batalha e o atalho para trocar
+function EmojiStrip({ emojis, onEdit }) {
+  return (
+    <div className={styles.emojiStrip} role="group" aria-label="Emojis da partida">
+      <span className={styles.emojiStripLabel}>
+        <Smile aria-hidden="true" strokeWidth={2.4} />
+        <span>Emojis<span className={styles.labelLong}> da partida</span></span>
+      </span>
+      <EmojiList emojis={emojis} />
+      <Button variant="secondary" size="sm" onClick={onEdit}>Editar</Button>
+    </div>
   );
 }
 
@@ -230,14 +252,16 @@ function DuelPanel({ vm }) {
   );
 }
 
-function TeamPanel({ vm }) {
+// Sala 2x2 "frente a frente": cada time numa faixa inteira, um contra o outro, com o VS na
+// costura (no celular as faixas ficam empilhadas; do tablet para cima, lado a lado). Tocar na
+// faixa do outro time troca de time. Quem completa as vagas aparece como qualquer jogador.
+function TeamRoom({ vm }) {
   const {
     authUser,
     buildCosmeticSnapshot,
     joinPvpTeamRoomSide,
-    knowledgeAreaById,
-    openPvpTeamRoomCreate,
-    openPvpTeamRoomLobby,
+    openPvpEmojiPicker,
+    pvpBattleEmojis,
     pvpTeamActionBusy,
     pvpTeamAutoStartPending,
     pvpTeamCurrentUserReady,
@@ -245,11 +269,189 @@ function TeamPanel({ vm }) {
     pvpTeamRoom,
     pvpTeamRoomAreaMeta,
     pvpTeamRoomHostUserId,
-    pvpTeamRoomId,
-    pvpTeamRoomReadyMemberIds,
-    pvpTeamRooms,
     startPvpTeamBattle,
     togglePvpTeamReadyState
+  } = vm;
+  const selfId = String(authUser?.uid || '').trim();
+  const hostId = String(pvpTeamRoomHostUserId || '').trim();
+  const isHost = hostId === selfId;
+  const roomDifficulty = normalizeDifficulty(pvpTeamRoom?.difficulty || 'easy');
+  const membersBySide = {
+    red: getPvpTeamMembersBySide(pvpTeamRoom, 'red'),
+    blue: getPvpTeamMembersBySide(pvpTeamRoom, 'blue')
+  };
+  const allMembers = [...membersBySide.red, ...membersBySide.blue];
+  const openSlots = Math.max(0, (PVP_TEAM_ROOM_SIDE_CAPACITY * 2) - allMembers.length);
+
+  // "Pronto" de cada um. Quem ainda vai ficar pronto sozinho tem hora marcada: o relógio só
+  // anda até essa hora, para a etiqueta aparecer no momento certo.
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  const readyAtById = new Map(allMembers.map((member) => [
+    String(member?.user_id || '').trim(),
+    getPvpTeamMemberReadyAtMs(pvpTeamRoom, member)
+  ]));
+  const nextReadyAtMs = Math.min(Infinity, ...[...readyAtById.values()].filter((atMs) => atMs !== null && atMs > nowMs));
+  useEffect(() => {
+    if (!Number.isFinite(nextReadyAtMs)) return undefined;
+    const timer = setTimeout(() => setNowMs(Date.now()), Math.max(50, nextReadyAtMs - Date.now()));
+    return () => clearTimeout(timer);
+  }, [nextReadyAtMs]);
+  const isShownReady = (userId) => {
+    const atMs = readyAtById.get(userId);
+    return atMs !== null && atMs !== undefined && atMs <= nowMs;
+  };
+
+  // O líder não marca pronto: a contagem é de quem ele espera
+  const guestIds = allMembers.map((member) => String(member?.user_id || '').trim()).filter((id) => id && id !== hostId);
+  const readyGuests = guestIds.filter(isShownReady).length;
+  const allReady = openSlots === 0 && readyGuests === guestIds.length;
+
+  const renderBand = (side) => {
+    const members = membersBySide[side];
+    const isMine = pvpTeamMySide === side;
+    const isFull = members.length >= PVP_TEAM_ROOM_SIDE_CAPACITY;
+    const canJoin = !isMine && !isFull && !pvpTeamActionBusy;
+    const sideLabel = getPvpTeamSideColorLabel(side);
+    return (
+      <section
+        key={side}
+        className={cx(styles.band, side === 'blue' ? styles.bandBlue : styles.bandRed, canJoin ? styles.bandJoinable : '')}
+        aria-label={`Time ${sideLabel}`}
+        // A faixa inteira troca de time; o botão do cabeçalho é o mesmo toque para teclado e leitor de tela
+        onClick={canJoin ? () => joinPvpTeamRoomSide(side) : undefined}
+      >
+        <div className={styles.bandHead}>
+          <span className={styles.bandName}>{sideLabel}</span>
+          <span className={styles.bandCount}>{members.length}/{PVP_TEAM_ROOM_SIDE_CAPACITY}</span>
+          <span className={styles.bandAside}>
+            {isMine ? <span className={styles.bandTag}>Seu time</span> : null}
+            {canJoin ? (
+              <button type="button" className={styles.bandSwap} aria-label={pvpTeamMySide ? `Trocar para o ${sideLabel}` : `Entrar no ${sideLabel}`}>
+                <ArrowLeftRight aria-hidden="true" strokeWidth={2.6} />
+                <span className={styles.labelLong}>{pvpTeamMySide ? `Trocar para o ${sideLabel}` : `Entrar no ${sideLabel}`}</span>
+                <span className={styles.labelShort}>{pvpTeamMySide ? 'Trocar' : 'Entrar'}</span>
+              </button>
+            ) : null}
+            {!isMine && isFull ? <span className={styles.bandTag}>Time cheio</span> : null}
+          </span>
+        </div>
+        <div className={styles.bandPlayers}>
+          {Array.from({ length: PVP_TEAM_ROOM_SIDE_CAPACITY }, (_, slotIndex) => {
+            const member = members[slotIndex] || null;
+            if (!member) {
+              return (
+                <div key={`slot_${side}_${slotIndex}`} className={styles.slot}>
+                  <span className={styles.slotPlus} aria-hidden="true"><Plus strokeWidth={2.6} /></span>
+                  <span className={styles.slotText}>
+                    Vaga aberta
+                    <small>Aguardando jogador</small>
+                  </span>
+                </div>
+              );
+            }
+            const player = buildPlayerView(member, buildCosmeticSnapshot);
+            const memberId = player.userId;
+            const tags = (
+              <>
+                {memberId === hostId ? <Badge tone="gold" size="sm" icon={Crown}>Líder</Badge> : null}
+                {memberId !== hostId && isShownReady(memberId) ? <Badge tone="lime" size="sm" icon={UserCheck}>Pronto</Badge> : null}
+              </>
+            );
+            return (
+              <PlayerCard
+                key={`slot_${side}_${memberId}`}
+                player={player}
+                meta={`Nv. ${player.level} · ${player.points} pts`}
+                tags={tags}
+                side={side}
+                self={memberId === selfId}
+                vertical
+                avatarSize="md"
+              />
+            );
+          })}
+        </div>
+      </section>
+    );
+  };
+
+  return (
+    <>
+      {/* O nome da sala já está no título da tela: aqui ficam só as etiquetas da partida */}
+      <div className={styles.roomInfo}>
+        <Badge tone={DIFFICULTY_TONES[roomDifficulty] || 'lime'} size="sm">{DIFFICULTY_LABELS[roomDifficulty]}</Badge>
+        <Badge tone="neutral" size="sm">
+          {pvpTeamRoomAreaMeta ? `${pvpTeamRoomAreaMeta.icon} ${pvpTeamRoomAreaMeta.name}` : 'Área geral'}
+        </Badge>
+        {pvpTeamRoom?.has_password ? <Badge tone="neutral" size="sm" icon={Lock}>Privada</Badge> : null}
+      </div>
+
+      <div className={styles.arena}>
+        {renderBand('red')}
+        <div className={styles.seam} role="status">
+          <span className={cx(styles.seamPill, allReady ? styles.seamPillReady : '')}>
+            {guestIds.length ? `${readyGuests}/${guestIds.length} prontos` : 'Só o líder'}
+          </span>
+          <span className={styles.vs} aria-hidden="true">VS</span>
+          <span className={styles.seamPill}>
+            {openSlots ? `${openSlots} ${openSlots === 1 ? 'vaga' : 'vagas'}` : 'Sala cheia'}
+          </span>
+        </div>
+        {renderBand('blue')}
+      </div>
+
+      <EmojiStrip emojis={pvpBattleEmojis} onEdit={openPvpEmojiPicker} />
+
+      <div className={styles.roomActions}>
+        {isHost ? (
+          <>
+            <Button
+              size="xl"
+              variant="success"
+              block
+              loading={pvpTeamActionBusy || pvpTeamAutoStartPending}
+              disabled={pvpTeamAutoStartPending}
+              onClick={() => startPvpTeamBattle()}
+            >
+              {pvpTeamAutoStartPending ? 'Procurando jogadores...' : 'Iniciar batalha'}
+            </Button>
+            {openSlots > 0 ? (
+              <p className={styles.hint} role="status">
+                {pvpTeamAutoStartPending
+                  ? 'A batalha começa assim que a sala lotar.'
+                  : 'Ao iniciar, procuramos jogadores para as vagas abertas.'}
+              </p>
+            ) : null}
+          </>
+        ) : (
+          <>
+            <Button
+              size="xl"
+              variant={pvpTeamCurrentUserReady ? 'secondary' : 'success'}
+              icon={pvpTeamCurrentUserReady ? UserCheck : undefined}
+              block
+              disabled={pvpTeamActionBusy}
+              onClick={() => togglePvpTeamReadyState()}
+            >
+              {pvpTeamCurrentUserReady ? 'Pronto! (toque para cancelar)' : 'Estou pronto'}
+            </Button>
+            <p className={styles.hint} role="status">O líder inicia a batalha quando a sala estiver pronta.</p>
+          </>
+        )}
+      </div>
+    </>
+  );
+}
+
+function TeamPanel({ vm }) {
+  const {
+    authUser,
+    knowledgeAreaById,
+    openPvpTeamRoomCreate,
+    openPvpTeamRoomLobby,
+    pvpTeamActionBusy,
+    pvpTeamRoomId,
+    pvpTeamRooms
   } = vm;
   const selfId = String(authUser?.uid || '').trim();
 
@@ -310,121 +512,7 @@ function TeamPanel({ vm }) {
     );
   }
 
-  const isHost = String(pvpTeamRoomHostUserId || '').trim() === selfId;
-  const roomDifficulty = normalizeDifficulty(pvpTeamRoom?.difficulty || 'easy');
-  const openSlots = Math.max(
-    0,
-    (PVP_TEAM_ROOM_SIDE_CAPACITY * 2)
-      - getPvpTeamMembersBySide(pvpTeamRoom, 'red').length
-      - getPvpTeamMembersBySide(pvpTeamRoom, 'blue').length
-  );
-
-  return (
-    <>
-      {/* O nome da sala já está no título da tela: aqui ficam só as etiquetas da partida */}
-      <div className={styles.roomInfo}>
-        <Badge tone={DIFFICULTY_TONES[roomDifficulty] || 'lime'} size="sm">{DIFFICULTY_LABELS[roomDifficulty]}</Badge>
-        <Badge tone="neutral" size="sm">
-          {pvpTeamRoomAreaMeta ? `${pvpTeamRoomAreaMeta.icon} ${pvpTeamRoomAreaMeta.name}` : 'Área geral'}
-        </Badge>
-        {pvpTeamRoom?.has_password ? <Badge tone="neutral" size="sm" icon={Lock}>Privada</Badge> : null}
-      </div>
-
-      <div className={styles.sides}>
-        {['red', 'blue'].map((side) => {
-          const members = getPvpTeamMembersBySide(pvpTeamRoom, side);
-          const isMine = pvpTeamMySide === side;
-          return (
-            <section key={side} className={cx(styles.sidePanel, side === 'blue' ? styles.sideBlue : '', isMine ? styles.sideMine : '')}>
-              <div className={styles.sideHead}>
-                <span><span className={styles.labelLong}>Time </span>{getPvpTeamSideColorLabel(side)}</span>
-                <Badge tone={side === 'blue' ? 'blue' : 'red'} size="sm">{members.length}/{PVP_TEAM_ROOM_SIDE_CAPACITY}</Badge>
-              </div>
-              {Array.from({ length: PVP_TEAM_ROOM_SIDE_CAPACITY }, (_, slotIndex) => {
-                const member = members[slotIndex] || null;
-                if (!member) {
-                  return (
-                    <div key={`slot_${side}_${slotIndex}`} className={styles.slot}>
-                      <span className={styles.slotPlus} aria-hidden="true"><Plus strokeWidth={2.6} /></span>
-                      Vaga aberta
-                    </div>
-                  );
-                }
-                const player = buildPlayerView(member, buildCosmeticSnapshot);
-                const memberId = player.userId;
-                const tags = (
-                  <>
-                    {memberId === String(pvpTeamRoomHostUserId || '').trim() ? <Badge tone="gold" size="sm" icon={Crown}>Líder</Badge> : null}
-                    {pvpTeamRoomReadyMemberIds.includes(memberId) ? <Badge tone="lime" size="sm" icon={UserCheck}>Pronto</Badge> : null}
-                  </>
-                );
-                return (
-                  <PlayerCard
-                    key={`slot_${side}_${memberId}`}
-                    player={player}
-                    meta={`Nv. ${player.level} · ${player.points} pts`}
-                    tags={tags}
-                    side={side}
-                    self={memberId === selfId}
-                    stackOnMobile
-                    avatarSize="sm"
-                  />
-                );
-              })}
-              <Button
-                variant={isMine ? 'secondary' : (side === 'blue' ? 'cyan' : 'danger')}
-                block
-                disabled={pvpTeamActionBusy || isMine}
-                onClick={() => joinPvpTeamRoomSide(side)}
-              >
-                {/* No mobile os times ficam lado a lado: o texto curto cabe no botão */}
-                <span className={styles.labelLong}>{isMine ? 'Você está neste time' : `Entrar no ${getPvpTeamSideColorLabel(side)}`}</span>
-                <span className={styles.labelShort}>{isMine ? 'Seu time' : 'Entrar'}</span>
-              </Button>
-            </section>
-          );
-        })}
-      </div>
-
-      <div className={styles.roomActions}>
-        {isHost ? (
-          <>
-            <Button
-              size="xl"
-              variant="success"
-              block
-              loading={pvpTeamActionBusy || pvpTeamAutoStartPending}
-              disabled={pvpTeamAutoStartPending}
-              onClick={() => startPvpTeamBattle()}
-            >
-              {pvpTeamAutoStartPending ? 'Completando a sala...' : 'Iniciar batalha'}
-            </Button>
-            {openSlots > 0 ? (
-              <p className={styles.hint} role="status">
-                {pvpTeamAutoStartPending
-                  ? 'Completando as vagas. A batalha começa quando a sala lotar.'
-                  : `${openSlots === 1 ? '1 vaga livre será completada' : `${openSlots} vagas livres serão completadas`} ao iniciar.`}
-              </p>
-            ) : null}
-          </>
-        ) : (
-          <>
-            <Button
-              size="xl"
-              variant={pvpTeamCurrentUserReady ? 'secondary' : 'success'}
-              icon={pvpTeamCurrentUserReady ? UserCheck : undefined}
-              block
-              disabled={pvpTeamActionBusy}
-              onClick={() => togglePvpTeamReadyState()}
-            >
-              {pvpTeamCurrentUserReady ? 'Pronto! (toque para cancelar)' : 'Estou pronto'}
-            </Button>
-            <p className={styles.hint} role="status">O líder inicia a batalha quando a sala estiver pronta.</p>
-          </>
-        )}
-      </div>
-    </>
-  );
+  return <TeamRoom vm={vm} />;
 }
 
 function EliminationPanel({ vm }) {
@@ -435,6 +523,8 @@ function EliminationPanel({ vm }) {
     chooseKnowledgeAreaForPvp,
     choosePvpDifficulty,
     knowledgeAreaById,
+    openPvpEmojiPicker,
+    pvpBattleEmojis,
     pvpEliminationAcceptCountdownLabel,
     pvpEliminationAcceptMembers,
     pvpEliminationAcceptStateMap,
@@ -525,6 +615,7 @@ function EliminationPanel({ vm }) {
             text="A partida começa quando 4 jogadores estiverem na fila."
             details={<QueueChoice difficulty={pvpSelectedDifficulty} areaId={pvpKnowledgeArea} knowledgeAreaById={knowledgeAreaById} />}
           />
+          <EmojiCard emojis={pvpBattleEmojis} onEdit={openPvpEmojiPicker} subtitle="Reaja durante a eliminatória." />
         </div>
       ) : null}
     </div>

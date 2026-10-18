@@ -4,12 +4,49 @@
   animation: cq-fade-in var(--cq-dur-slow) var(--cq-ease-out);
 }
 
-.screen > header {
+/* Título e o seletor das subtelas (Trilha / Missões) */
+.top {
+  display: grid;
+  gap: var(--cq-space-3);
+  min-width: 0;
+}
+
+.top > header {
   margin-bottom: 0;
 }
 
+.top > .viewTabs {
+  justify-self: center;
+  width: min(100%, 420px);
+}
+
+/* Subtela atual: entra deslizando do lado para onde o jogador foi */
+.view {
+  display: grid;
+  gap: var(--cq-space-5);
+  min-width: 0;
+}
+
+.viewForward {
+  animation: cq-pass-view-forward 320ms var(--cq-ease-out) both;
+}
+
+.viewBack {
+  animation: cq-pass-view-back 320ms var(--cq-ease-out) both;
+}
+
+@keyframes cq-pass-view-forward {
+  from { opacity: 0; transform: translateX(28px); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes cq-pass-view-back {
+  from { opacity: 0; transform: translateX(-28px); }
+  to { opacity: 1; transform: none; }
+}
+
 /* ---------------------------------------------------------------- */
-/* Resumo */
+/* Trilha: progresso geral */
 .hero {
   position: relative;
   display: grid;
@@ -232,18 +269,225 @@
 }
 
 /* ---------------------------------------------------------------- */
-/* Etapa em foco */
-.stage {
-  display: grid;
+/* Trilha: resumo do nível em foco (rotas, recompensas e atalho para as missões) */
+.preview {
+  --preview-color: var(--cq-violet-light);
+  display: flex;
+  flex-direction: column;
   gap: var(--cq-space-4);
-  padding: var(--cq-space-5) var(--cq-space-4);
+  min-width: 0;
+  padding: var(--cq-space-5);
   border-radius: var(--cq-radius-xl);
   background: var(--cq-surface-1);
   box-shadow: var(--cq-shadow-card), inset 0 0 0 1px var(--cq-border);
 }
 
+.preview_claimed { --preview-color: var(--cq-lime); }
+.preview_ready { --preview-color: var(--cq-gold); }
+.preview_locked { --preview-color: rgba(255, 255, 255, 0.28); }
+
+.preview_ready {
+  box-shadow: var(--cq-shadow-card), inset 0 0 0 2px rgba(255, 210, 74, 0.5);
+}
+
 .burst {
   animation: cq-pop-in var(--cq-dur-slow) var(--cq-ease-bounce);
+}
+
+.previewHead {
+  display: flex;
+  align-items: center;
+  gap: var(--cq-space-3);
+  min-width: 0;
+}
+
+.previewIcon {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: var(--cq-surface-2);
+  box-shadow: inset 0 0 0 3px var(--preview-color);
+  font-size: 26px;
+}
+
+.previewIcon svg {
+  width: 24px;
+  height: 24px;
+  color: var(--cq-text-3);
+}
+
+.previewTitleWrap {
+  flex: 1 1 auto;
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.previewEyebrow {
+  color: var(--cq-text-3);
+  font-size: var(--cq-text-xs);
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.previewTitle {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--cq-text-xl);
+}
+
+.previewBadge {
+  flex-shrink: 0;
+}
+
+.previewBody {
+  display: grid;
+  gap: var(--cq-space-4);
+  min-width: 0;
+}
+
+.previewRoutes {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.previewRoute {
+  display: grid;
+  grid-template-columns: minmax(0, auto) minmax(64px, 1fr) 42px;
+  align-items: center;
+  gap: var(--cq-space-3);
+  font-size: var(--cq-text-sm);
+  font-weight: 800;
+}
+
+.previewRouteName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.previewRoutePct {
+  display: inline-flex;
+  justify-content: flex-end;
+  color: var(--cq-text-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.previewRoutePct svg {
+  width: 18px;
+  height: 18px;
+  color: var(--cq-lime);
+}
+
+.previewLocked {
+  display: flex;
+  align-items: center;
+  gap: var(--cq-space-3);
+  padding: var(--cq-space-3);
+  border-radius: var(--cq-radius-md);
+  background: rgba(8, 5, 30, 0.35);
+  color: var(--cq-text-2);
+  font-size: var(--cq-text-sm);
+  font-weight: 700;
+}
+
+.previewLocked svg {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  color: var(--cq-text-3);
+}
+
+.previewSide {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--cq-space-3);
+  min-width: 0;
+}
+
+.rewardChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--cq-space-2);
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.rewardChips > li {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.rewardChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  min-height: 34px;
+  padding: 4px 12px 4px 8px;
+  border-radius: var(--cq-radius-pill);
+  background: rgba(8, 5, 30, 0.4);
+  box-shadow: inset 0 0 0 1px var(--cq-border);
+  font-size: var(--cq-text-sm);
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.rewardChip svg {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+}
+
+.rewardChipItem {
+  border: 0;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--rarity-color) 55%, transparent);
+  color: inherit;
+  font: inherit;
+  font-size: var(--cq-text-sm);
+  font-weight: 800;
+  cursor: pointer;
+  transition: background var(--cq-dur-fast) var(--cq-ease-out);
+}
+
+.rewardChipItem:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.rewardChipName {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.previewActions {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  gap: var(--cq-space-2);
+}
+
+/* ---------------------------------------------------------------- */
+/* Missões do nível em foco */
+.stage {
+  display: grid;
+  gap: var(--cq-space-4);
+  min-width: 0;
+  padding: var(--cq-space-5) var(--cq-space-4);
+  border-radius: var(--cq-radius-xl);
+  background: var(--cq-surface-1);
+  box-shadow: var(--cq-shadow-card), inset 0 0 0 1px var(--cq-border);
 }
 
 .stageHead {
@@ -303,6 +547,12 @@
   min-width: 0;
 }
 
+.routeList {
+  display: grid;
+  gap: var(--cq-space-3);
+  min-width: 0;
+}
+
 .hint {
   display: flex;
   align-items: flex-start;
@@ -325,6 +575,8 @@
 .route {
   display: grid;
   gap: var(--cq-space-3);
+  align-content: start;
+  min-width: 0;
   padding: var(--cq-space-4);
   border-radius: var(--cq-radius-lg);
   background: rgba(8, 5, 30, 0.35);
@@ -481,7 +733,7 @@
   height: 22px;
 }
 
-/* Recompensas */
+/* Recompensas (tablet e desktop) */
 .rewards {
   display: grid;
   gap: var(--cq-space-3);
@@ -558,44 +810,8 @@
   text-transform: uppercase;
 }
 
-/* Mobile: herói sem aperto (selo no canto, título com a largura toda) e trilho sem barra de rolagem */
-@media (max-width: 767px) {
-  .hero {
-    position: relative;
-    gap: var(--cq-space-3);
-    padding: var(--cq-space-4);
-  }
-
-  .heroMain {
-    gap: var(--cq-space-3);
-  }
-
-  .heroIcon {
-    width: 52px;
-    height: 52px;
-    border-radius: 16px;
-    font-size: 28px;
-  }
-
-  .heroBadge {
-    position: absolute;
-    top: var(--cq-space-4);
-    right: var(--cq-space-4);
-  }
-
-  .heroTitle {
-    font-size: var(--cq-text-xl);
-  }
-
-  .track {
-    scrollbar-width: none;
-  }
-
-  .track::-webkit-scrollbar {
-    display: none;
-  }
-}
-
+/* ---------------------------------------------------------------- */
+/* Tablet e desktop */
 @media (min-width: 768px) {
   .trackSection {
     margin: 0;
@@ -609,17 +825,398 @@
   .stage {
     padding: var(--cq-space-6);
   }
+
+  .routeList {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  /* No celular a coleta fica no pé das missões; aqui ela está no cartão de recompensas */
+  .stage > .missionClaim {
+    display: none;
+  }
+
+  /* Resumo do nível: rotas à esquerda, recompensas e botões à direita */
+  .previewBody {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    align-items: center;
+    gap: var(--cq-space-6);
+  }
 }
 
 @media (min-width: 1024px) {
+  /* Título à esquerda e seletor das subtelas à direita, na mesma linha */
+  .top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--cq-space-6);
+  }
+
+  .top > header {
+    flex: 1 1 auto;
+  }
+
+  .top > .viewTabs {
+    flex: 0 0 auto;
+    width: 360px;
+  }
+
   .stageGrid {
-    grid-template-columns: minmax(0, 1fr) 340px;
+    grid-template-columns: minmax(0, 1fr) 320px;
     align-items: start;
     gap: var(--cq-space-5);
   }
+}
 
-  .rewards {
-    position: sticky;
-    top: var(--cq-space-8);
+/* ---------------------------------------------------------------- */
+/* Celular: cada subtela ocupa exatamente o espaço entre a barra superior e as abas,
+   sem rolagem. Em telas mais baixas saem primeiro os detalhes que se repetem. */
+@media (max-width: 767px) {
+  .screen {
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+    gap: var(--cq-space-3);
+    min-height: 0;
+  }
+
+  .top > header p {
+    display: none;
+  }
+
+  .view {
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+    gap: var(--cq-space-3);
+    min-height: 0;
+  }
+
+  /* Trilha */
+  .hero {
+    flex-shrink: 0;
+    gap: 10px;
+    padding: 14px var(--cq-space-4);
+  }
+
+  .heroMain {
+    gap: var(--cq-space-3);
+  }
+
+  .heroIcon {
+    width: 48px;
+    height: 48px;
+    border-radius: 15px;
+    font-size: 26px;
+  }
+
+  .heroBadge {
+    position: absolute;
+    top: 14px;
+    right: var(--cq-space-4);
+  }
+
+  .heroTitle {
+    font-size: var(--cq-text-xl);
+  }
+
+  .heroStats div {
+    padding: 5px var(--cq-space-2);
+  }
+
+  .heroStats dt {
+    font-size: 0.6875rem;
+  }
+
+  .heroStats dd {
+    font-size: var(--cq-text-lg);
+  }
+
+  .trackSection {
+    flex-shrink: 0;
+  }
+
+  .track {
+    padding-top: var(--cq-space-2);
+    padding-bottom: var(--cq-space-2);
+    scrollbar-width: none;
+  }
+
+  .track::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* O resumo do nível fica com o espaço que sobra; os botões vão para o pé dele */
+  .preview {
+    flex: 1 1 auto;
+    gap: 10px;
+    min-height: 0;
+    padding: 14px;
+  }
+
+  .previewBody {
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .previewRoutes {
+    gap: var(--cq-space-2);
+  }
+
+  .previewSide {
+    gap: 10px;
+    margin-top: auto;
+  }
+
+  /* Recompensas sempre numa linha: o nome do cosmético encurta com reticências */
+  .rewardChips {
+    flex-wrap: nowrap;
+  }
+
+  .rewardChips > li {
+    flex: 0 0 auto;
+  }
+
+  .rewardChips > .rewardChipSlot {
+    flex: 0 1 auto;
+  }
+
+  .previewIcon {
+    width: 44px;
+    height: 44px;
+    font-size: 22px;
+  }
+
+  .previewTitle {
+    font-size: var(--cq-text-lg);
+  }
+
+  /* Missões: cartão compacto; a barra de cada rota fica na linha do título */
+  .stage {
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    min-height: 0;
+    padding: var(--cq-space-3);
+  }
+
+  .stageHead {
+    gap: var(--cq-space-2);
+  }
+
+  .stageTitle {
+    font-size: var(--cq-text-lg);
+  }
+
+  .stageMeta {
+    gap: 6px;
+  }
+
+  .stageDesc {
+    display: none;
+  }
+
+  .stageGrid {
+    gap: 10px;
+  }
+
+  .routes {
+    gap: var(--cq-space-2);
+  }
+
+  .routeList {
+    gap: var(--cq-space-2);
+  }
+
+  .hint {
+    padding: var(--cq-space-2) var(--cq-space-3);
+    font-size: var(--cq-text-xs);
+    line-height: 1.35;
+  }
+
+  .hint > span {
+    display: -webkit-box;
+    overflow: hidden;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
+
+  .hint svg {
+    width: 16px;
+    height: 16px;
+    margin-top: 0;
+  }
+
+  .route {
+    grid-template-columns: auto auto minmax(32px, 1fr) auto;
+    align-items: center;
+    gap: var(--cq-space-2);
+    padding: 10px var(--cq-space-3);
+  }
+
+  .routeHead {
+    display: contents;
+  }
+
+  .routeIcon {
+    grid-column: 1;
+    grid-row: 1;
+    font-size: 18px;
+    line-height: 1;
+  }
+
+  .routeTitle {
+    grid-column: 2;
+    grid-row: 1;
+    font-size: var(--cq-text-md);
+  }
+
+  .routeBar {
+    grid-column: 3;
+    grid-row: 1;
+  }
+
+  .routePct {
+    grid-column: 4;
+    grid-row: 1;
+    font-size: var(--cq-text-sm);
+  }
+
+  .goals {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    gap: 4px;
+  }
+
+  .goal {
+    line-height: 1.25;
+  }
+
+  .goalCheck {
+    width: 18px;
+    height: 18px;
+  }
+
+  .routeNote {
+    font-size: var(--cq-text-xs);
+  }
+
+  .stageGrid > .rewards {
+    display: none;
+  }
+
+  .missionClaim {
+    flex-shrink: 0;
+    margin-top: auto;
+  }
+}
+
+/* Celulares altos: a descrição do nível volta */
+@media (max-width: 767px) and (min-height: 860px) {
+  .stageDesc {
+    display: -webkit-box;
+    overflow: hidden;
+    font-size: var(--cq-text-sm);
+    line-height: 1.3;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
+}
+
+/* Celulares com a barra do navegador: sem os números repetidos do progresso geral,
+   níveis menores e sem a dica do nível */
+@media (max-width: 767px) and (max-height: 799px) {
+  .heroStats {
+    display: none;
+  }
+
+  .nodeIcon {
+    width: 52px;
+    height: 52px;
+    font-size: 22px;
+  }
+
+  .nodeIcon svg {
+    width: 22px;
+    height: 22px;
+  }
+
+  .node::before {
+    top: 23px;
+  }
+
+  .hint {
+    display: none;
+  }
+}
+
+/* Celulares baixos: tudo mais justo; na trilha, o progresso das rotas fica só nas missões */
+@media (max-width: 767px) and (max-height: 699px) {
+  .screen,
+  .view {
+    gap: var(--cq-space-2);
+  }
+
+  .top {
+    gap: var(--cq-space-2);
+  }
+
+  .top > .viewTabs > button {
+    min-height: 34px;
+  }
+
+  .hero {
+    padding: 10px var(--cq-space-3);
+  }
+
+  .heroBadge {
+    top: 10px;
+    right: var(--cq-space-3);
+  }
+
+  .heroIcon {
+    width: 40px;
+    height: 40px;
+    border-radius: 13px;
+    font-size: 22px;
+  }
+
+  .previewRoutes {
+    display: none;
+  }
+
+  .previewIcon {
+    width: 40px;
+    height: 40px;
+  }
+
+  .stageEyebrow {
+    display: none;
+  }
+
+  .route {
+    padding: var(--cq-space-2) 10px;
+  }
+
+  .goals {
+    gap: 2px;
+  }
+
+  .goal {
+    font-size: var(--cq-text-xs);
+  }
+
+  .routeNote {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .viewForward,
+  .viewBack {
+    animation: none;
   }
 }

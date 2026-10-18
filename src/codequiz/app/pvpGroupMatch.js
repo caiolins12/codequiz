@@ -14,6 +14,7 @@ import {
   buildPvpEliminationCycleScoreMap,
   createBotSeededRandom,
   getBotDefaultStrengthById,
+  getBotTimingStrength,
   getPvpEliminationActiveMemberIds,
   getPvpEliminationActivePair,
   getPvpEliminationMembers,
@@ -217,6 +218,15 @@ function getPvpGroupQuestionCount(match = null, mode = PVP_GROUP_MODE_TEAM) {
   return questions > 0 ? questions : fallback;
 }
 
+// O número do confronto continua crescendo no desempate. Todos os clientes usam
+// a mesma pergunta, mesmo depois de esgotar a sequência inicial da partida.
+export function getPvpGroupBattleQuestion(match = null, battleNo = 0) {
+  const questions = Array.isArray(match?.question_set) ? match.question_set : [];
+  if (!questions.length) return null;
+  const index = Math.max(1, Math.floor(Number(battleNo || match?.battle_no || 1))) - 1;
+  return questions[index % questions.length] || null;
+}
+
 // Dupla que está respondendo no confronto atual.
 export function getPvpGroupBattlePairIds(match = null, mode = PVP_GROUP_MODE_TEAM) {
   if (normalizeMode(mode) === PVP_GROUP_MODE_ELIMINATION) {
@@ -292,12 +302,35 @@ function buildMissingAnswer(userId, nowMs) {
 // Respostas dos bots
 // ---------------------------------------------------------------------------
 
+// Placar que o bot enxerga ao responder: no 2x2 o do time dele contra o adversário; na
+// eliminatória o geral dele contra o de quem está duelando com ele. O placar do banco
+// só muda entre confrontos, então todos os aparelhos usam os mesmos números.
+function getPvpGroupBotScoreContext(match, mode, botId) {
+  if (normalizeMode(mode) === PVP_GROUP_MODE_TEAM) {
+    const side = getPvpTeamUserSide(match, botId);
+    if (side !== 'red' && side !== 'blue') return {};
+    const redScore = Math.max(0, Number(match?.red_score || 0));
+    const blueScore = Math.max(0, Number(match?.blue_score || 0));
+    return {
+      botScore: side === 'red' ? redScore : blueScore,
+      opponentScore: side === 'red' ? blueScore : redScore
+    };
+  }
+  const rivalId = getPvpGroupBattlePairIds(match, mode).find((userId) => userId && userId !== botId) || '';
+  const scores = match?.member_scores && typeof match.member_scores === 'object' ? match.member_scores : {};
+  return {
+    botScore: Math.max(0, Number(scores[botId] || 0)),
+    opponentScore: Math.max(0, Number(scores[rivalId] || 0)),
+    opponentIsBot: !rivalId || isSystemBotUserId(rivalId)
+  };
+}
+
 export function getPvpGroupBotAnswerPlan(match = null, mode = PVP_GROUP_MODE_TEAM, botId = '', battleNoInput = 0) {
   const safeBotId = safeId(botId);
   const matchId = safeId(match?.id);
   if (!matchId || !isSystemBotUserId(safeBotId)) return null;
   const battleNo = Math.max(1, Number(battleNoInput || match?.battle_no || 1));
-  const question = match?.question_set?.[battleNo - 1];
+  const question = getPvpGroupBattleQuestion(match, battleNo);
   if (!question || typeof question !== 'object') return null;
   const timing = getPvpGroupBattleTiming(match, mode);
   const totalBattles = getPvpGroupQuestionCount(match, mode);
@@ -306,13 +339,20 @@ export function getPvpGroupBotAnswerPlan(match = null, mode = PVP_GROUP_MODE_TEA
     matchId,
     botUserId: safeBotId,
     difficulty: match?.difficulty,
-    roundNo: Math.min(battleNo, totalBattles),
-    totalRounds: totalBattles
+    roundNo: battleNo,
+    totalRounds: Math.max(battleNo, totalBattles),
+    ...getPvpGroupBotScoreContext(match, mode, safeBotId)
   });
   const correctIdx = Number(question.answer ?? -1);
   const isCorrect = answerIdx >= 0 && answerIdx === correctIdx;
   const random = createBotSeededRandom(hashBotSeed(`pvp_group:${matchId}:${safeBotId}:${battleNo}:delay`));
-  const delayMs = getPvpGroupBotAnswerDelayMs(question, strength, isCorrect, timing.answerMs, random);
+  const delayMs = getPvpGroupBotAnswerDelayMs(
+    question,
+    getBotTimingStrength(safeBotId, strength),
+    isCorrect,
+    timing.answerMs,
+    random
+  );
   return {
     botId: safeBotId,
     battleNo,
@@ -388,9 +428,11 @@ function resolvePvpTeamWinnerSide(redScore, blueScore) {
 function buildPvpTeamFinishedPatch(match, nowMs, extra = {}) {
   const redScore = Math.max(0, Number(extra.red_score ?? match?.red_score ?? 0));
   const blueScore = Math.max(0, Number(extra.blue_score ?? match?.blue_score ?? 0));
+  const winnerSide = extra.winner_side || resolvePvpTeamWinnerSide(redScore, blueScore);
+  if (winnerSide !== 'red' && winnerSide !== 'blue') return null;
   return {
     status: 'finished',
-    winner_side: resolvePvpTeamWinnerSide(redScore, blueScore),
+    winner_side: winnerSide,
     ended_reason: 'completed',
     ended_battle_no: Math.max(1, Number(match?.battle_no || 1)),
     next_battle_no: null,
@@ -401,6 +443,21 @@ function buildPvpTeamFinishedPatch(match, nowMs, extra = {}) {
   };
 }
 
+function buildPvpTeamCancelledPatch(match, nowMs, reason) {
+  return {
+    status: 'finished',
+    winner_side: null,
+    ended_reason: reason,
+    result_void: true,
+    result_void_reason: reason,
+    ended_battle_no: Math.max(1, Number(match?.battle_no || 1)),
+    next_battle_no: null,
+    round_result_until_ms: null,
+    ended_at: isoAt(nowMs),
+    ended_at_ms: nowMs
+  };
+}
+
 export function buildPvpTeamFinalizePatch(match = null, answerRows = [], battleNo = 0, nowMs = Date.now()) {
   if (getStatus(match) !== 'active') return null;
   const safeBattleNo = Math.max(1, Number(battleNo || match?.battle_no || 1));
@@ -408,9 +465,9 @@ export function buildPvpTeamFinalizePatch(match = null, answerRows = [], battleN
   if (!isPvpTeamBattleReadyToFinalize(match, answerRows, nowMs)) return null;
 
   const [redId, blueId] = getPvpGroupBattlePairIds(match, PVP_GROUP_MODE_TEAM);
-  const question = match?.question_set?.[safeBattleNo - 1];
+  const question = getPvpGroupBattleQuestion(match, safeBattleNo);
   if (!redId || !blueId || !question) {
-    return buildPvpTeamFinishedPatch(match, nowMs, { ended_battle_no: safeBattleNo });
+    return buildPvpTeamCancelledPatch(match, nowMs, 'invalid_battle');
   }
 
   // Quem saiu da partida e não chegou a responder conta como sem resposta.
@@ -442,11 +499,9 @@ export function buildPvpTeamFinalizePatch(match = null, answerRows = [], battleN
     result_battle_winner_user_id: outcome.winner_user_id || null
   };
 
-  const totalBattles = Math.min(
-    Math.max(1, Number(match?.total_rounds || PVP_TEAM_BATTLE_TOTAL_ROUNDS)),
-    getPvpGroupQuestionCount(match, PVP_GROUP_MODE_TEAM)
-  );
-  if (safeBattleNo >= totalBattles) {
+  const totalBattles = Math.max(1, Number(match?.total_rounds || PVP_TEAM_BATTLE_TOTAL_ROUNDS));
+  // A pontuação empatada leva a confrontos extras até uma equipe abrir vantagem.
+  if (safeBattleNo >= totalBattles && redScore !== blueScore) {
     return buildPvpTeamFinishedPatch(match, nowMs, {
       ...resultFields,
       ended_battle_no: safeBattleNo
@@ -466,11 +521,8 @@ export function buildPvpTeamAdvancePatch(match = null, nowMs = Date.now()) {
   const untilMs = Math.max(0, Number(match?.round_result_until_ms || 0));
   if (untilMs > 0 && nowMs < untilMs) return null;
   const nextBattleNo = Math.max(1, Number(match?.next_battle_no || (Number(match?.battle_no || 1) + 1)));
-  const totalBattles = Math.min(
-    Math.max(1, Number(match?.total_rounds || PVP_TEAM_BATTLE_TOTAL_ROUNDS)),
-    getPvpGroupQuestionCount(match, PVP_GROUP_MODE_TEAM)
-  );
-  if (nextBattleNo > totalBattles) {
+  const totalBattles = Math.max(1, Number(match?.total_rounds || PVP_TEAM_BATTLE_TOTAL_ROUNDS));
+  if (nextBattleNo > totalBattles && Number(match?.red_score || 0) !== Number(match?.blue_score || 0)) {
     return buildPvpTeamFinishedPatch(match, nowMs);
   }
   return {
@@ -502,23 +554,20 @@ export function buildPvpTeamLeavePatch(match = null, userId = '', nowMs = Date.n
     return { left_member_ids: nextGoneIds };
   }
   const leaverSide = getPvpTeamUserSide(match, safeUserId);
-  return {
-    ...buildPvpTeamFinishedPatch(match, nowMs),
+  return buildPvpTeamFinishedPatch(match, nowMs, {
     left_member_ids: nextGoneIds,
-    winner_side: leaverSide ? getPvpTeamOpponentSide(leaverSide) : 'draw',
+    winner_side: getPvpTeamOpponentSide(leaverSide),
     ended_reason: 'forfeit',
     ended_by_user_id: safeUserId,
     forfeit_by_user_id: safeUserId
-  };
+  });
 }
 
 export function buildPvpTeamAbandonedPatch(match = null, nowMs = Date.now()) {
   const status = getStatus(match);
   if (status !== 'active' && status !== 'round_result') return null;
-  return {
-    ...buildPvpTeamFinishedPatch(match, nowMs),
-    ended_reason: 'abandoned'
-  };
+  return buildPvpTeamFinishedPatch(match, nowMs, { ended_reason: 'abandoned' })
+    || buildPvpTeamCancelledPatch(match, nowMs, 'abandoned');
 }
 
 // ---------------------------------------------------------------------------
@@ -529,26 +578,23 @@ function getEliminationSeededRank(match, userId, salt = '') {
   return hashBotSeed(`pvp_elimination_rank:${safeId(match?.id)}:${salt}:${safeId(userId)}`);
 }
 
-// Quem sai no fim do ciclo: menor pontuação no ciclo; empate vai para o placar geral
-// e, persistindo, um sorteio fixo da partida (nunca a ordem de entrada na sala).
-function pickPvpEliminationEliminatedUserId(match, activeIds, cycleScores, totalScores) {
-  const cycleNo = Math.max(1, Number(match?.cycle_no || 1));
-  const ranked = [...activeIds].sort((idA, idB) => {
-    const cycleDiff = Math.max(0, Number(cycleScores[idA] || 0)) - Math.max(0, Number(cycleScores[idB] || 0));
-    if (cycleDiff !== 0) return cycleDiff;
-    const totalDiff = Math.max(0, Number(totalScores[idA] || 0)) - Math.max(0, Number(totalScores[idB] || 0));
-    if (totalDiff !== 0) return totalDiff;
-    return getEliminationSeededRank(match, idA, `cycle${cycleNo}`) - getEliminationSeededRank(match, idB, `cycle${cycleNo}`);
-  });
-  return safeId(ranked[0]);
+// A eliminação segue o placar geral mostrado aos jogadores. Empatados na última
+// posição continuam jogando: nem o líder nem alguém sem erros sai por sorteio.
+function pickPvpEliminationEliminatedUserId(activeIds, totalScores) {
+  const lowestScore = Math.min(...activeIds.map((userId) => Math.max(0, Number(totalScores[userId] || 0))));
+  const lowestIds = activeIds.filter((userId) => Math.max(0, Number(totalScores[userId] || 0)) === lowestScore);
+  return lowestIds.length === 1 ? lowestIds[0] : '';
 }
 
 // Classificação final de quem ainda está vivo quando a partida precisa terminar
-// antes do tempo (só restaram bots, partida abandonada ou perguntas esgotadas).
+// antes do tempo (só restaram bots ou partida abandonada).
 function rankPvpEliminationSurvivors(match, survivorIds) {
   const totalScores = match?.member_scores && typeof match.member_scores === 'object' ? match.member_scores : {};
   const cycleScores = match?.cycle_member_scores && typeof match.cycle_member_scores === 'object' ? match.cycle_member_scores : {};
   return [...survivorIds].sort((idA, idB) => {
+    const declaredWinner = safeId(match?.winner_user_id);
+    if (idA === declaredWinner) return -1;
+    if (idB === declaredWinner) return 1;
     const totalDiff = Math.max(0, Number(totalScores[idB] || 0)) - Math.max(0, Number(totalScores[idA] || 0));
     if (totalDiff !== 0) return totalDiff;
     const cycleDiff = Math.max(0, Number(cycleScores[idB] || 0)) - Math.max(0, Number(cycleScores[idA] || 0));
@@ -557,8 +603,24 @@ function rankPvpEliminationSurvivors(match, survivorIds) {
   });
 }
 
+function clearPvpEliminationNextBattleFields() {
+  return {
+    next_status: null,
+    next_battle_no: null,
+    next_round_in_cycle: null,
+    next_pair_no: null,
+    next_active_pair_user_ids: null,
+    next_cycle_no: null,
+    next_cycle_rounds: null,
+    next_cycle_member_scores: null,
+    next_final_elimination_order: null,
+    round_result_until_ms: null,
+    elimination_until_ms: null
+  };
+}
+
 function buildPvpEliminationStandingsFinishPatch(match, survivorIds, nowMs, extra = {}) {
-  const ranked = rankPvpEliminationSurvivors(match, uniqueIds(survivorIds));
+  const ranked = rankPvpEliminationSurvivors(match, uniqueIds([...survivorIds, match?.winner_user_id]));
   const winnerUserId = safeId(ranked[0]) || null;
   const losersWorstFirst = ranked.slice(1).reverse();
   const previousOrder = uniqueIds(match?.elimination_order).filter((userId) => !ranked.includes(userId));
@@ -569,9 +631,9 @@ function buildPvpEliminationStandingsFinishPatch(match, survivorIds, nowMs, extr
     active_member_ids: winnerUserId ? [winnerUserId] : [],
     spectator_member_ids: spectators.filter((userId) => userId !== winnerUserId),
     elimination_order: uniqueIds([...previousOrder, ...losersWorstFirst]),
-    next_status: null,
-    elimination_until_ms: null,
-    round_result_until_ms: null,
+    ...clearPvpEliminationNextBattleFields(),
+    cycle_tiebreak: false,
+    ended_battle_no: Math.max(1, Number(match?.result_battle_no || match?.battle_no || 1)),
     ended_reason: 'completed',
     ended_at: isoAt(nowMs),
     ended_at_ms: nowMs,
@@ -588,10 +650,6 @@ function buildPvpEliminationNextCycle(match, survivorIds) {
   );
   const pair = getPvpEliminationNextPlayablePair(rounds, 1, 1);
   return { nextCycleNo, rounds, pair };
-}
-
-function getPvpEliminationQuestionCount(match) {
-  return getPvpGroupQuestionCount(match, PVP_GROUP_MODE_ELIMINATION);
 }
 
 export function isPvpEliminationBattleReadyToFinalize(match = null, answerRows = [], nowMs = Date.now()) {
@@ -611,11 +669,14 @@ export function buildPvpEliminationFinalizePatch(match = null, answerRows = [], 
   if (getStatus(match) !== 'active') return null;
   const safeBattleNo = Math.max(1, Number(battleNo || match?.battle_no || 1));
   if (Math.max(1, Number(match?.battle_no || 1)) !== safeBattleNo) return null;
+  const activeIds = getPvpEliminationActiveMemberIds(match);
+  if (safeId(match?.winner_user_id) || activeIds.length <= 1) {
+    return finishFromEliminationResult(match, nowMs);
+  }
   if (!isPvpEliminationBattleReadyToFinalize(match, answerRows, nowMs)) return null;
 
-  const activeIds = getPvpEliminationActiveMemberIds(match);
   const [user1, user2] = getPvpGroupBattlePairIds(match, PVP_GROUP_MODE_ELIMINATION);
-  const question = match?.question_set?.[safeBattleNo - 1];
+  const question = getPvpGroupBattleQuestion(match, safeBattleNo);
   if (!user1 || !user2 || user1 === user2 || !question) {
     return buildPvpEliminationStandingsFinishPatch(match, activeIds, nowMs, { ended_reason: 'invalid_battle' });
   }
@@ -651,8 +712,6 @@ export function buildPvpEliminationFinalizePatch(match = null, answerRows = [], 
     result_battle_correct_answer_idx: correctIdx,
     result_battle_winner_user_id: outcome.winner_user_id || null
   };
-  const questionCount = getPvpEliminationQuestionCount(match);
-
   // Ainda há confronto neste ciclo?
   const roundInCycle = Math.max(1, Number(match?.round_in_cycle || 1));
   const pairNo = Math.max(1, Number(match?.pair_no || 1));
@@ -664,7 +723,18 @@ export function buildPvpEliminationFinalizePatch(match = null, answerRows = [], 
   const nextPairValid = !!nextPair
     && activeIds.includes(safeId(nextPair.player1_user_id))
     && activeIds.includes(safeId(nextPair.player2_user_id));
-  if (nextPairValid && safeBattleNo < questionCount) {
+  // Na final, encerra assim que o adversário não puder mais alcançar o líder.
+  // O confronto ainda é pontuado uma única vez antes de declarar o campeão.
+  const remainingBattles = (Array.isArray(match?.cycle_rounds) ? match.cycle_rounds : []).reduce((count, round, roundIndex) => {
+    const roundNo = Math.max(1, Number(round?.round_in_cycle || (roundIndex + 1)));
+    const pairs = Array.isArray(round?.pairs) ? round.pairs : [];
+    return count + pairs.filter((pair, pairIndex) => (
+      roundNo > roundInCycle || (roundNo === roundInCycle && Math.max(1, Number(pair?.pair_no || (pairIndex + 1))) > pairNo)
+    )).length;
+  }, 0);
+  const finalClinched = activeIds.length === 2
+    && Math.abs(Number(memberScores[activeIds[0]] || 0) - Number(memberScores[activeIds[1]] || 0)) > remainingBattles;
+  if (nextPairValid && !finalClinched) {
     return {
       ...resultFields,
       status: 'round_result',
@@ -680,8 +750,8 @@ export function buildPvpEliminationFinalizePatch(match = null, answerRows = [], 
     };
   }
 
-  // Fim do ciclo: sai quem pontuou menos no ciclo.
-  const eliminatedUserId = pickPvpEliminationEliminatedUserId(match, activeIds, cycleScores, memberScores);
+  // Sem um último colocado único, todos seguem para um ciclo de desempate.
+  const eliminatedUserId = pickPvpEliminationEliminatedUserId(activeIds, memberScores);
   const survivors = activeIds.filter((userId) => userId !== eliminatedUserId);
   const eliminationFields = {
     ...resultFields,
@@ -690,7 +760,9 @@ export function buildPvpEliminationFinalizePatch(match = null, answerRows = [], 
     spectator_member_ids: uniqueIds([...(match?.spectator_member_ids || []), eliminatedUserId]),
     elimination_order: uniqueIds([...(match?.elimination_order || []), eliminatedUserId]),
     eliminated_user_id: eliminatedUserId || null,
-    eliminated_reason: 'score',
+    eliminated_reason: eliminatedUserId ? 'score' : null,
+    cycle_tiebreak: !eliminatedUserId,
+    ...clearPvpEliminationNextBattleFields(),
     elimination_until_ms: nowMs + PVP_ELIMINATION_CYCLE_RESULT_DURATION_MS,
     round_result_until_ms: null
   };
@@ -705,19 +777,7 @@ export function buildPvpEliminationFinalizePatch(match = null, answerRows = [], 
   }
 
   const nextCycle = buildPvpEliminationNextCycle({ ...match, battle_no: safeBattleNo }, survivors);
-  if (!nextCycle.pair || safeBattleNo >= questionCount) {
-    const standings = buildPvpEliminationStandingsFinishPatch(
-      { ...match, ...eliminationFields },
-      survivors,
-      nowMs
-    );
-    return {
-      ...eliminationFields,
-      winner_user_id: standings.winner_user_id,
-      next_status: 'finished',
-      next_final_elimination_order: standings.elimination_order
-    };
-  }
+  if (!nextCycle.pair) return null;
 
   return {
     ...eliminationFields,
@@ -765,39 +825,13 @@ function finishFromEliminationResult(match, nowMs) {
   const finalOrder = Array.isArray(match?.next_final_elimination_order) && match.next_final_elimination_order.length
     ? uniqueIds(match.next_final_elimination_order)
     : null;
-  if (finalOrder || activeIds.length > 1) {
-    const winnerUserId = safeId(match?.winner_user_id)
-      || safeId(rankPvpEliminationSurvivors(match, activeIds)[0]);
-    const standings = finalOrder
-      ? {
-        winner_user_id: winnerUserId || null,
-        active_member_ids: winnerUserId ? [winnerUserId] : [],
-        elimination_order: finalOrder,
-        spectator_member_ids: uniqueIds([...(match?.spectator_member_ids || []), ...activeIds])
-          .filter((userId) => userId !== winnerUserId)
-      }
-      : buildPvpEliminationStandingsFinishPatch(match, activeIds, nowMs);
-    return {
-      ...standings,
-      status: 'finished',
-      next_status: null,
-      next_final_elimination_order: null,
-      elimination_until_ms: null,
-      round_result_until_ms: null,
-      ended_reason: safeId(match?.ended_reason) || 'completed',
-      ended_at: isoAt(nowMs),
-      ended_at_ms: nowMs
-    };
-  }
+  const standings = buildPvpEliminationStandingsFinishPatch(match, activeIds, nowMs);
   return {
-    status: 'finished',
-    winner_user_id: safeId(match?.winner_user_id) || safeId(activeIds[0]) || null,
-    next_status: null,
-    elimination_until_ms: null,
-    round_result_until_ms: null,
-    ended_reason: safeId(match?.ended_reason) || 'completed',
-    ended_at: isoAt(nowMs),
-    ended_at_ms: nowMs
+    ...standings,
+    elimination_order: finalOrder
+      ? finalOrder.filter((userId) => userId !== standings.winner_user_id)
+      : standings.elimination_order,
+    ended_reason: safeId(match?.ended_reason) || 'completed'
   };
 }
 
@@ -808,10 +842,13 @@ export function buildPvpEliminationAdvancePatch(match = null, nowMs = Date.now()
   if (status === 'round_result') {
     const untilMs = Math.max(0, Number(match?.round_result_until_ms || 0));
     if (untilMs > 0 && nowMs < untilMs) return null;
+    if (safeId(match?.winner_user_id) || activeIds.length <= 1 || safeId(match?.next_status).toLowerCase() === 'finished') {
+      return finishFromEliminationResult(match, nowMs);
+    }
     const nextPairIds = uniqueIds(match?.next_active_pair_user_ids);
     const nextPairValid = nextPairIds.length === 2 && nextPairIds.every((userId) => activeIds.includes(userId));
     const nextBattleNo = Math.max(1, Number(match?.next_battle_no || (Number(match?.battle_no || 1) + 1)));
-    if (!nextPairValid || nextBattleNo > getPvpEliminationQuestionCount(match)) {
+    if (!nextPairValid || !getPvpGroupBattleQuestion(match, nextBattleNo)) {
       return buildPvpEliminationStandingsFinishPatch(match, activeIds, nowMs, { ended_reason: 'invalid_battle' });
     }
     return buildPvpEliminationActivateBattlePatch(nowMs, {
@@ -826,7 +863,7 @@ export function buildPvpEliminationAdvancePatch(match = null, nowMs = Date.now()
     const untilMs = Math.max(0, Number(match?.elimination_until_ms || 0));
     if (untilMs > 0 && nowMs < untilMs) return null;
     const nextStatus = safeId(match?.next_status).toLowerCase();
-    if (nextStatus === 'finished' || activeIds.length <= 1) {
+    if (safeId(match?.winner_user_id) || nextStatus === 'finished' || activeIds.length <= 1) {
       return finishFromEliminationResult(match, nowMs);
     }
     const nextPairIds = uniqueIds(match?.next_active_pair_user_ids);
@@ -835,7 +872,7 @@ export function buildPvpEliminationAdvancePatch(match = null, nowMs = Date.now()
       ? match.next_cycle_rounds
       : null;
     const nextBattleNo = Math.max(1, Number(match?.next_battle_no || (Number(match?.battle_no || 1) + 1)));
-    if (!nextPairValid || !nextRounds || nextBattleNo > getPvpEliminationQuestionCount(match)) {
+    if (!nextPairValid || !nextRounds || !getPvpGroupBattleQuestion(match, nextBattleNo)) {
       return buildPvpEliminationStandingsFinishPatch(match, activeIds, nowMs, { ended_reason: 'invalid_battle' });
     }
     return buildPvpEliminationActivateBattlePatch(nowMs, {
@@ -871,7 +908,8 @@ export function buildPvpEliminationExitPatch(match = null, userId = '', nowMs = 
   const optOutIds = uniqueIds([...previousOptOut, safeUserId]);
   const presentHumans = getPvpGroupMatchHumanIds(match, PVP_GROUP_MODE_ELIMINATION)
     .filter((memberId) => !optOutIds.includes(memberId));
-  const decided = status === 'elimination_result' && safeId(match?.next_status).toLowerCase() === 'finished';
+  const decided = !!safeId(match?.winner_user_id) || activeIds.length <= 1
+    || safeId(match?.next_status).toLowerCase() === 'finished';
 
   if (!isActive || decided) {
     if (presentHumans.length) return { opt_out_member_ids: optOutIds };
@@ -916,7 +954,7 @@ export function buildPvpEliminationExitPatch(match = null, userId = '', nowMs = 
   const currentBattleNo = Math.max(1, Number(match?.battle_no || 1));
   const nextBattleNo = currentBattleNo + 1;
   const nextCycle = buildPvpEliminationNextCycle(exitedMatch, survivors);
-  if (!nextCycle.pair || nextBattleNo > getPvpEliminationQuestionCount(match)) {
+  if (!nextCycle.pair || !getPvpGroupBattleQuestion(match, nextBattleNo)) {
     return {
       ...exitFields,
       ...buildPvpEliminationStandingsFinishPatch(exitedMatch, survivors, nowMs, {
@@ -1053,7 +1091,9 @@ export async function finalizePvpGroupBattle(mode, matchInput, liveAnswers = [])
   const matchId = safeId(matchInput?.id);
   if (!matchId || getStatus(matchInput) !== 'active') return { committed: false, row: null };
   const battleNo = Math.max(1, Number(matchInput?.battle_no || 1));
-  const remoteAnswers = await fns.getAnswers(matchId, battleNo).catch(() => []);
+  // Falha de leitura não significa que ninguém respondeu. Deixa o próximo tick
+  // tentar novamente em vez de fechar com zero e eliminar quem já acertou.
+  const remoteAnswers = await fns.getAnswers(matchId, battleNo);
   const answers = mergeAnswerRows(
     (Array.isArray(liveAnswers) ? liveAnswers : []).filter((row) => Number(row?.battle_no || battleNo) === battleNo),
     (Array.isArray(remoteAnswers) ? remoteAnswers : []).map((row) => ({ ...row, battle_no: Number(row?.battle_no || battleNo) }))
@@ -1155,6 +1195,11 @@ export async function applyPvpGroupMatchBotRewards(mode, matchInput) {
     }).catch(() => null);
     if (!claim?.committed || !claim.row) continue;
     appliedAny = true;
+    // Cancelamentos liberam os bots, mas não contam como empate, vitória ou batalha.
+    if (claim.row.result_void === true) {
+      await releasePvpGroupBots([botId], getPvpGroupMatchBusyId(claim.row), 'group_match_cancelled');
+      continue;
+    }
     const stats = await getUserStats(botId).catch(() => null);
     const outcome = getPvpGroupMatchOutcomeForUser(claim.row, mode, botId, {
       battleCountBefore: Math.max(0, Number(stats?.pvp_battles || 0))
@@ -1267,16 +1312,21 @@ function getPvpGroupResultPairIds(match, mode) {
   return [safeId(entry?.red_user_id), safeId(entry?.blue_user_id)];
 }
 
-function capPvpGroupBotEmojiPlan(plan, random, maxBots = 3) {
+function capPvpGroupBotEmojiPlan(plan, random, maxBots = 3, firstDelayMs = 900) {
   return plan.slice(0, maxBots).map((entry, index) => ({
     ...entry,
     // Um bot de cada vez, como pessoas reagindo em momentos diferentes.
-    delayMs: Math.round(900 + index * 1100 + random() * 900)
+    delayMs: Math.round(firstDelayMs + index * 1100 + random() * 900)
   }));
 }
 
-// Fim de um confronto: quem venceu comemora mais, quem perdeu às vezes reage e os outros
-// bots (parceiro no 2x2, quem assiste na eliminatória) entram de vez em quando.
+function pickRandomEntry(list, random) {
+  const safeList = Array.isArray(list) ? list : [];
+  return safeList[Math.min(safeList.length - 1, Math.floor(random() * safeList.length))];
+}
+
+// Fim de um confronto: quem venceu comemora (ou provoca), quem perdeu lamenta e os outros
+// bots (parceiro no 2x2, quem assiste na eliminatória) apoiam ou reagem ao lance.
 export function planPvpGroupBotRoundEmojis(match = null, mode = PVP_GROUP_MODE_TEAM, random = Math.random) {
   const safeMode = normalizeMode(mode);
   const pairIds = getPvpGroupResultPairIds(match, safeMode).filter(Boolean);
@@ -1285,61 +1335,189 @@ export function planPvpGroupBotRoundEmojis(match = null, mode = PVP_GROUP_MODE_T
   const plan = [];
   pairIds.forEach((userId) => {
     if (!isSystemBotUserId(userId)) return;
-    const won = !!winnerId && winnerId === userId;
-    const chance = won ? 0.7 : (winnerId ? 0.3 : 0.25);
-    if (random() < chance) plan.push({ botId: userId, count: won && random() < 0.4 ? 2 : 1 });
+    if (winnerId && winnerId === userId) {
+      if (random() < 0.85) {
+        plan.push({ botId: userId, count: random() < 0.35 ? 2 : 1, mood: random() < 0.7 ? 'celebrate' : 'tease' });
+      }
+      return;
+    }
+    if (winnerId) {
+      if (random() < 0.55) plan.push({ botId: userId, count: 1, mood: 'lament' });
+      return;
+    }
+    // Confronto empatado (os dois acertaram ou os dois erraram).
+    if (random() < 0.4) plan.push({ botId: userId, count: 1, mood: random() < 0.5 ? 'think' : 'gg' });
   });
   getPvpGroupMatchBotIds(match, safeMode)
     .filter((botId) => !pairIds.includes(botId))
     .forEach((botId) => {
-      const cheering = !!winnerSide && getPvpTeamUserSide(match, botId) === winnerSide;
-      if (random() < (cheering ? 0.35 : 0.12)) plan.push({ botId, count: 1 });
+      if (winnerSide) {
+        const sameSide = getPvpTeamUserSide(match, botId) === winnerSide;
+        if (random() < (sameSide ? 0.5 : 0.22)) plan.push({ botId, count: 1, mood: sameSide ? 'cheer' : 'lament' });
+        return;
+      }
+      if (random() < 0.22) {
+        plan.push({ botId, count: 1, mood: winnerId ? pickRandomEntry(['cheer', 'tease'], random) : 'think' });
+      }
     });
   return capPvpGroupBotEmojiPlan(plan, random);
 }
 
-// Fim de ciclo na eliminatória: o bot eliminado costuma reagir, os demais às vezes, e o
-// campeão (quando a partida acaba) quase sempre comemora.
+// Fim de ciclo na eliminatória: o campeão comemora, o bot eliminado lamenta (ou cumprimenta)
+// e os demais reagem; no desempate sem eliminado o clima é de tensão.
 export function planPvpGroupBotEliminationEmojis(match = null, random = Math.random) {
   const eliminatedId = safeId(match?.eliminated_user_id);
-  const championId = safeId(match?.next_status).toLowerCase() === 'finished' ? safeId(match?.winner_user_id) : '';
+  const championId = safeId(match?.winner_user_id);
+  const spectatorIds = uniqueIds(match?.spectator_member_ids);
   const plan = [];
-  if (championId && isSystemBotUserId(championId) && random() < 0.8) plan.push({ botId: championId, count: 2 });
-  if (eliminatedId && isSystemBotUserId(eliminatedId) && random() < 0.6) plan.push({ botId: eliminatedId, count: 1 });
+  if (championId && isSystemBotUserId(championId) && random() < 0.9) {
+    plan.push({ botId: championId, count: 2, mood: 'celebrate' });
+  }
+  if (eliminatedId && isSystemBotUserId(eliminatedId) && random() < 0.7) {
+    plan.push({ botId: eliminatedId, count: 1, mood: random() < 0.65 ? 'lament' : 'gg' });
+  }
   getPvpGroupMatchBotIds(match, PVP_GROUP_MODE_ELIMINATION)
     .filter((botId) => botId !== eliminatedId && botId !== championId)
     .forEach((botId) => {
-      if (random() < 0.3) plan.push({ botId, count: 1 });
+      if (random() >= 0.35) return;
+      let mood = 'cheer';
+      if (!eliminatedId && !championId) mood = pickRandomEntry(['think', 'tease'], random);
+      else if (!spectatorIds.includes(botId)) mood = pickRandomEntry(['celebrate', 'tease'], random);
+      plan.push({ botId, count: 1, mood });
     });
   return capPvpGroupBotEmojiPlan(plan, random);
 }
 
-// Alguém mandou emoji: às vezes um bot responde. No 2x2 quem responde costuma ser do time
-// adversário (provocação) e às vezes o parceiro; na eliminatória, de preferência quem está duelando.
-export function pickPvpGroupBotEmojiReply(match = null, mode = PVP_GROUP_MODE_TEAM, senderId = '', random = Math.random) {
+// Tela de resultado final: quem venceu comemora logo que a tela abre, quem perdeu
+// cumprimenta ou lamenta; as reações se espalham pelos primeiros segundos.
+export function planPvpGroupBotFinalEmojis(match = null, mode = PVP_GROUP_MODE_TEAM, random = Math.random) {
   const safeMode = normalizeMode(mode);
-  const safeSenderId = safeId(senderId);
-  const botIds = getPvpGroupMatchBotIds(match, safeMode).filter((botId) => botId !== safeSenderId);
-  if (!botIds.length || random() >= 0.6) return null;
-  let candidates = botIds;
-  if (safeMode === PVP_GROUP_MODE_TEAM) {
-    const senderSide = getPvpTeamUserSide(match, safeSenderId);
-    const rivals = botIds.filter((botId) => getPvpTeamUserSide(match, botId) !== senderSide);
-    const mates = botIds.filter((botId) => getPvpTeamUserSide(match, botId) === senderSide);
-    candidates = (rivals.length && (random() < 0.7 || !mates.length)) ? rivals : (mates.length ? mates : botIds);
-  } else {
-    const dueling = getPvpGroupBattlePairIds(match, safeMode).filter((userId) => botIds.includes(userId));
-    if (dueling.length && random() < 0.7) candidates = dueling;
+  if (match?.result_void === true) return [];
+  const winnerSide = safeId(match?.winner_side);
+  const championId = safeId(match?.winner_user_id);
+  const winners = [];
+  const others = [];
+  getPvpGroupMatchBotIds(match, safeMode).forEach((botId) => {
+    const won = safeMode === PVP_GROUP_MODE_TEAM
+      ? !!winnerSide && getPvpTeamUserSide(match, botId) === winnerSide
+      : !!championId && botId === championId;
+    if (won) {
+      if (random() < 0.92) winners.push({ botId, count: random() < 0.55 ? 2 : 1, mood: 'celebrate' });
+      return;
+    }
+    if (random() < (safeMode === PVP_GROUP_MODE_TEAM ? 0.65 : 0.5)) {
+      others.push({ botId, count: 1, mood: random() < 0.6 ? 'gg' : 'lament' });
+    }
+  });
+  return capPvpGroupBotEmojiPlan([...winners, ...others], random, 4, 1300);
+}
+
+// Conversa de fundo: a cada tique, o aparelho que conduz os bots pergunta se algum bot
+// manda um emoji agora. Cada fase tem seu ritmo; o clima depende do momento do bot.
+export const PVP_GROUP_BOT_AMBIENT_TICK_MS = 3500;
+// Na tela de resultado final os bots conversam só no primeiro minuto e pouco.
+export const PVP_GROUP_RESULT_BOT_EMOJI_WINDOW_MS = 75000;
+const PVP_GROUP_BOT_AMBIENT_CHANCE_BY_PHASE = {
+  active: 0.16,
+  round_result: 0.12,
+  elimination_result: 0.14,
+  finished: 0.2
+};
+
+function getPvpGroupBotAmbientMood(match, mode, botId, phase, answeredIds, random) {
+  if (phase === 'finished') {
+    if (match?.result_void === true) return 'gg';
+    const won = mode === PVP_GROUP_MODE_TEAM
+      ? getPvpTeamUserSide(match, botId) === safeId(match?.winner_side)
+      : safeId(match?.winner_user_id) === botId;
+    return won ? pickRandomEntry(['celebrate', 'celebrate', 'tease'], random) : pickRandomEntry(['gg', 'gg', 'lament'], random);
   }
+  if (phase === 'active') {
+    const pairIds = getPvpGroupBattlePairIds(match, mode);
+    // Na vez dele: pensa antes de responder e provoca depois.
+    if (pairIds.includes(botId)) return answeredIds.includes(botId) ? 'tease' : 'think';
+    // No 2x2 o parceiro do bot sempre está no confronto: torce por ele.
+    if (mode === PVP_GROUP_MODE_TEAM) return random() < 0.7 ? 'cheer' : 'tease';
+    return pickRandomEntry(['cheer', 'think', 'tease'], random);
+  }
+  if (mode === PVP_GROUP_MODE_TEAM) {
+    const side = getPvpTeamUserSide(match, botId);
+    const myScore = Number(side === 'red' ? match?.red_score : match?.blue_score) || 0;
+    const rivalScore = Number(side === 'red' ? match?.blue_score : match?.red_score) || 0;
+    if (myScore > rivalScore) return pickRandomEntry(['celebrate', 'tease'], random);
+    if (myScore < rivalScore) return pickRandomEntry(['lament', 'cheer'], random);
+    return 'think';
+  }
+  return pickRandomEntry(['cheer', 'tease', 'think'], random);
+}
+
+export function planPvpGroupBotAmbientEmoji(match = null, mode = PVP_GROUP_MODE_TEAM, options = {}) {
+  const safeMode = normalizeMode(mode);
+  const random = typeof options?.random === 'function' ? options.random : Math.random;
+  const phase = safeId(options?.phase).toLowerCase();
+  const chance = PVP_GROUP_BOT_AMBIENT_CHANCE_BY_PHASE[phase] || 0;
+  const botIds = getPvpGroupMatchBotIds(match, safeMode);
+  if (!botIds.length || !chance || random() >= chance) return null;
+  const botId = pickRandomEntry(botIds, random);
+  const answeredIds = uniqueIds(options?.answeredIds);
   return {
-    botId: candidates[Math.floor(random() * candidates.length)],
-    count: random() < 0.25 ? 2 : 1,
-    delayMs: Math.round(900 + random() * 1300)
+    botId,
+    count: 1,
+    delayMs: Math.round(random() * 1200),
+    mood: getPvpGroupBotAmbientMood(match, safeMode, botId, phase, answeredIds, random)
   };
 }
 
+// Alguém mandou emoji: quase sempre um bot responde e às vezes dois. No 2x2 o time
+// adversário provoca e o parceiro apoia; na eliminatória responde de preferência quem
+// está duelando. De vez em quando o bot devolve o mesmo emoji. Emoji de bot só às vezes
+// puxa resposta de outro bot, para a conversa não virar uma corrente sem fim.
+export function pickPvpGroupBotEmojiReplies(match = null, mode = PVP_GROUP_MODE_TEAM, senderId = '', options = {}) {
+  const safeMode = normalizeMode(mode);
+  const random = typeof options?.random === 'function' ? options.random : Math.random;
+  const safeSenderId = safeId(senderId);
+  const fromBot = isSystemBotUserId(safeSenderId);
+  const senderEmoji = safeId(options?.emoji);
+  const botIds = getPvpGroupMatchBotIds(match, safeMode).filter((botId) => botId !== safeSenderId);
+  if (!botIds.length || random() >= (fromBot ? 0.22 : 0.85)) return [];
+
+  const senderSide = safeMode === PVP_GROUP_MODE_TEAM ? getPvpTeamUserSide(match, safeSenderId) : '';
+  const dueling = getPvpGroupBattlePairIds(match, safeMode).filter((userId) => botIds.includes(userId));
+  const pickReplier = (excludeIds) => {
+    const pool = botIds.filter((botId) => !excludeIds.includes(botId));
+    if (!pool.length) return '';
+    if (safeMode === PVP_GROUP_MODE_TEAM) {
+      const rivals = pool.filter((botId) => getPvpTeamUserSide(match, botId) !== senderSide);
+      const mates = pool.filter((botId) => getPvpTeamUserSide(match, botId) === senderSide);
+      const preferred = (rivals.length && (random() < 0.65 || !mates.length)) ? rivals : (mates.length ? mates : pool);
+      return pickRandomEntry(preferred, random);
+    }
+    const duelingPool = dueling.filter((botId) => pool.includes(botId));
+    return pickRandomEntry(duelingPool.length && random() < 0.65 ? duelingPool : pool, random);
+  };
+  const replyMood = (botId) => {
+    if (safeMode === PVP_GROUP_MODE_TEAM) return getPvpTeamUserSide(match, botId) === senderSide ? 'cheer' : 'tease';
+    return dueling.includes(botId) ? 'tease' : pickRandomEntry(['cheer', 'tease', 'gg'], random);
+  };
+
+  const replies = [];
+  const total = !fromBot && botIds.length > 1 && random() < 0.3 ? 2 : 1;
+  for (let index = 0; index < total; index += 1) {
+    const botId = pickReplier(replies.map((reply) => reply.botId));
+    if (!botId) break;
+    replies.push({
+      botId,
+      count: random() < 0.2 ? 2 : 1,
+      delayMs: Math.round(800 + index * 1300 + random() * 1100),
+      mood: replyMood(botId),
+      emoji: senderEmoji && random() < 0.25 ? senderEmoji : ''
+    });
+  }
+  return replies;
+}
+
 // Bot da dupla respondeu antes do adversário: de vez em quando provoca enquanto espera.
-export const PVP_GROUP_BOT_FIRST_ANSWER_EMOJI_CHANCE = 0.18;
+export const PVP_GROUP_BOT_FIRST_ANSWER_EMOJI_CHANCE = 0.3;
 
 // Sorteia quando o próximo bot entra numa sala 2x2 com vaga aberta.
 export function getPvpTeamRoomBotFillDelayMs(room = null, afterBotJoin = false) {

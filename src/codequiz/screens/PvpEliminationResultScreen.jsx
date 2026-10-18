@@ -1,14 +1,15 @@
 import { Crown, Flag, Home, ListOrdered, Medal, Swords } from 'lucide-react';
 import { formatSignedPoints } from '../app/helpers';
 import { Avatar, Badge, Button, Card, CoinIcon, Confetti, SectionHeader, StatTile, XpIcon, cx } from '../ui';
+import { EmojiBar, EmojiFxLayer, battleStyles as battle } from './shared/BattleParts';
 import { buildPlayerView } from './shared/players';
 import game from './shared/Game.module.css';
 import outcome from './shared/Outcome.module.css';
 
-// Chave de resultado vem da colocação: 1º = win, 2º = draw, demais = loss.
+// Só o campeão recebe vitória; a apresentação do vice preserva sua colocação.
 const OUTCOMES = {
   win: { title: 'Campeão da eliminatória!', icon: Crown, tone: outcome.great },
-  draw: { title: 'Vice-campeão!', icon: Medal, tone: outcome.ok },
+  runner_up: { title: 'Vice-campeão!', icon: Medal, tone: outcome.ok },
   loss: { title: 'Eliminatória encerrada', icon: Flag, tone: outcome.low }
 };
 
@@ -18,6 +19,7 @@ export default function PvpEliminationResultScreen({ vm }) {
   const {
     buildCosmeticSnapshot,
     collectPvpEliminationResultRewards,
+    emojis,
     pvpEliminationMyUserId,
     pvpEliminationPlacementLabel,
     pvpEliminationResultKey,
@@ -32,11 +34,14 @@ export default function PvpEliminationResultScreen({ vm }) {
     setScreen
   } = vm;
 
-  const key = OUTCOMES[pvpEliminationResultKey] ? pvpEliminationResultKey : 'loss';
-  const view = OUTCOMES[key];
-  const Icon = view.icon;
   const placementLabel = pvpEliminationResultReward?.placementLabel || pvpEliminationPlacementLabel;
   const rows = Array.isArray(pvpEliminationResultRows) ? pvpEliminationResultRows : [];
+  const placement = Number(pvpEliminationResultReward?.placement
+    || rows.find((row) => String(row?.user_id || '') === pvpEliminationMyUserId)?.placement
+    || 0);
+  const key = pvpEliminationResultKey === 'win' ? 'win' : (placement === 2 ? 'runner_up' : 'loss');
+  const view = OUTCOMES[key];
+  const Icon = view.icon;
   const points = Number(pvpEliminationResultReward?.points || 0);
   const winnerIsMe = !!pvpEliminationWinnerUserId && pvpEliminationWinnerUserId === pvpEliminationMyUserId;
 
@@ -63,6 +68,16 @@ export default function PvpEliminationResultScreen({ vm }) {
                 <Badge tone="gold" icon={Crown}>Campeão: {pvpEliminationWinnerMember?.nickname || 'Jogador'}</Badge>
               ) : null}
             </div>
+            {emojis?.onSend ? (
+              <EmojiBar
+                emojis={emojis.list}
+                onSend={emojis.onSend}
+                cooldownActive={emojis.cooldownActive}
+                cooldownPct={emojis.cooldownPct}
+                cooldownLabel={emojis.cooldownLabel}
+                className={battle.emojiBarResult}
+              />
+            ) : null}
           </section>
         </div>
 
@@ -110,6 +125,7 @@ export default function PvpEliminationResultScreen({ vm }) {
           )}
         </div>
       </main>
+      <EmojiFxLayer items={Array.isArray(emojis?.fx) ? emojis.fx : []} />
     </div>
   );
 }

@@ -1,7 +1,7 @@
-import { Crown, Frown, Handshake, Home, Swords, Trophy } from 'lucide-react';
+import { Crown, Flag, Frown, Home, Swords, Trophy } from 'lucide-react';
 import { formatSignedPoints } from '../app/helpers';
 import { Avatar, Badge, Button, CoinIcon, Confetti, StatTile, XpIcon, cx } from '../ui';
-import { battleStyles as battle } from './shared/BattleParts';
+import { EmojiBar, EmojiFxLayer, battleStyles as battle } from './shared/BattleParts';
 import { buildPlayerView } from './shared/players';
 import game from './shared/Game.module.css';
 import outcome from './shared/Outcome.module.css';
@@ -9,7 +9,7 @@ import team from './shared/TeamBattle.module.css';
 
 const OUTCOMES = {
   win: { title: 'Vitória da equipe!', text: 'Trabalho em equipe de respeito.', icon: Trophy, tone: outcome.great },
-  draw: { title: 'Empate em equipe', text: 'As duas equipes foram até o limite.', icon: Handshake, tone: outcome.ok },
+  cancelled: { title: 'Partida cancelada', text: 'A partida foi interrompida antes da definição do vencedor.', icon: Flag, tone: outcome.ok },
   lose: { title: 'Derrota da equipe', text: 'Reúna o time e volte para a revanche!', icon: Frown, tone: outcome.bad }
 };
 
@@ -52,6 +52,7 @@ export default function PvpTeamResultScreen({ vm }) {
   const {
     buildCosmeticSnapshot,
     collectPvpTeamResultRewards,
+    emojis,
     pvpTeamBlueMembers,
     pvpTeamMatch,
     pvpTeamMySide,
@@ -65,7 +66,8 @@ export default function PvpTeamResultScreen({ vm }) {
     setScreen
   } = vm;
 
-  const key = pvpTeamResultKey === 'win' ? 'win' : (pvpTeamResultKey === 'draw' ? 'draw' : 'lose');
+  const cancelled = pvpTeamMatch?.result_void === true;
+  const key = cancelled ? 'cancelled' : (pvpTeamResultKey === 'win' ? 'win' : 'lose');
   const view = OUTCOMES[key];
   const Icon = view.icon;
   const winnerSide = String(pvpTeamMatch?.winner_side || '').trim();
@@ -100,6 +102,16 @@ export default function PvpTeamResultScreen({ vm }) {
                 <span className={cx(battle.scorelineValue, outcome.heroScoreValue, team.scoreBlue)}>{blueScore}</span>
               </span>
             </div>
+            {emojis?.onSend ? (
+              <EmojiBar
+                emojis={emojis.list}
+                onSend={emojis.onSend}
+                cooldownActive={emojis.cooldownActive}
+                cooldownPct={emojis.cooldownPct}
+                cooldownLabel={emojis.cooldownLabel}
+                className={battle.emojiBarResult}
+              />
+            ) : null}
           </section>
         </div>
 
@@ -127,7 +139,11 @@ export default function PvpTeamResultScreen({ vm }) {
         </div>
 
         <div className={outcome.splitActions}>
-          {pvpTeamResultReward ? (
+          {cancelled ? (
+            <Button size="xl" variant="primary" block icon={Home} onClick={goHome}>
+              Voltar ao início
+            </Button>
+          ) : pvpTeamResultReward ? (
             <>
               <div className={outcome.rewards}>
                 <StatTile icon={Swords} label="Pontos PvP" value={formatSignedPoints(points)} tone={points >= 0 ? 'violet' : 'red'} />
@@ -148,6 +164,7 @@ export default function PvpTeamResultScreen({ vm }) {
           )}
         </div>
       </main>
+      <EmojiFxLayer items={Array.isArray(emojis?.fx) ? emojis.fx : []} />
     </div>
   );
 }

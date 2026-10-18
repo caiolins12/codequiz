@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { CircleCheck, Hourglass, SmilePlus, X } from 'lucide-react';
+import { PVP_EMOJI_FX_DURATION_MS } from '../../app/helpers';
 import { Avatar, cx } from '../../ui';
 import styles from './Battle.module.css';
 
@@ -127,7 +128,8 @@ export function EmojiFxLayer({ items = [] }) {
           className={cx(styles.fx, fx.label ? styles.fxLabeled : '')}
           style={{
             top: `${Number.isFinite(Number(fx?.topPct)) ? Number(fx.topPct) : 58}%`,
-            [String(fx?.side || '') === 'left' ? 'left' : 'right']: `calc(8% + ${Math.max(0, Number(fx?.offsetPx || 0))}px)`
+            [String(fx?.side || '') === 'left' ? 'left' : 'right']: `calc(8% + ${Math.max(0, Number(fx?.offsetPx || 0))}px)`,
+            animationDuration: `${PVP_EMOJI_FX_DURATION_MS}ms`
           }}
         >
           {fx.emoji}

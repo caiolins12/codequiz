@@ -943,6 +943,14 @@ export const PVP_THEME_SWITCH_EVERY_QUESTIONS = 3;
 export const PVP_EMOJI_SPAM_WINDOW_MS = 1000;
 export const PVP_EMOJI_SPAM_BURST_LIMIT = 3;
 export const PVP_EMOJI_SPAM_COOLDOWN_MS = 2000;
+// Quanto tempo cada emoji enviado fica na tela (a animação usa o mesmo valor).
+export const PVP_EMOJI_FX_DURATION_MS = 2600;
+// Os emojis chegam pelo polling do banco em lotes. Cada remetente é reproduzido no
+// ritmo em que mandou, com um respiro mínimo entre dois emojis seus, e um atraso
+// grande demais (aba em segundo plano, histórico) é descartado em vez de acumular.
+export const PVP_EMOJI_REPLAY_MIN_GAP_MS = 340;
+export const PVP_EMOJI_REPLAY_MAX_GAP_MS = 1400;
+export const PVP_EMOJI_REPLAY_MAX_BACKLOG_MS = 3200;
 export const PVP_MODE_DUEL = 'duel';
 export const PVP_MODE_TEAM_BATTLE = 'team_battle';
 export const PVP_MODE_ELIMINATION = 'elimination';
@@ -1041,6 +1049,21 @@ export function isPvpTeamRoomMemberReady(roomRow = null, userId = '') {
   return getPvpTeamRoomReadyMemberIds(roomRow).includes(safeUserId);
 }
 
+// Quando o membro aparece como pronto na sala 2x2: 0 = já está pronto, null = não marcou.
+// Jogador do sistema fica pronto alguns segundos depois de entrar, como uma pessoa faria.
+// O atraso sai do id e da hora de entrada, então todos na sala veem o mesmo momento.
+export function getPvpTeamMemberReadyAtMs(roomRow = null, member = null) {
+  const userId = String(member?.user_id || '').trim();
+  if (!userId) return null;
+  if (getPvpTeamRoomReadyMemberIds(roomRow).includes(userId)) return 0;
+  if (!isSystemBotUserId(userId)) return null;
+  let hash = 0;
+  for (let index = 0; index < userId.length; index += 1) {
+    hash = ((hash * 31) + userId.charCodeAt(index)) >>> 0;
+  }
+  return Math.max(0, Number(member?.joined_at_ms || 0)) + 2500 + (hash % 4500);
+}
+
 export function getPvpTeamRoomLaunchCheck(roomRow = null) {
   const room = roomRow && typeof roomRow === 'object' ? roomRow : null;
   const hostUserId = getPvpTeamRoomHostUserId(room);
@@ -1122,11 +1145,20 @@ export function buildPvpTeamBattleSchedule(roomRow = null) {
 }
 
 export function getPvpTeamBattleEntry(matchRow = null, battleNo = 1) {
-  const schedule = Array.isArray(matchRow?.battle_schedule) ? matchRow.battle_schedule : [];
-  const safeBattleNo = Math.max(1, Number(battleNo || 1));
-  return schedule.find((entry) => Number(entry?.battle_no || 0) === safeBattleNo)
-    || schedule[safeBattleNo - 1]
+  const schedule = Array.isArray(matchRow?.battle_schedule) && matchRow.battle_schedule.length
+    ? matchRow.battle_schedule
+    : buildPvpTeamBattleSchedule(matchRow);
+  const safeBattleNo = Math.max(1, Math.trunc(Number(battleNo || 1)));
+  const entry = schedule.find((row) => Number(row?.battle_no || 0) === safeBattleNo)
+    || schedule[(safeBattleNo - 1) % schedule.length]
     || null;
+  if (!entry) return null;
+  const totalRounds = Math.max(1, Number(matchRow?.total_rounds || PVP_TEAM_BATTLE_TOTAL_ROUNDS));
+  return {
+    ...entry,
+    battle_no: safeBattleNo,
+    overtime_round_no: Math.max(0, safeBattleNo - totalRounds)
+  };
 }
 
 export function getPvpTeamResultForUser(matchRow = null, userId = '') {
@@ -1454,6 +1486,164 @@ export function removeEmojiFromDraftByIndex(list, index) {
   return next;
 }
 
+// Quando mostrar o próximo emoji de um remetente. `lane` guarda o último emoji dele
+// já agendado ({ sentAtMs, showAtMs }) e volta atualizado para a próxima chamada.
+export function schedulePvpEmojiReplay(lane = null, sentAtMs = 0, nowMs = Date.now()) {
+  const safeNowMs = Math.max(0, Number(nowMs) || 0);
+  const safeSentAtMs = Math.max(0, Number(sentAtMs) || 0);
+  const lastShowAtMs = Math.max(0, Number(lane?.showAtMs) || 0);
+  const lastSentAtMs = Math.max(0, Number(lane?.sentAtMs) || 0);
+  if (!lastShowAtMs) {
+    return { showAtMs: safeNowMs, drop: false, lane: { sentAtMs: safeSentAtMs, showAtMs: safeNowMs } };
+  }
+  const sentGapMs = safeSentAtMs && lastSentAtMs ? safeSentAtMs - lastSentAtMs : PVP_EMOJI_REPLAY_MIN_GAP_MS;
+  const gapMs = Math.min(PVP_EMOJI_REPLAY_MAX_GAP_MS, Math.max(PVP_EMOJI_REPLAY_MIN_GAP_MS, sentGapMs));
+  const showAtMs = Math.max(safeNowMs, lastShowAtMs + gapMs);
+  if (showAtMs - safeNowMs > PVP_EMOJI_REPLAY_MAX_BACKLOG_MS) {
+    return { showAtMs, drop: true, lane };
+  }
+  return {
+    showAtMs,
+    drop: false,
+    lane: { sentAtMs: Math.max(safeSentAtMs, lastSentAtMs), showAtMs }
+  };
+}
+
+// Faixas fixas de cada lado da tela, bem separadas na altura e no recuo para o nome
+// de quem mandou caber. O emoji novo vai para a faixa livre mais baixa; com todas
+// ocupadas, reaproveita a faixa cujo último emoji já está mais adiantado na animação.
+export const PVP_EMOJI_FX_LANES = [
+  { topPct: 60, offsetPx: 0 },
+  { topPct: 47, offsetPx: 48 },
+  { topPct: 34, offsetPx: 14 },
+  { topPct: 21, offsetPx: 62 }
+];
+
+export function pickPvpEmojiFxLane(currentFx = [], side = 'right') {
+  const safeSide = side === 'left' ? 'left' : 'right';
+  const sameSide = (Array.isArray(currentFx) ? currentFx : []).filter((item) => item?.side === safeSide);
+  const newestShownAtByLane = PVP_EMOJI_FX_LANES.map((_, laneIndex) => sameSide
+    .filter((item) => Number(item?.lane) === laneIndex)
+    .reduce((latest, item) => Math.max(latest, Number(item?.shownAtMs) || 1), 0));
+  let laneIndex = newestShownAtByLane.findIndex((shownAtMs) => shownAtMs === 0);
+  if (laneIndex < 0) {
+    laneIndex = newestShownAtByLane.reduce((best, shownAtMs, index) => (
+      shownAtMs < newestShownAtByLane[best] ? index : best
+    ), 0);
+  }
+  return { lane: laneIndex, ...PVP_EMOJI_FX_LANES[laneIndex] };
+}
+
+// Emojis de cada clima do momento. O bot prefere os do próprio repertório que
+// combinam com o clima e, às vezes, usa um emoji comum dele (como uma pessoa faria).
+export const BOT_EMOJI_MOODS = {
+  celebrate: ['🔥', '😎', '🏆', '🥳', '💪', '🚀', '🎉', '😏', '🤩'],
+  lament: ['😵', '😤', '🤯', '😅', '🙃', '😭', '😬', '🫠'],
+  tease: ['😏', '👀', '🤭', '😈', '😜', '🙄', '🤡'],
+  cheer: ['👏', '💪', '🔥', '🫶', '🙌', '👍', '🤝'],
+  think: ['🤔', '🧠', '🧐', '💡', '😬', '🫡'],
+  gg: ['🤝', '👏', '👍', '🫡', '😊', '🙌']
+};
+
+export function pickBotMoodEmoji(botUserId = '', mood = '', random = Math.random, personality = 'provocador') {
+  const pool = getBotEmojiPool(personality, botUserId);
+  const pick = (list) => list[Math.min(list.length - 1, Math.floor(random() * list.length))];
+  const moodEmojis = BOT_EMOJI_MOODS[mood];
+  if (!Array.isArray(moodEmojis)) return pick(pool);
+  const own = pool.filter((emoji) => moodEmojis.includes(emoji));
+  if (own.length) return random() < 0.75 ? pick(own) : pick(moodEmojis);
+  return random() < 0.8 ? pick(moodEmojis) : pick(pool);
+}
+
+// Estilo de jogo dos bots nas partidas contra pessoas (duelo, 2x2 e Um contra todos).
+// - elite: os melhores do jogo, 90% de acerto do começo ao fim.
+// - competitivo: acompanha o placar. Com vantagem relaxa, atrás aperta e, na reta final
+//   com placar apertado, fica mais concentrado. A partida tende a se decidir no fim.
+// - oscilante: mais humano, tem dias bons e ruins e dá espaço para viradas.
+// Tudo é sorteio fixo por partida/bot/rodada: todos os aparelhos chegam à mesma resposta.
+export const BOT_PLAY_STYLES = {
+  elite: {
+    label: 'Elite',
+    adaptive: false,
+    timingStrength: 'forte'
+  },
+  competitivo: {
+    label: 'Competitivo',
+    adaptive: true,
+    timingStrength: 'medio',
+    base: 0.75,
+    form: 0.04,
+    easePerPoint: 0.08,
+    maxEase: 0.22,
+    pushPerPoint: 0.05,
+    maxPush: 0.12,
+    clutch: 0.05,
+    min: 0.52,
+    max: 0.9
+  },
+  oscilante: {
+    label: 'Oscilante',
+    adaptive: true,
+    timingStrength: 'medio',
+    base: 0.67,
+    form: 0.08,
+    easePerPoint: 0.09,
+    maxEase: 0.26,
+    pushPerPoint: 0.06,
+    maxPush: 0.14,
+    clutch: 0.03,
+    min: 0.42,
+    max: 0.86
+  }
+};
+
+export const BOT_PLAY_STYLE_BY_BOT_ID = {
+  bot_sys_codequiz_thiagoara: 'elite',
+  bot_sys_codequiz_bdevonly: 'elite',
+  bot_sys_codequiz_orbita: 'elite',
+  bot_sys_codequiz_prime: 'competitivo',
+  bot_sys_codequiz_zefira: 'competitivo',
+  bot_sys_codequiz_flakael: 'competitivo',
+  bot_sys_codequiz_sopro: 'oscilante',
+  bot_sys_codequiz_lua9: 'oscilante',
+  bot_sys_codequiz_z3n: 'oscilante'
+};
+
+export function getBotPlayStyleKey(botUserId = '') {
+  return BOT_PLAY_STYLE_BY_BOT_ID[String(botUserId || '').trim()] || '';
+}
+
+// Acerto do bot nesta rodada, ou null quando o bot joga com acerto fixo (elite ou
+// bot sem estilo). Placar: o do bot (ou do time dele) contra o do adversário.
+export function getBotAdaptiveAccuracy(botUserId = '', context = {}) {
+  const safeBotId = String(botUserId || '').trim();
+  const style = BOT_PLAY_STYLES[getBotPlayStyleKey(safeBotId)];
+  if (!style?.adaptive) return null;
+  const matchId = String(context?.matchId || '').trim();
+  const roundNo = Math.max(1, Math.trunc(Number(context?.roundNo || 1)));
+  const totalRounds = Math.max(roundNo, Math.trunc(Number(context?.totalRounds || roundNo)));
+  const botScore = Number(context?.botScore);
+  const opponentScore = Number(context?.opponentScore);
+  // Bot contra bot (eliminatória) não se ajusta: o placar só fica parelho contra pessoas.
+  const lead = context?.opponentIsBot === true || !Number.isFinite(botScore) || !Number.isFinite(opponentScore)
+    ? 0
+    : botScore - opponentScore;
+
+  const formRoll = matchId ? getBotSeededUnit(`bot_form:${matchId}:${safeBotId}`) : 0.5;
+  let accuracy = style.base + (formRoll * 2 - 1) * style.form;
+  if (lead > 0) accuracy -= Math.min(style.maxEase, lead * style.easePerPoint);
+  if (lead < 0) accuracy += Math.min(style.maxPush, -lead * style.pushPerPoint);
+  // Reta final empatada ou com o bot um ponto atrás: ele se concentra e briga até o fim.
+  if (totalRounds - roundNo <= 1 && lead <= 0 && lead >= -1) accuracy += style.clutch;
+  return Math.max(style.min, Math.min(style.max, accuracy));
+}
+
+// Força usada para o tempo de resposta (o estilo pode responder num ritmo diferente).
+export function getBotTimingStrength(botUserId = '', fallbackStrength = 'medio') {
+  const style = BOT_PLAY_STYLES[getBotPlayStyleKey(botUserId)];
+  return normalizeBotStrength(style?.timingStrength || fallbackStrength);
+}
+
 export function getBotStrengthPreset(botStrength = 'medio') {
   const safeStrength = normalizeBotStrength(botStrength);
   return BOT_STRENGTH_PRESETS[safeStrength] || BOT_STRENGTH_PRESETS.medio;
@@ -1483,47 +1673,44 @@ export function createBotSeededRandom(seedValue) {
   };
 }
 
+// Número fixo entre 0 e 1 para a chave. Chaves parecidas (rodada 1, 2, 3...) davam
+// números quase iguais no gerador simples e o bot errava sempre na mesma rodada; a
+// mistura final (murmur3) faz cada chave virar um número independente.
+export function getBotSeededUnit(key = '') {
+  let hash = hashBotSeed(key) | 0;
+  hash = Math.imul(hash ^ (hash >>> 16), 0x85ebca6b);
+  hash = Math.imul(hash ^ (hash >>> 13), 0xc2b2ae35);
+  hash ^= hash >>> 16;
+  return (hash >>> 0) / 4294967296;
+}
+
+// Sequência de acertos de um bot com acerto fixo na partida: o total fica colado na
+// taxa (9 de 10 com 90%) e os erros caem em rodadas sorteadas, sem padrão para decorar.
 export function resolveDeterministicBotRun(seedKey, targetAccuracy, totalSteps, targetStep = totalSteps) {
   const safeSteps = Math.max(1, Math.trunc(Number(totalSteps || 1)));
   const safeTargetStep = Math.max(1, Math.min(safeSteps, Math.trunc(Number(targetStep || safeSteps))));
   const safeTargetAccuracy = Math.max(0.01, Math.min(0.99, Number(targetAccuracy || 0)));
-  let hits = 0;
+  const expectedHits = safeTargetAccuracy * safeSteps;
+  const totalHits = Math.floor(expectedHits)
+    + (getBotSeededUnit(`${seedKey}:extra`) < expectedHits - Math.floor(expectedHits) ? 1 : 0);
+  const missSteps = new Set(
+    Array.from({ length: safeSteps }, (_, index) => index + 1)
+      .map((step) => ({ step, order: getBotSeededUnit(`${seedKey}:order:${step}`) }))
+      .sort((a, b) => a.order - b.order || a.step - b.step)
+      .slice(0, safeSteps - totalHits)
+      .map((entry) => entry.step)
+  );
   let streak = 0;
   let bestStreak = 0;
-  let hitAtStep = false;
-
   for (let step = 1; step <= safeSteps; step += 1) {
-    const expectedHits = safeTargetAccuracy * step;
-    const minHits = Math.floor(expectedHits);
-    const maxHits = Math.ceil(expectedHits);
-    let hit = false;
-
-    if (hits < minHits) {
-      hit = true;
-    } else if (hits >= maxHits) {
-      hit = false;
-    } else {
-      const rand = createBotSeededRandom(hashBotSeed(`${seedKey}:${step}`));
-      hit = rand() < safeTargetAccuracy;
-    }
-
-    if (hit) {
-      hits += 1;
-      streak += 1;
-      if (streak > bestStreak) bestStreak = streak;
-    } else {
-      streak = 0;
-    }
-
-    if (step === safeTargetStep) {
-      hitAtStep = hit;
-    }
+    streak = missSteps.has(step) ? 0 : streak + 1;
+    bestStreak = Math.max(bestStreak, streak);
   }
 
   return {
-    correctCount: hits,
+    correctCount: totalHits,
     bestStreak,
-    hitAtStep
+    hitAtStep: !missSteps.has(safeTargetStep)
   };
 }
 
@@ -1554,12 +1741,19 @@ export function pickBotAnswerIndex(question, botStrength = 'medio', context = {}
   const seedBase = matchId && botUserId
     ? `pvp:${matchId}:${botUserId}:${safeStrength}`
     : `pvp:${safeStrength}:${Date.now()}_${Math.floor(Math.random() * 10000)}`;
-  const shouldHit = resolveDeterministicBotRun(seedBase, accuracy, totalRounds, roundNo).hitAtStep;
+  // Bots de estilo competitivo/oscilante ajustam o acerto ao placar de cada rodada;
+  // os de elite seguem a sequência fixa de 90% da partida.
+  const adaptiveAccuracy = matchId && botUserId
+    ? getBotAdaptiveAccuracy(botUserId, { ...context, matchId, roundNo, totalRounds })
+    : null;
+  const shouldHit = adaptiveAccuracy !== null
+    ? getBotSeededUnit(`${seedBase}:adaptive:${roundNo}`) < adaptiveAccuracy
+    : resolveDeterministicBotRun(seedBase, accuracy, totalRounds, roundNo).hitAtStep;
   if (shouldHit) return correctIndex;
 
   const wrongIndexes = Array.from({ length: optionsCount }, (_, idx) => idx).filter((idx) => idx !== correctIndex);
   if (!wrongIndexes.length) return correctIndex;
-  const wrongRoll = createBotSeededRandom(hashBotSeed(`${seedBase}:wrong:${roundNo}`))();
+  const wrongRoll = getBotSeededUnit(`${seedBase}:wrong:${roundNo}`);
   return wrongIndexes[Math.floor(wrongRoll * wrongIndexes.length)];
 }
 
@@ -1898,6 +2092,8 @@ export function getPvpTeamCurrentBattleAnswers(answerRows = [], battleNo = 1) {
 }
 
 export function getPvpTeamBattleDisplayLabel(entry = null) {
+  const overtimeRoundNo = Math.max(0, Number(entry?.overtime_round_no || 0));
+  if (overtimeRoundNo > 0) return `Desempate · Rodada ${overtimeRoundNo}`;
   const blockNo = Math.max(1, Number(entry?.block_no || 1));
   const roundInBlock = Math.max(1, Number(entry?.round_in_block || 1));
   return `Confronto ${blockNo}/${PVP_TEAM_BATTLE_BLOCK_COUNT} · Rodada ${roundInBlock}/${PVP_TEAM_BATTLE_ROUNDS_PER_BLOCK}`;
@@ -2285,7 +2481,6 @@ export function getPvpEliminationPlacementLabel(placement = 0) {
 export function getPvpEliminationResultKeyByPlacement(placement = 0) {
   const safePlacement = Math.max(1, Number(placement || 1));
   if (safePlacement <= 1) return 'win';
-  if (safePlacement === 2) return 'draw';
   return 'loss';
 }
 
@@ -2293,7 +2488,8 @@ export function getPvpEliminationRoundLabel(matchRow = null) {
   const cycleNo = Math.max(1, Number(matchRow?.cycle_no || 1));
   const roundInCycle = Math.max(1, Number(matchRow?.round_in_cycle || 1));
   const pairNo = Math.max(1, Number(matchRow?.pair_no || 1));
-  return `Ciclo ${cycleNo} · Rodada ${roundInCycle}/${PVP_ELIMINATION_ROUNDS_PER_CYCLE} · Duelo ${pairNo}`;
+  const prefix = matchRow?.cycle_tiebreak === true ? 'Desempate · ' : '';
+  return `${prefix}Ciclo ${cycleNo} · Rodada ${roundInCycle}/${PVP_ELIMINATION_ROUNDS_PER_CYCLE} · Duelo ${pairNo}`;
 }
 
 export function buildPvpEliminationCycleScoreMap(activeIds = []) {
