@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { DoorOpen, Music2, Swords, VolumeX } from 'lucide-react';
 import { Badge, Button, IconButton, Modal, TimerDisplay, cx } from '../ui';
 import AnswerOptions from './shared/AnswerOptions';
-import { EmojiBar, EmojiFxLayer, EmojiToggle, ScorePlayer, SidePlayer, battleStyles as styles } from './shared/BattleParts';
+import { EmojiBar, EmojiFxLayer, EmojiToggle, ScorePlayer, SidePlayer, TiebreakDifficultyBadge, battleStyles as styles } from './shared/BattleParts';
 import { playerViewFromShop } from './shared/players';
 import QuestionCard from './shared/QuestionCard';
 
@@ -36,6 +36,7 @@ export default function PvpDuelScreen({ vm }) {
     pvpQuestion,
     pvpQuestionHasOverflow,
     pvpQuestionScrollRef,
+    pvpNextRoundTiebreakDifficultyLabel,
     pvpRoundNo,
     pvpRoundPhaseLabel,
     pvpRoundPlayer1Feedback,
@@ -45,6 +46,7 @@ export default function PvpDuelScreen({ vm }) {
     pvpRoundResultKicker,
     pvpRoundResultLabel,
     pvpRoundResultRemainingSec,
+    pvpRoundTiebreakDifficultyLabel,
     pvpState,
     pvpTimerClass,
     pvpTimerPct,
@@ -108,7 +110,10 @@ export default function PvpDuelScreen({ vm }) {
         <IconButton icon={DoorOpen} label="Sair da partida" variant="surface" onClick={() => leavePvpFlow()} />
         <div className={styles.round}>
           <Swords size={20} strokeWidth={2.6} aria-hidden="true" />
-          <span className={styles.roundLabel}>Rodada {pvpRoundNo}/{pvpTotalRounds}</span>
+          <span className={styles.roundText}>
+            <span className={styles.roundLabel}>Rodada {pvpRoundNo}/{pvpTotalRounds}</span>
+            <TiebreakDifficultyBadge label={pvpRoundTiebreakDifficultyLabel} />
+          </span>
           {pvpRoundPhaseLabel ? <Badge tone="gold" size="sm">{pvpRoundPhaseLabel}</Badge> : null}
         </div>
         {music ? (
@@ -200,6 +205,7 @@ export default function PvpDuelScreen({ vm }) {
                 <span className={styles.answerChipState}>{pvpRoundPlayer2Feedback?.emoji} {pvpRoundPlayer2Feedback?.label}</span>
               </div>
             </div>
+            <TiebreakDifficultyBadge label={pvpNextRoundTiebreakDifficultyLabel} announce />
             <span className={cx(styles.nextIn, pvpRoundResultCountdownClass ? styles.nextInUrgent : '')} role="timer">
               Próxima pergunta em {pvpRoundResultRemainingSec}s
             </span>

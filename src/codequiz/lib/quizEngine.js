@@ -97,6 +97,44 @@ function getQuestionUniqKey(question) {
   return `${opts}__${String(normalized.answer ?? -1)}`;
 }
 
+// Variações que questions-data.js gera da mesma pergunta ("Contexto prático: ...").
+const QUESTION_VARIANT_PREFIX_PATTERN = /^(contexto pratico|situacao real|releitura guiada)\s*:\s*/i;
+
+// Chave curta da pergunta (não depende da ordem das alternativas nem do prefixo das
+// variações), usada para lembrar quais perguntas o jogador já viu.
+export function getQuestionHistoryKey(question) {
+  const source = question && typeof question === 'object' ? question : {};
+  const q = String(source.q || '')
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .trim()
+    .replace(QUESTION_VARIANT_PREFIX_PATTERN, '');
+  const strictKey = getQuestionUniqKey({ ...source, q });
+  if (!strictKey) return '';
+  let hash = 2166136261;
+  for (let index = 0; index < strictKey.length; index += 1) {
+    hash ^= strictKey.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(36);
+}
+
+// Lista do mais antigo para o mais recente -> posição de cada chave (maior = visto há menos tempo).
+export function buildQuestionRecencyRank(recentQuestionKeys = []) {
+  const rank = new Map();
+  (Array.isArray(recentQuestionKeys) ? recentQuestionKeys : []).forEach((key, index) => {
+    const safeKey = String(key || '').trim();
+    if (safeKey) rank.set(safeKey, index);
+  });
+  return rank;
+}
+
+export function getQuestionRecencyRank(recencyRank, question) {
+  if (!(recencyRank instanceof Map) || !recencyRank.size) return -1;
+  const rank = recencyRank.get(getQuestionHistoryKey(question));
+  return Number.isInteger(rank) ? rank : -1;
+}
+
 function normalizeText(value) {
   return String(value || '')
     .normalize('NFD')
@@ -327,6 +365,14 @@ function pickQuestionsByDifficultyBand(pool, difficulty, limit) {
   return shuffle(source).slice(0, safeLimit).map((entry) => entry.question);
 }
 
+// Perguntas nunca vistas primeiro (em ordem sorteada); depois as vistas há mais tempo.
+function pickQuestionsByRecency(pool, limit, recencyRank) {
+  const ordered = shuffle(Array.isArray(pool) ? pool : [])
+    .map((question) => ({ question, rank: getQuestionRecencyRank(recencyRank, question) }))
+    .sort((a, b) => a.rank - b.rank);
+  return shuffle(ordered.slice(0, limit).map((entry) => entry.question));
+}
+
 function buildSemanticUniqueQuestionPool(pool, excludeQuestions = []) {
   const sourcePool = Array.isArray(pool) ? pool : [];
   const excludedList = Array.isArray(excludeQuestions) ? excludeQuestions : [];
@@ -386,7 +432,8 @@ export function pickRoundQuestions(
   topicId,
   difficulty,
   count = QUESTIONS_PER_ROUND,
-  excludeQuestions = []
+  excludeQuestions = [],
+  options = {}
 ) {
   const pool = getQuestionPool(questionsMap, languageId, topicId, difficulty);
   if (!pool.length) return [];
@@ -395,7 +442,10 @@ export function pickRoundQuestions(
 
   const requestedCount = Math.max(1, Number(count || QUESTIONS_PER_ROUND));
   const limit = Math.max(1, Math.min(requestedCount, semanticUniquePool.length));
-  const selected = pickQuestionsByDifficultyBand(semanticUniquePool, difficulty, limit);
+  const recencyRank = buildQuestionRecencyRank(options?.recentQuestionKeys);
+  const selected = recencyRank.size
+    ? pickQuestionsByRecency(semanticUniquePool, limit, recencyRank)
+    : pickQuestionsByDifficultyBand(semanticUniquePool, difficulty, limit);
   const maxOptions = selected.reduce((max, question) => Math.max(max, Number(question?.opts?.length || 0)), 2);
   const preferredSlots = buildPreferredAnswerSlots(selected.length, maxOptions);
   const remapped = selected.map((question, index) => {

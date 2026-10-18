@@ -29,8 +29,11 @@ import {
   getPvpTeamOpponentSide,
   getPvpTeamResultForUser,
   getPvpTeamUserSide,
+  getPvpTiebreakDifficulty,
   hashBotSeed,
+  PVP_MODE_ELIMINATION,
   pickBotAnswerIndex,
+  pickPvpTiebreakQuestion,
   toMillis
 } from './helpers';
 import {
@@ -218,13 +221,50 @@ function getPvpGroupQuestionCount(match = null, mode = PVP_GROUP_MODE_TEAM) {
   return questions > 0 ? questions : fallback;
 }
 
-// O número do confronto continua crescendo no desempate. Todos os clientes usam
-// a mesma pergunta, mesmo depois de esgotar a sequência inicial da partida.
+function isPvpEliminationMatchRow(match = null) {
+  return safeId(match?.mode) === PVP_MODE_ELIMINATION || Array.isArray(match?.cycle_rounds);
+}
+
+// Nível de desempate do confronto. No 2x2, cada confronto extra depois dos normais
+// sobe um nível. No Um contra todos, cada ciclo que termina empatado sobe um nível a
+// partir do confronto em que o ciclo seguinte começa, e o nível não volta a cair.
+export function getPvpGroupBattleTiebreakLevel(match = null, battleNo = 0) {
+  const safeBattleNo = Math.max(1, Math.floor(Number(battleNo || match?.battle_no || 1)));
+  if (isPvpEliminationMatchRow(match)) {
+    const startBattleNos = Array.isArray(match?.tiebreak_start_battle_nos) ? match.tiebreak_start_battle_nos : [];
+    return startBattleNos.filter((startNo) => {
+      const safeStartNo = Math.floor(Number(startNo || 0));
+      return safeStartNo > 0 && safeStartNo <= safeBattleNo;
+    }).length;
+  }
+  const totalBattles = Math.max(1, Number(match?.total_rounds || PVP_TEAM_BATTLE_TOTAL_ROUNDS));
+  return Math.max(0, safeBattleNo - totalBattles);
+}
+
+export function getPvpGroupBattleDifficulty(match = null, battleNo = 0) {
+  return getPvpTiebreakDifficulty(
+    match?.difficulty || match?.category || 'easy',
+    getPvpGroupBattleTiebreakLevel(match, battleNo)
+  );
+}
+
+// O número do confronto continua crescendo no desempate. Todos os clientes usam a
+// mesma pergunta: no desempate ela vem das perguntas reservadas da dificuldade do
+// nível (sem repetir as da partida normal); partidas antigas, sem essa reserva,
+// voltam ao começo da sequência.
 export function getPvpGroupBattleQuestion(match = null, battleNo = 0) {
+  const safeBattleNo = Math.max(1, Math.floor(Number(battleNo || match?.battle_no || 1)));
+  if (getPvpGroupBattleTiebreakLevel(match, safeBattleNo) > 0) {
+    const tiebreakQuestion = pickPvpTiebreakQuestion(
+      match?.tiebreak_question_sets,
+      getPvpGroupBattleDifficulty(match, safeBattleNo),
+      safeBattleNo
+    );
+    if (tiebreakQuestion) return tiebreakQuestion;
+  }
   const questions = Array.isArray(match?.question_set) ? match.question_set : [];
   if (!questions.length) return null;
-  const index = Math.max(1, Math.floor(Number(battleNo || match?.battle_no || 1))) - 1;
-  return questions[index % questions.length] || null;
+  return questions[(safeBattleNo - 1) % questions.length] || null;
 }
 
 // Dupla que está respondendo no confronto atual.
@@ -338,7 +378,7 @@ export function getPvpGroupBotAnswerPlan(match = null, mode = PVP_GROUP_MODE_TEA
   const answerIdx = pickBotAnswerIndex(question, strength, {
     matchId,
     botUserId: safeBotId,
-    difficulty: match?.difficulty,
+    difficulty: getPvpGroupBattleDifficulty(match, battleNo),
     roundNo: battleNo,
     totalRounds: Math.max(battleNo, totalBattles),
     ...getPvpGroupBotScoreContext(match, mode, safeBotId)
@@ -750,7 +790,8 @@ export function buildPvpEliminationFinalizePatch(match = null, answerRows = [], 
     };
   }
 
-  // Sem um último colocado único, todos seguem para um ciclo de desempate.
+  // Sem um último colocado único, todos seguem para um ciclo de desempate, uma
+  // dificuldade acima (a partir do primeiro confronto do novo ciclo).
   const eliminatedUserId = pickPvpEliminationEliminatedUserId(activeIds, memberScores);
   const survivors = activeIds.filter((userId) => userId !== eliminatedUserId);
   const eliminationFields = {
@@ -779,8 +820,12 @@ export function buildPvpEliminationFinalizePatch(match = null, answerRows = [], 
   const nextCycle = buildPvpEliminationNextCycle({ ...match, battle_no: safeBattleNo }, survivors);
   if (!nextCycle.pair) return null;
 
+  const tiebreakStartBattleNos = Array.isArray(match?.tiebreak_start_battle_nos)
+    ? match.tiebreak_start_battle_nos
+    : [];
   return {
     ...eliminationFields,
+    ...(eliminatedUserId ? {} : { tiebreak_start_battle_nos: [...tiebreakStartBattleNos, safeBattleNo + 1] }),
     next_status: 'active',
     next_battle_no: safeBattleNo + 1,
     next_cycle_no: nextCycle.nextCycleNo,

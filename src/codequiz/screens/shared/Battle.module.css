@@ -44,6 +44,31 @@
   flex-shrink: 0;
 }
 
+/* Rótulo da rodada com a dificuldade do desempate logo abaixo (cabe na altura dos botões) */
+.roundText {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-width: 0;
+}
+
+.roundText .roundLabel {
+  max-width: 100%;
+  line-height: 1.2;
+}
+
+/* Dificuldade do desempate: não encolhe e fica centralizada nos avisos entre rodadas */
+.tiebreakBadge {
+  flex-shrink: 0;
+  justify-self: center;
+  white-space: nowrap;
+}
+
+.roundText .tiebreakBadge {
+  min-height: 18px;
+}
+
 /* Placar compacto (mobile) */
 .scoreboard {
   display: grid;

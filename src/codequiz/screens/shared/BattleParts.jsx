@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { createPortal } from 'react-dom';
-import { CircleCheck, Hourglass, SmilePlus, X } from 'lucide-react';
+import { CircleCheck, Hourglass, SmilePlus, TrendingUp, X } from 'lucide-react';
 import { PVP_EMOJI_FX_DURATION_MS } from '../../app/helpers';
-import { Avatar, cx } from '../../ui';
+import { Avatar, Badge, cx } from '../../ui';
 import styles from './Battle.module.css';
 
 // Jogador no placar compacto (mobile).
@@ -139,6 +139,23 @@ export function EmojiFxLayer({ items = [] }) {
       ))}
     </div>,
     document.body
+  );
+}
+
+// Dificuldade do desempate (sobe a cada nível). No cabeçalho mostra só o nome; nos
+// avisos entre rodadas, "Desempate · <dificuldade>".
+export function TiebreakDifficultyBadge({ label = '', announce = false }) {
+  if (!label) return null;
+  return (
+    <Badge
+      tone="gold"
+      size="sm"
+      icon={TrendingUp}
+      className={styles.tiebreakBadge}
+      title={`Desempate: dificuldade ${label}`}
+    >
+      {announce ? `Desempate · ${label}` : label}
+    </Badge>
   );
 }
 

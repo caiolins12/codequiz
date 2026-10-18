@@ -147,7 +147,7 @@ export default function ShopScreen({ vm }) {
                   <ChevronDown className={cx(styles.groupChevron, isOpen ? styles.groupChevronOpen : '')} aria-hidden="true" strokeWidth={2.6} />
                 </button>
                 {isOpen ? (
-                  <ul className={cx(styles.grid, shopTab === 'emoji' ? styles.gridCompact : '')}>
+                  <ul className={styles.grid}>
                     {group.items.map((item) => {
                       const status = getShopItemStatus(item, statusContext);
                       return (

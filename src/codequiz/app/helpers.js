@@ -3,7 +3,16 @@ import { LANGUAGES, QUESTIONS, TOPICS } from '../data/questions-data';
 import { DIFFICULTY_LABELS, PVE_QUESTIONS_PER_ROUND, PVP_COINS_REWARD, PVP_XP_REWARD, QUESTIONS_PER_ROUND, TIMER_SECONDS } from '../lib/constants';
 import { defaultProgress, normalizeProgress } from '../lib/progress';
 import { PVP_ROUNDS_PER_MATCH, getCategoryByPoints, isPvpAnswerCorrect } from '../lib/pvp';
-import { areQuestionsSemanticallyEquivalent, getQuestionPool, getRoundQuestionCapacity, getTopicsByLanguage, pickRoundQuestions } from '../lib/quizEngine';
+import {
+  areQuestionsSemanticallyEquivalent,
+  buildQuestionRecencyRank,
+  getQuestionHistoryKey,
+  getQuestionPool,
+  getQuestionRecencyRank,
+  getRoundQuestionCapacity,
+  getTopicsByLanguage,
+  pickRoundQuestions
+} from '../lib/quizEngine';
 import { getSystemBotDefaultStrength, isSystemBotUserId } from '../lib/repository';
 import { SHOP_RARITY_ORDER, getShopItem, normalizeShopData } from '../lib/shop';
 import { getProgressTotalXp, getQuizKey, normalizeDifficulty } from '../lib/utils';
@@ -387,46 +396,49 @@ export function buildPveRoundReviewList(questions = [], answerLog = []) {
   });
 }
 
-export function pickPveRoundQuestionsByTopicSequence(questionsMap, languageId, topicId, difficulty, count) {
+// Rodada do PvE: tópico escolhido primeiro, depois os outros tópicos do tema e, se
+// ainda faltar, outros temas da mesma área (Assuntos Gerais nunca recebe programação).
+// Com o histórico do jogador, pelo menos metade da rodada continua sendo do tópico
+// escolhido (inéditas primeiro, depois as vistas há mais tempo) e o resto prefere as
+// perguntas inéditas dos outros tópicos do tema antes de repetir alguma.
+export function pickPveRoundQuestionsByTopicSequence(questionsMap, languageId, topicId, difficulty, count, options = {}) {
   const safeLanguage = String(languageId || '').trim();
   const safeTopic = String(topicId || '').trim();
   const safeDifficulty = normalizeDifficulty(difficulty || 'easy');
   const safeCount = Math.max(1, Math.trunc(Number(count || PVE_QUESTIONS_PER_ROUND)));
+  const recencyRank = buildQuestionRecencyRank(options?.recentQuestionKeys);
+  const pickOptions = { recentQuestionKeys: options?.recentQuestionKeys };
   if (!safeLanguage || !safeTopic) return [];
 
-  const topics = getTopicsByLanguage(TOPICS, safeLanguage);
-  const topicIds = [];
-  const pushTopicId = (value) => {
-    const safeValue = String(value || '').trim();
-    if (!safeValue) return;
-    if (topicIds.includes(safeValue)) return;
-    topicIds.push(safeValue);
-  };
-
-  pushTopicId(safeTopic);
-  topics.forEach((topic) => pushTopicId(topic?.id));
+  const siblingTopicIds = [];
+  getTopicsByLanguage(TOPICS, safeLanguage).forEach((topic) => {
+    const safeValue = String(topic?.id || '').trim();
+    if (!safeValue || safeValue === safeTopic || siblingTopicIds.includes(safeValue)) return;
+    siblingTopicIds.push(safeValue);
+  });
 
   const picked = [];
-  const visitedTopicKeys = new Set();
-  const pullFromTopic = (languageToRead, topicToRead) => {
+  // filter: 'any' | 'unseen' (nunca vistas) | 'seen' (já vistas).
+  const pullFromTopic = (languageToRead, topicToRead, limit = safeCount, filter = 'any') => {
     const safeLanguageToRead = String(languageToRead || '').trim();
     const safeTopicToRead = String(topicToRead || '').trim();
     if (!safeLanguageToRead || !safeTopicToRead) return;
-    const visitedKey = `${safeLanguageToRead}::${safeTopicToRead}`;
-    if (visitedTopicKeys.has(visitedKey)) return;
-    visitedTopicKeys.add(visitedKey);
-    if (picked.length >= safeCount) return;
-    const missing = Math.max(0, safeCount - picked.length);
-    if (!missing) return;
+    const missing = Math.min(safeCount, limit) - picked.length;
+    if (missing <= 0) return;
+    const pool = getQuestionPool(questionsMap, safeLanguageToRead, safeTopicToRead, safeDifficulty);
+    const filteredPool = filter === 'any'
+      ? pool
+      : pool.filter((question) => (getQuestionRecencyRank(recencyRank, question) < 0) === (filter === 'unseen'));
+    if (!filteredPool.length) return;
     const selected = pickRoundQuestions(
-      questionsMap,
+      { [safeLanguageToRead]: { [safeTopicToRead]: { [safeDifficulty]: filteredPool } } },
       safeLanguageToRead,
       safeTopicToRead,
       safeDifficulty,
       missing,
-      picked
+      picked,
+      pickOptions
     );
-    if (!selected.length) return;
     selected.forEach((question) => {
       const normalized = normalizeQuestionForSequence(question);
       picked.push({
@@ -436,18 +448,20 @@ export function pickPveRoundQuestionsByTopicSequence(questionsMap, languageId, t
     });
   };
 
-  for (const currentTopicId of topicIds) {
-    pullFromTopic(safeLanguage, currentTopicId);
+  if (recencyRank.size) {
+    pullFromTopic(safeLanguage, safeTopic, safeCount, 'unseen');
+    pullFromTopic(safeLanguage, safeTopic, Math.ceil(safeCount / 2));
+    siblingTopicIds.forEach((siblingTopicId) => pullFromTopic(safeLanguage, siblingTopicId, safeCount, 'unseen'));
   }
+  pullFromTopic(safeLanguage, safeTopic);
+  siblingTopicIds.forEach((siblingTopicId) => pullFromTopic(safeLanguage, siblingTopicId));
 
   if (picked.length < safeCount) {
-    LANGUAGES.forEach((languageMeta) => {
-      if (picked.length >= safeCount) return;
-      const languageId = String(languageMeta?.id || '').trim();
-      const fallbackTopics = getTopicsByLanguage(TOPICS, languageId);
-      fallbackTopics.forEach((topicMeta) => {
-        if (picked.length >= safeCount) return;
-        pullFromTopic(languageId, topicMeta?.id || '');
+    const areaLanguageIds = getLanguageIdsByKnowledgeArea(resolveKnowledgeAreaByLanguageId(safeLanguage))
+      .filter((areaLanguageId) => areaLanguageId !== safeLanguage);
+    areaLanguageIds.forEach((areaLanguageId) => {
+      getTopicsByLanguage(TOPICS, areaLanguageId).forEach((topicMeta) => {
+        pullFromTopic(areaLanguageId, topicMeta?.id || '');
       });
     });
   }
@@ -540,16 +554,25 @@ export function buildPvpSequenceTopicCatalog(questionsMap, difficulty, options =
     LANGUAGES.forEach((language) => pushLanguage(language?.id));
   }
 
+  // Com o histórico de quem cria a partida, as perguntas que ele ainda não viu vêm
+  // primeiro em cada tópico (depois as vistas há mais tempo).
+  const recencyRank = buildQuestionRecencyRank(options?.recentQuestionKeys);
   const catalog = [];
   candidateLanguages.forEach((languageId) => {
     const topics = getTopicsByLanguage(TOPICS, languageId);
     topics.forEach((topic) => {
       const topicId = String(topic?.id || '').trim();
       if (!topicId) return;
-      const questions = shuffleDeterministic(
+      const shuffled = shuffleDeterministic(
         buildOrderedUniqueQuestionsForTopic(questionsMap, languageId, topicId, safeDifficulty),
         `${safeSequenceSeed}::${languageId}::${topicId}::${safeDifficulty}`
       );
+      const questions = recencyRank.size
+        ? shuffled
+          .map((question, index) => ({ question, index, rank: getQuestionRecencyRank(recencyRank, question) }))
+          .sort((a, b) => (a.rank - b.rank) || (a.index - b.index))
+          .map((entry) => entry.question)
+        : shuffled;
       if (!questions.length) return;
       catalog.push({
         language: languageId,
@@ -754,11 +777,13 @@ export function pickPvpQuestionSetBySequence(questionsMap, options = {}) {
     languageId: safeLanguage,
     topicId: safeTopic
   });
+  const recentQuestionKeys = Array.isArray(options?.recentQuestionKeys) ? options.recentQuestionKeys : [];
   const catalog = buildPvpSequenceTopicCatalog(questionsMap, safeDifficulty, {
     areaId: safeArea,
     languageId: safeLanguage,
     topicId: safeTopic,
-    sequenceSeed: safeSequenceSeed
+    sequenceSeed: safeSequenceSeed,
+    recentQuestionKeys
   });
 
   if (!catalog.length) {
@@ -777,7 +802,10 @@ export function pickPvpQuestionSetBySequence(questionsMap, options = {}) {
   }
 
   const baseTopicIndex = resolvePvpSequenceTopicIndex(catalog, safeCursor);
-  const baseQuestionIndex = Math.max(0, Math.trunc(Number(safeCursor.question_index || 0)));
+  // Com histórico, o começo de cada tópico já são as perguntas inéditas: não pula nenhuma.
+  const baseQuestionIndex = recentQuestionKeys.length
+    ? 0
+    : Math.max(0, Math.trunc(Number(safeCursor.question_index || 0)));
   const minimumStartRemaining = ensureMatchWindow
     ? Math.min(safeCount, Math.max(1, Math.trunc(Number(PVP_THEME_SWITCH_EVERY_QUESTIONS || 3))))
     : 1;
@@ -854,6 +882,72 @@ export function buildPvpQuestionSetFromMatchSequence(matchRow, roundCount) {
     }
   });
   return Array.isArray(sequence.questions) ? sequence.questions : [];
+}
+
+export const PVP_DIFFICULTY_STEPS = Object.freeze(['easy', 'medium', 'hard']);
+export const PVP_TIEBREAK_QUESTIONS_PER_DIFFICULTY = 12;
+
+// Desempate do PvP: cada nível sobe uma dificuldade a partir da escolhida para a
+// partida (Iniciante -> Intermediário -> Avançado) e para no Avançado.
+export function getPvpTiebreakDifficulty(baseDifficulty = 'easy', tiebreakLevel = 0) {
+  const baseIndex = Math.max(0, PVP_DIFFICULTY_STEPS.indexOf(normalizeDifficulty(baseDifficulty)));
+  const level = Math.max(0, Math.trunc(Number(tiebreakLevel || 0)));
+  return PVP_DIFFICULTY_STEPS[Math.min(PVP_DIFFICULTY_STEPS.length - 1, baseIndex + level)];
+}
+
+export function getPvpTiebreakDifficulties(baseDifficulty = 'easy') {
+  const difficulties = [];
+  for (let level = 1; level < PVP_DIFFICULTY_STEPS.length; level += 1) {
+    const difficulty = getPvpTiebreakDifficulty(baseDifficulty, level);
+    if (!difficulties.includes(difficulty)) difficulties.push(difficulty);
+  }
+  return difficulties;
+}
+
+// Perguntas reservadas para o desempate dos modos em grupo, por dificuldade. Ficam
+// gravadas na partida, então todos os aparelhos usam as mesmas, e nenhuma repete
+// as perguntas da partida normal.
+export function buildPvpTiebreakQuestionSets(questionsMap, options = {}) {
+  const baseDifficulty = normalizeDifficulty(options?.difficulty || 'easy');
+  const perDifficulty = Math.max(1, Math.trunc(Number(options?.count || PVP_TIEBREAK_QUESTIONS_PER_DIFFICULTY)));
+  const used = Array.isArray(options?.excludeQuestions) ? [...options.excludeQuestions] : [];
+  const seed = String(options?.sequenceSeed || '').trim() || 'pvp';
+  const sets = {};
+  getPvpTiebreakDifficulties(baseDifficulty).forEach((difficulty) => {
+    const sequence = pickPvpQuestionSetBySequence(questionsMap, {
+      difficulty,
+      count: perDifficulty + used.length,
+      areaId: options?.areaId,
+      preferredLanguage: options?.language,
+      preferredTopic: options?.topic,
+      sequenceSeed: `${seed}::tiebreak::${difficulty}`,
+      ensureMatchWindow: false,
+      recentQuestionKeys: options?.recentQuestionKeys
+    });
+    const picked = (Array.isArray(sequence.questions) ? sequence.questions : [])
+      .filter((question) => !used.some((current) => areQuestionsSemanticallyEquivalent(current, question)))
+      .slice(0, perDifficulty)
+      .map((question) => ({ ...question, difficulty }));
+    if (!picked.length) return;
+    sets[difficulty] = picked;
+    used.push(...picked);
+  });
+  return sets;
+}
+
+// Pergunta de desempate do confronto: anda pela lista da dificuldade pelo número do
+// confronto, então todos os aparelhos chegam à mesma pergunta.
+export function pickPvpTiebreakQuestion(tiebreakSets = null, difficulty = 'easy', battleNo = 1) {
+  const list = Array.isArray(tiebreakSets?.[normalizeDifficulty(difficulty)])
+    ? tiebreakSets[normalizeDifficulty(difficulty)]
+    : [];
+  if (!list.length) return null;
+  const index = Math.max(1, Math.floor(Number(battleNo || 1))) - 1;
+  return list[index % list.length] || null;
+}
+
+export function getPvpTiebreakDifficultyLabel(difficulty = 'easy') {
+  return DIFFICULTY_LABELS[normalizeDifficulty(difficulty)] || DIFFICULTY_LABELS.easy;
 }
 
 export function buildShopFallbackFromProfile(profileRow = null) {
@@ -3087,7 +3181,7 @@ export function collectPvpQuestionPoolByDifficulty(questionsMap, difficulty, sco
   return merged;
 }
 
-export function pickPvpRoundQuestionsFromPool(mergedPool, difficulty, count, excludeQuestions = []) {
+export function pickPvpRoundQuestionsFromPool(mergedPool, difficulty, count, excludeQuestions = [], options = {}) {
   const safeDifficulty = normalizeDifficulty(difficulty || 'easy');
   const safeCount = Math.max(1, Number(count || 1));
   if (!Array.isArray(mergedPool) || !mergedPool.length) return [];
@@ -3106,11 +3200,12 @@ export function pickPvpRoundQuestionsFromPool(mergedPool, difficulty, count, exc
     PVP_MIXED_TOPIC_ID,
     safeDifficulty,
     safeCount,
-    excludeQuestions
+    excludeQuestions,
+    { recentQuestionKeys: options?.recentQuestionKeys }
   );
 }
 
-export function pickPvpRoundQuestionsByConfig(questionsMap, config, count, excludeQuestions = []) {
+export function pickPvpRoundQuestionsByConfig(questionsMap, config, count, excludeQuestions = [], options = {}) {
   const safeDifficulty = normalizeDifficulty(config?.difficulty || 'easy');
   const safeCount = Math.max(1, Number(count || 1));
   const safeTopic = String(config?.topic || '').trim();
@@ -3141,7 +3236,8 @@ export function pickPvpRoundQuestionsByConfig(questionsMap, config, count, exclu
       pool,
       safeDifficulty,
       missing,
-      [...excludeQuestions, ...selected]
+      [...excludeQuestions, ...selected],
+      options
     );
     if (picked.length) selected.push(...picked);
   });
@@ -3149,17 +3245,37 @@ export function pickPvpRoundQuestionsByConfig(questionsMap, config, count, exclu
   return selected.slice(0, safeCount);
 }
 
-export function extendPvpQuestionSetIfNeeded(matchRow, nextRoundNo) {
+// Nível de desempate de uma rodada do duelo: 0 nas rodadas normais, 1 na primeira
+// rodada extra, 2 na segunda...
+export function getPvpDuelRoundTiebreakLevel(roundNo = 1) {
+  return Math.max(0, Math.floor(Number(roundNo || 1)) - PVP_ROUNDS_PER_MATCH);
+}
+
+export function getPvpDuelRoundDifficulty(matchRow = null, roundNo = 1) {
+  return getPvpTiebreakDifficulty(
+    matchRow?.difficulty || matchRow?.category || 'easy',
+    getPvpDuelRoundTiebreakLevel(roundNo)
+  );
+}
+
+// Completa as perguntas do duelo até a rodada pedida sem trocar as já gravadas.
+// Rodadas normais que faltarem seguem a sequência da partida; no desempate (empate
+// depois das rodadas normais) cada rodada extra sobe uma dificuldade.
+export function extendPvpQuestionSetIfNeeded(matchRow, nextRoundNo, options = {}) {
   const targetRoundNo = Math.max(1, Number(nextRoundNo || 1));
   const currentSet = Array.isArray(matchRow?.question_set)
     ? matchRow.question_set.filter((row) => row && typeof row === 'object')
     : [];
   if (targetRoundNo <= currentSet.length) return currentSet;
 
-  if (hasPvpMatchSequenceMetadata(matchRow)) {
-    const deterministicSet = buildPvpQuestionSetFromMatchSequence(matchRow, targetRoundNo);
-    if (deterministicSet.length >= targetRoundNo) return deterministicSet;
-    if (deterministicSet.length > currentSet.length) return deterministicSet;
+  const nextSet = [...currentSet];
+  const baseTargetRoundNo = Math.min(targetRoundNo, PVP_ROUNDS_PER_MATCH);
+  if (nextSet.length < baseTargetRoundNo && hasPvpMatchSequenceMetadata(matchRow)) {
+    buildPvpQuestionSetFromMatchSequence(matchRow, baseTargetRoundNo).forEach((question) => {
+      if (nextSet.length >= baseTargetRoundNo) return;
+      if (nextSet.some((current) => areQuestionsSemanticallyEquivalent(current, question))) return;
+      nextSet.push(question);
+    });
   }
 
   const difficulty = normalizeDifficulty(matchRow?.difficulty || 'easy');
@@ -3174,23 +3290,27 @@ export function extendPvpQuestionSetIfNeeded(matchRow, nextRoundNo) {
     || resolveKnowledgeAreaByLanguageId(safeConfig.language || matchRow?.language || '')
     || ''
   ).trim();
-  const nextSet = [...currentSet];
-  const missingCount = targetRoundNo - nextSet.length;
 
-  for (let index = 0; index < missingCount; index += 1) {
+  while (nextSet.length < targetRoundNo) {
+    const roundNo = nextSet.length + 1;
+    const tiebreakLevel = getPvpDuelRoundTiebreakLevel(roundNo);
+    const roundDifficulty = getPvpTiebreakDifficulty(difficulty, tiebreakLevel);
     const picked = pickPvpRoundQuestionsByConfig(
       QUESTIONS,
       {
         language: safeConfig.language,
         topic: safeConfig.topic,
-        difficulty,
+        difficulty: roundDifficulty,
         area: safeArea
       },
       1,
-      nextSet
+      nextSet,
+      options
     );
     if (!picked.length) break;
-    nextSet.push(picked[0]);
+    nextSet.push(tiebreakLevel > 0
+      ? { ...picked[0], difficulty: roundDifficulty, tiebreak_level: tiebreakLevel }
+      : picked[0]);
   }
 
   return nextSet;
@@ -3231,6 +3351,8 @@ export const PVP_SEQUENCE_RECENT_STARTS_MAX = 3;
 export const PVP_KNOWLEDGE_AREA_STORAGE_PREFIX = 'codequiz_pvp_knowledge_area_v1';
 export const PLAYER_QUIZ_HISTORY_STORAGE_PREFIX = 'codequiz_player_quiz_history_v1';
 export const PLAYER_QUIZ_HISTORY_MAX_ENTRIES = 40;
+export const SEEN_QUESTIONS_STORAGE_PREFIX = 'codequiz_seen_questions_v1';
+export const SEEN_QUESTIONS_MAX_ENTRIES = 1500;
 export const SHOP_UI_STATE_STORAGE_PREFIX = 'codequiz_shop_ui_state_v1';
 export const HOME_TOUR_STORAGE_PREFIX = 'codequiz_home_tour_seen_v1';
 export const LEAGUE_SNAPSHOT_STORAGE_PREFIX = 'codequiz_league_snapshot_v1';
@@ -3470,6 +3592,45 @@ export function appendPlayerQuizHistoryLocal(userId = '', entry = null) {
   ].slice(0, PLAYER_QUIZ_HISTORY_MAX_ENTRIES);
   writePlayerQuizHistoryLocal(userId, next);
   return next;
+}
+
+export function getSeenQuestionsStorageKey(userId = '') {
+  const safeUserId = String(userId || 'guest').trim() || 'guest';
+  return `${SEEN_QUESTIONS_STORAGE_PREFIX}_${safeUserId}`;
+}
+
+// Perguntas que o jogador já viu (PvE e PvP), da mais antiga para a mais recente.
+export function readSeenQuestionKeysLocal(userId = '') {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = window.localStorage.getItem(getSeenQuestionsStorageKey(userId));
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .map((key) => String(key || '').trim())
+      .filter(Boolean)
+      .slice(-SEEN_QUESTIONS_MAX_ENTRIES);
+  } catch {
+    return [];
+  }
+}
+
+export function appendSeenQuestionsLocal(userId = '', questions = []) {
+  const keys = (Array.isArray(questions) ? questions : [questions])
+    .map((question) => getQuestionHistoryKey(question))
+    .filter(Boolean);
+  if (!keys.length || typeof window === 'undefined') return;
+  try {
+    const keySet = new Set(keys);
+    const next = [
+      ...readSeenQuestionKeysLocal(userId).filter((key) => !keySet.has(key)),
+      ...keySet
+    ].slice(-SEEN_QUESTIONS_MAX_ENTRIES);
+    window.localStorage.setItem(getSeenQuestionsStorageKey(userId), JSON.stringify(next));
+  } catch {
+    // ignore storage failures
+  }
 }
 
 export function buildDefaultShopCategoryState() {

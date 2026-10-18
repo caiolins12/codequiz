@@ -133,7 +133,9 @@ import {
   applyPvpGroupMatchBotRewards,
   finalizePvpGroupBattle,
   getPvpGroupBattlePairIds,
+  getPvpGroupBattleDifficulty,
   getPvpGroupBattleQuestion,
+  getPvpGroupBattleTiebreakLevel,
   getPvpGroupBattleTiming,
   getPvpGroupEmojiDriverId,
   getPvpGroupForfeitOutcome,
@@ -164,7 +166,7 @@ import {
   normalizeProgress,
   saveProgress
 } from './lib/progress';
-import { getTopicsByLanguage } from './lib/quizEngine';
+import { getQuestionHistoryKey, getTopicsByLanguage } from './lib/quizEngine';
 import {
   canPurchaseItem,
   defaultShopData,
@@ -284,10 +286,12 @@ import {
   VERSION_CHECK_MS,
   appendPlayerQuizHistoryLocal,
   appendQueueDebugLogLine,
+  appendSeenQuestionsLocal,
   applyEmojiToDraft,
   buildDefaultShopCategoryState,
   buildFallbackPvpConfig,
   buildLeagueSnapshot,
+  buildPvpTiebreakQuestionSets,
   buildProgressSnapshot,
   buildPveQuestionReviewEntry,
   buildPveRoundReviewList,
@@ -338,6 +342,8 @@ import {
   getPveRoundSeconds,
   getPvpAnswerTargetRoundNo,
   getPvpDifficultyFromPoints,
+  getPvpDuelRoundDifficulty,
+  getPvpDuelRoundTiebreakLevel,
   getPvpEliminationActiveMemberIds,
   getPvpEliminationActivePair,
   getPvpEliminationMemberById,
@@ -376,6 +382,7 @@ import {
   getPvpTeamRoomLaunchCheck,
   getPvpTeamRoomReadyMemberIds,
   getPvpTeamUserSide,
+  getPvpTiebreakDifficultyLabel,
   getQueueDisconnectGraceMs,
   getTopicEmojiById,
   getTopicEmojiPool,
@@ -416,6 +423,7 @@ import {
   readLeagueSnapshotLocal,
   readPlayerQuizHistoryLocal,
   readPvpKnowledgeAreaLocal,
+  readSeenQuestionKeysLocal,
   removeEmojiFromDraftByIndex,
   resolveKnowledgeAreaByLanguageId,
   resolveMatchQueueJoinedAtMs,
@@ -1337,9 +1345,28 @@ export default function CodeQuizApp() {
       sequenceSeed,
       ensureMatchWindow: true,
       cursor,
-      recentStartTopicKeys
+      recentStartTopicKeys,
+      recentQuestionKeys: readSeenQuestionKeysLocal(authUser?.uid || 'guest')
     });
   };
+
+  // Perguntas do desempate dos modos em grupo (uma dificuldade acima a cada nível).
+  const resolvePvpGroupTiebreakQuestionSets = ({
+    areaId = '',
+    difficulty = 'easy',
+    language = '',
+    topic = '',
+    sequenceSeed = '',
+    excludeQuestions = []
+  } = {}) => buildPvpTiebreakQuestionSets(QUESTIONS, {
+    areaId: String(areaId || resolveKnowledgeAreaByLanguageId(language || '') || 'programming').trim(),
+    difficulty,
+    language,
+    topic,
+    sequenceSeed,
+    excludeQuestions,
+    recentQuestionKeys: readSeenQuestionKeysLocal(authUser?.uid || 'guest')
+  });
 
   const closePlayerHistoryPanel = () => {
     setPlayerHistoryOpen(false);
@@ -7897,6 +7924,7 @@ export default function CodeQuizApp() {
       excludedRoomIds.forEach((untilMs, excludedRoomId) => {
         if (untilMs <= nowMs) excludedRoomIds.delete(excludedRoomId);
       });
+      // Só entra em sala da área escolhida: as perguntas da partida vêm da área da sala.
       const openRooms = (Array.isArray(pvpEliminationRooms) ? pvpEliminationRooms : [])
         .filter((room) => {
           if (!room || typeof room !== 'object') return false;
@@ -7904,12 +7932,17 @@ export default function CodeQuizApp() {
           if (room?.has_password) return false;
           if (excludedRoomIds.has(String(room?.id || '').trim())) return false;
           if (!isPvpGroupRoomAlive(room, nowMs)) return false;
+          const roomArea = String(
+            room?.knowledge_area
+            || resolveKnowledgeAreaByLanguageId(room?.language || '')
+            || ''
+          ).trim();
+          if (roomArea !== safeKnowledgeArea) return false;
           const members = getPvpEliminationMembers(room);
           return members.length < PVP_ELIMINATION_ROOM_CAPACITY;
         });
       const preferredRooms = openRooms.filter((room) => (
         normalizeDifficulty(room?.difficulty || 'easy') === forcedDifficulty
-        && String(room?.knowledge_area || '').trim() === safeKnowledgeArea
       ));
       const candidateRooms = preferredRooms.length ? preferredRooms : openRooms;
       const candidate = [...candidateRooms].sort((a, b) => {
@@ -8674,6 +8707,14 @@ export default function CodeQuizApp() {
       if (schedule.length !== PVP_TEAM_BATTLE_TOTAL_ROUNDS || questionSet.length !== PVP_TEAM_BATTLE_TOTAL_ROUNDS) {
         throw new Error('team_room_not_enough_questions');
       }
+      const tiebreakQuestionSets = resolvePvpGroupTiebreakQuestionSets({
+        areaId: room.knowledge_area || pvpKnowledgeArea,
+        difficulty: room.difficulty || pvpConfig.difficulty,
+        language: room.language || pvpConfig.language,
+        topic: room.topic || pvpConfig.topic,
+        sequenceSeed: matchId,
+        excludeQuestions: questionSet
+      });
       const memberScores = {};
       [...getPvpTeamMembersBySide(room, 'red'), ...getPvpTeamMembersBySide(room, 'blue')].forEach((member) => {
         const userId = String(member?.user_id || '').trim();
@@ -8692,6 +8733,7 @@ export default function CodeQuizApp() {
         total_rounds: PVP_TEAM_BATTLE_TOTAL_ROUNDS,
         battle_no: 1,
         question_set: questionSet,
+        tiebreak_question_sets: tiebreakQuestionSets,
         battle_schedule: schedule,
         red_members: getPvpTeamMembersBySide(room, 'red'),
         blue_members: getPvpTeamMembersBySide(room, 'blue'),
@@ -8785,6 +8827,14 @@ export default function CodeQuizApp() {
       if (questionSet.length !== PVP_ELIMINATION_MAX_TOTAL_BATTLES) {
         throw new Error('elimination_room_not_enough_questions');
       }
+      const tiebreakQuestionSets = resolvePvpGroupTiebreakQuestionSets({
+        areaId: room.knowledge_area || pvpKnowledgeArea,
+        difficulty: room.difficulty || pvpConfig.difficulty,
+        language: room.language || pvpConfig.language,
+        topic: room.topic || pvpConfig.topic,
+        sequenceSeed: matchId,
+        excludeQuestions: questionSet
+      });
 
       const memberScores = {};
       activeIds.forEach((userId) => {
@@ -8807,6 +8857,8 @@ export default function CodeQuizApp() {
         pair_no: Number(firstPair.pair_no || 1),
         total_rounds_per_cycle: PVP_ELIMINATION_ROUNDS_PER_CYCLE,
         question_set: questionSet,
+        tiebreak_question_sets: tiebreakQuestionSets,
+        tiebreak_start_battle_nos: [],
         members,
         active_member_ids: activeIds,
         spectator_member_ids: [],
@@ -9059,18 +9111,22 @@ export default function CodeQuizApp() {
     }
 
     const safeDifficulty = normalizeDifficulty(difficulty);
+    const seenQuestionsUserId = authUser?.uid || 'guest';
     const questions = pickPveRoundQuestionsByTopicSequence(
       QUESTIONS,
       selectedLanguage,
       selectedTopic,
       safeDifficulty,
-      PVE_QUESTIONS_PER_ROUND
+      PVE_QUESTIONS_PER_ROUND,
+      { recentQuestionKeys: readSeenQuestionKeysLocal(seenQuestionsUserId) }
     );
 
     if (!questions.length) {
       showToast('Não há perguntas para essa combinação.');
       return;
     }
+    // A próxima rodada prioriza as perguntas que ainda não apareceram para o jogador.
+    appendSeenQuestionsLocal(seenQuestionsUserId, questions);
 
     const firstTheme = resolveQuestionThemeContext(questions[0], selectedLanguage, selectedTopic);
     const nextQuizState = {
@@ -10834,7 +10890,9 @@ export default function CodeQuizApp() {
         });
       } else {
         const nextRoundNo = roundNo + 1;
-        const nextQuestionSet = extendPvpQuestionSetIfNeeded(latestMatch, nextRoundNo);
+        const nextQuestionSet = extendPvpQuestionSetIfNeeded(latestMatch, nextRoundNo, {
+          recentQuestionKeys: readSeenQuestionKeysLocal(authUser.uid)
+        });
         if (nextRoundNo > nextQuestionSet.length) {
           const fallbackWinner = resolveMatchWinner({
             ...latestMatch,
@@ -13368,7 +13426,8 @@ export default function CodeQuizApp() {
     botAnswerRoundKeyRef.current = roundKey;
 
     const botStrength = getBotStrengthFromMatchRow(match, botUserId);
-    const matchDifficulty = normalizeDifficulty(match.difficulty || match.category || 'easy');
+    // No desempate o bot encara a mesma dificuldade maior que o jogador.
+    const matchDifficulty = getPvpDuelRoundDifficulty(match, roundNo);
     const totalRounds = Math.max(1, Number(match.total_rounds || PVP_ROUNDS_PER_MATCH));
     const player1Id = String(match.player1_user_id || '').trim();
     const botIsPlayer1 = player1Id === botUserId;
@@ -14333,6 +14392,13 @@ export default function CodeQuizApp() {
   const pvpRoundPhaseLabel = pvpIsEliminationRound
     ? 'Eliminatória'
     : (pvpIsFinalRound ? 'Rodada final' : '');
+  // Desempate: cada rodada extra vem uma dificuldade acima (a pergunta guarda o nível).
+  const getPvpDuelQuestionTiebreakLabel = (question) => (
+    Number(question?.tiebreak_level || 0) > 0
+      ? getPvpTiebreakDifficultyLabel(question?.difficulty)
+      : ''
+  );
+  const pvpRoundTiebreakDifficultyLabel = getPvpDuelQuestionTiebreakLabel(pvpQuestion);
   const pvpIsRoundResult = String(pvpState.status || '') === 'round_result';
   const pvpRoundResultUntilMs = Math.max(0, Number(pvpMatch?.round_result_until_ms || 0));
   const pvpRoundResultRemainingSec = Math.max(0, Math.ceil((pvpRoundResultUntilMs - pvpClockMs) / 1000));
@@ -14343,6 +14409,11 @@ export default function CodeQuizApp() {
     ? 'Resultado da rodada eliminatória'
     : (pvpRoundResultIsFinal ? 'Resultado da rodada final' : 'Resultado da rodada');
   const pvpRoundResultCountdownClass = pvpRoundResultRemainingSec <= 2 ? 'is-urgent' : '';
+  const pvpNextRoundTiebreakDifficultyLabel = pvpIsRoundResult
+    ? getPvpDuelQuestionTiebreakLabel(
+      pvpMatch?.question_set?.[Math.max(1, Number(pvpMatch?.next_round_no || (pvpRoundResultNo + 1))) - 1]
+    )
+    : '';
   const pvpRoundResultQuestion = pvpMatch?.question_set?.[pvpRoundResultNo - 1] || null;
   const pvpRoundResultAnswers = getPvpRoundAnswersForRound(pvpState.answers, pvpRoundResultNo);
   const pvpRoundResultCorrectIndex = resolvePvpCorrectIndex(
@@ -14397,6 +14468,17 @@ export default function CodeQuizApp() {
     && Boolean(pvpMatch)
     && pvpMatchFoundTransition.visible
     && pvpMatchFoundTransition.matchId === pendingAcceptMatchId;
+  // A lista de salas 2x2 mostra só as da área escolhida (as perguntas da partida vêm
+  // da área da sala), além das salas em que eu já estou.
+  const pvpTeamRoomsInArea = pvpTeamRooms.filter((room) => {
+    if (getPvpTeamUserSide(room, authUser?.uid || '')) return true;
+    const roomArea = String(
+      room?.knowledge_area
+      || resolveKnowledgeAreaByLanguageId(room?.language || '')
+      || ''
+    ).trim();
+    return roomArea === String(pvpKnowledgeArea || 'programming').trim();
+  });
   const pvpTeamRosterSource = (pvpTeamRoom && typeof pvpTeamRoom === 'object')
     ? pvpTeamRoom
     : (pvpTeamMatch && typeof pvpTeamMatch === 'object' ? pvpTeamMatch : null);
@@ -14435,6 +14517,19 @@ export default function CodeQuizApp() {
   const pvpTeamIsActivePlayer = String(authUser?.uid || '').trim() === String(pvpTeamActivePair?.red?.user_id || '').trim()
     || String(authUser?.uid || '').trim() === String(pvpTeamActivePair?.blue?.user_id || '').trim();
   const pvpTeamCurrentBattleLabel = getPvpTeamBattleDisplayLabel(pvpTeamBattleEntry);
+  // Confrontos extras do desempate sobem uma dificuldade cada.
+  const getPvpGroupTiebreakLabel = (match, battleNo) => (
+    match && getPvpGroupBattleTiebreakLevel(match, battleNo) > 0
+      ? getPvpTiebreakDifficultyLabel(getPvpGroupBattleDifficulty(match, battleNo))
+      : ''
+  );
+  const pvpTeamTiebreakDifficultyLabel = getPvpGroupTiebreakLabel(pvpTeamMatch, pvpTeamBattleNo);
+  const pvpTeamNextTiebreakDifficultyLabel = pvpTeamBattleStatus === 'round_result'
+    ? getPvpGroupTiebreakLabel(
+      pvpTeamMatch,
+      Math.max(1, Number(pvpTeamMatch?.next_battle_no || (pvpTeamBattleNo + 1)))
+    )
+    : '';
   const pvpTeamCurrentPairLabel = `${pvpTeamActivePair?.red?.nickname || 'Vermelho'} x ${pvpTeamActivePair?.blue?.nickname || 'Azul'}`;
   const pvpTeamResultBattleNo = Math.max(1, Number(pvpTeamMatch?.result_battle_no || pvpTeamBattleNo || 1));
   const pvpTeamResultEntry = getPvpTeamBattleEntry(pvpTeamMatch, pvpTeamResultBattleNo);
@@ -14575,6 +14670,16 @@ export default function CodeQuizApp() {
     && pvpEliminationIsActivePairMember
     && !(pvpEliminationHasPairUser1Answer && pvpEliminationHasPairUser2Answer);
   const pvpEliminationRoundLabel = getPvpEliminationRoundLabel(pvpEliminationMatch);
+  const pvpEliminationBattleNo = Math.max(1, Number(pvpEliminationMatch?.battle_no || 1));
+  const pvpEliminationTiebreakDifficultyLabel = getPvpGroupTiebreakLabel(pvpEliminationMatch, pvpEliminationBattleNo);
+  // Ao fim de um ciclo empatado, avisa a dificuldade do ciclo de desempate.
+  const pvpEliminationNextTiebreakDifficultyLabel = pvpEliminationBattleStatus === 'elimination_result'
+    && pvpEliminationMatch?.cycle_tiebreak === true
+    ? getPvpGroupTiebreakLabel(
+      pvpEliminationMatch,
+      Math.max(1, Number(pvpEliminationMatch?.next_battle_no || (pvpEliminationBattleNo + 1)))
+    )
+    : '';
   const pvpEliminationRoundResultUntilMs = Math.max(0, Number(pvpEliminationMatch?.round_result_until_ms || 0));
   const pvpEliminationRoundResultRemainingSec = Math.max(0, Math.ceil((pvpEliminationRoundResultUntilMs - pvpClockMs) / 1000));
   const pvpEliminationEliminationUntilMs = Math.max(0, Number(pvpEliminationMatch?.elimination_until_ms || 0));
@@ -15149,6 +15254,19 @@ export default function CodeQuizApp() {
   const isHomeTourLastStep = homeTourStepIndex >= (homeTourSteps.length - 1);
   const settingsSignOutAccountLabel = googleAccountName || 'Conta Google';
 
+  // Perguntas que aparecem nas batalhas PvP entram no histórico do jogador: as
+  // próximas partidas criadas por ele (e as rodadas do PvE) priorizam as inéditas.
+  const pvpVisibleQuestion = screen === 'pvp'
+    ? pvpQuestion
+    : (screen === 'pvp-team' ? pvpTeamQuestion : (screen === 'pvp-elimination' ? pvpEliminationQuestion : null));
+  const pvpVisibleQuestionKey = pvpVisibleQuestion ? getQuestionHistoryKey(pvpVisibleQuestion) : '';
+  const pvpVisibleQuestionRef = useRef(null);
+  pvpVisibleQuestionRef.current = pvpVisibleQuestion;
+  useEffect(() => {
+    if (!pvpVisibleQuestionKey || !pvpVisibleQuestionRef.current) return;
+    appendSeenQuestionsLocal(authUser?.uid || 'guest', [pvpVisibleQuestionRef.current]);
+  }, [authUser?.uid, pvpVisibleQuestionKey]);
+
   useEffect(() => {
     if (screen !== 'home') {
       setHomeTourOpen(false);
@@ -15677,7 +15795,7 @@ export default function CodeQuizApp() {
             pvpTeamRoomHostUserId,
             pvpTeamRoomId,
             pvpTeamRoomReadyMemberIds,
-            pvpTeamRooms,
+            pvpTeamRooms: pvpTeamRoomsInArea,
             queueActionBusy,
             rejectPvpEliminationRoomInvite,
             rejectPvpMatchInvite,
@@ -15721,6 +15839,7 @@ export default function CodeQuizApp() {
             pvpQuestionHasOverflow,
             pvpQuestionScrollRef,
             pvpRoundNo,
+            pvpNextRoundTiebreakDifficultyLabel,
             pvpRoundPhaseLabel,
             pvpRoundPlayer1Feedback,
             pvpRoundPlayer2Feedback,
@@ -15729,6 +15848,7 @@ export default function CodeQuizApp() {
             pvpRoundResultKicker,
             pvpRoundResultLabel,
             pvpRoundResultRemainingSec,
+            pvpRoundTiebreakDifficultyLabel,
             pvpState,
             pvpTimerClass,
             pvpTimerPct,
@@ -15767,6 +15887,7 @@ export default function CodeQuizApp() {
             pvpTeamLeftMemberIds,
             pvpTeamMatch,
             pvpTeamMySide,
+            pvpTeamNextTiebreakDifficultyLabel,
             pvpTeamQuestion,
             pvpTeamRedFeedback,
             pvpTeamRedMembers,
@@ -15777,6 +15898,7 @@ export default function CodeQuizApp() {
             pvpTeamRoundResultRemainingSec,
             pvpTeamSelectedIndex,
             pvpTeamSubmitted,
+            pvpTeamTiebreakDifficultyLabel,
             pvpTeamTimerClass,
             pvpTeamTimerPct
           }} />
@@ -15809,6 +15931,7 @@ export default function CodeQuizApp() {
             pvpEliminationMatch,
             pvpEliminationMatchScoreRows,
             pvpEliminationMyUserId,
+            pvpEliminationNextTiebreakDifficultyLabel,
             pvpEliminationPairUser1Avatar,
             pvpEliminationPairUser1FrameClass,
             pvpEliminationPairUser1FrameStyle,
@@ -15824,6 +15947,7 @@ export default function CodeQuizApp() {
             pvpEliminationSelectedIndex,
             pvpEliminationShowBattleIntro,
             pvpEliminationSubmitted,
+            pvpEliminationTiebreakDifficultyLabel,
             pvpEliminationTimerClass,
             pvpEliminationTimerPct,
             pvpEliminationWaitingPairAnswer,

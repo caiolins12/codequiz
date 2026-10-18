@@ -2,7 +2,7 @@ import { Crown, DoorOpen, Eye, Music2, Skull, Swords, VolumeX } from 'lucide-rea
 import { Avatar, Button, IconButton, Modal, TimerDisplay, cx } from '../ui';
 import AnswerOptions from './shared/AnswerOptions';
 import { LoadingDots, arenaStyles as arena } from './shared/ArenaParts';
-import { EmojiBar, EmojiFxLayer, EmojiToggle, ScorePlayer, SidePlayer, battleStyles as styles } from './shared/BattleParts';
+import { EmojiBar, EmojiFxLayer, EmojiToggle, ScorePlayer, SidePlayer, TiebreakDifficultyBadge, battleStyles as styles } from './shared/BattleParts';
 import overlay from '../overlays/Overlays.module.css';
 import QuestionCard from './shared/QuestionCard';
 import team from './shared/TeamBattle.module.css';
@@ -71,6 +71,7 @@ export default function PvpEliminationScreen({ vm }) {
     pvpEliminationMatch,
     pvpEliminationMatchScoreRows,
     pvpEliminationMyUserId,
+    pvpEliminationNextTiebreakDifficultyLabel,
     pvpEliminationPairUser1Avatar,
     pvpEliminationPairUser1FrameClass,
     pvpEliminationPairUser1FrameStyle,
@@ -86,6 +87,7 @@ export default function PvpEliminationScreen({ vm }) {
     pvpEliminationSelectedIndex,
     pvpEliminationShowBattleIntro,
     pvpEliminationSubmitted,
+    pvpEliminationTiebreakDifficultyLabel,
     pvpEliminationTimerClass,
     pvpEliminationTimerPct,
     pvpEliminationWaitingPairAnswer,
@@ -136,7 +138,10 @@ export default function PvpEliminationScreen({ vm }) {
         <IconButton icon={DoorOpen} label="Sair da partida" variant="surface" onClick={() => leavePvpEliminationFlow()} />
         <div className={styles.round}>
           <Crown size={20} strokeWidth={2.6} aria-hidden="true" />
-          <span className={styles.roundLabel}>{pvpEliminationRoundLabel}</span>
+          <span className={styles.roundText}>
+            <span className={styles.roundLabel}>{pvpEliminationRoundLabel}</span>
+            <TiebreakDifficultyBadge label={pvpEliminationTiebreakDifficultyLabel} />
+          </span>
         </div>
         {music ? (
           <IconButton
@@ -230,6 +235,7 @@ export default function PvpEliminationScreen({ vm }) {
             {pvpEliminationWinnerUserId ? (
               <span className={team.spectator}><Crown size={18} strokeWidth={2.6} aria-hidden="true" /> Campeão: {pvpEliminationWinnerMember?.nickname || 'Jogador'}</span>
             ) : null}
+            <TiebreakDifficultyBadge label={pvpEliminationNextTiebreakDifficultyLabel} announce />
             <span className={cx(styles.nextIn, pvpEliminationCountdownClass ? styles.nextInUrgent : '')} role="timer">
               {pvpEliminationWinnerUserId ? 'Resultado final em ' : cycleTiebreak ? 'Desempate em ' : 'Novo ciclo em '}{countdown}s
             </span>

@@ -2,7 +2,7 @@ import { DoorOpen, Eye, Music2, Swords, Users, VolumeX } from 'lucide-react';
 import { getPvpTeamBattleDisplayLabel } from '../app/helpers';
 import { Avatar, Button, IconButton, Modal, TimerDisplay, cx } from '../ui';
 import AnswerOptions from './shared/AnswerOptions';
-import { EmojiBar, EmojiFxLayer, EmojiToggle, battleStyles as styles } from './shared/BattleParts';
+import { EmojiBar, EmojiFxLayer, EmojiToggle, TiebreakDifficultyBadge, battleStyles as styles } from './shared/BattleParts';
 import { buildPlayerView } from './shared/players';
 import QuestionCard from './shared/QuestionCard';
 import team from './shared/TeamBattle.module.css';
@@ -79,6 +79,7 @@ export default function PvpTeamScreen({ vm }) {
     pvpTeamLeftMemberIds,
     pvpTeamMatch,
     pvpTeamMySide,
+    pvpTeamNextTiebreakDifficultyLabel,
     pvpTeamQuestion,
     pvpTeamRedFeedback,
     pvpTeamRedMembers,
@@ -89,6 +90,7 @@ export default function PvpTeamScreen({ vm }) {
     pvpTeamRoundResultRemainingSec,
     pvpTeamSelectedIndex,
     pvpTeamSubmitted,
+    pvpTeamTiebreakDifficultyLabel,
     pvpTeamTimerClass,
     pvpTeamTimerPct
   } = vm;
@@ -118,7 +120,10 @@ export default function PvpTeamScreen({ vm }) {
         <IconButton icon={DoorOpen} label="Sair da batalha" variant="surface" onClick={() => leavePvpTeamFlow()} />
         <div className={styles.round}>
           <Users size={20} strokeWidth={2.6} aria-hidden="true" />
-          <span className={styles.roundLabel}>{pvpTeamCurrentBattleLabel}</span>
+          <span className={styles.roundText}>
+            <span className={styles.roundLabel}>{pvpTeamCurrentBattleLabel}</span>
+            <TiebreakDifficultyBadge label={pvpTeamTiebreakDifficultyLabel} />
+          </span>
         </div>
         {music ? (
           <IconButton
@@ -227,6 +232,7 @@ export default function PvpTeamScreen({ vm }) {
                 <span className={styles.answerChipState}>{pvpTeamBlueFeedback?.emoji} {pvpTeamBlueFeedback?.label}</span>
               </div>
             </div>
+            <TiebreakDifficultyBadge label={pvpTeamNextTiebreakDifficultyLabel} announce />
             <span className={cx(styles.nextIn, pvpTeamRoundResultCountdownClass ? styles.nextInUrgent : '')} role="timer">
               Próximo confronto em {pvpTeamRoundResultRemainingSec}s
             </span>
