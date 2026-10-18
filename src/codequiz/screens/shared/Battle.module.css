@@ -31,10 +31,17 @@
 }
 
 .roundLabel {
+  min-width: 0;
+  overflow: hidden;
   font-family: var(--cq-font-display);
   font-size: var(--cq-text-lg);
   font-weight: 700;
+  text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.round > svg {
+  flex-shrink: 0;
 }
 
 /* Placar compacto (mobile) */
@@ -234,6 +241,28 @@
   animation: cq-emoji-float 1.8s var(--cq-ease-out) forwards;
 }
 
+.fxLabeled {
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+}
+
+.fxLabel {
+  max-width: 120px;
+  overflow: hidden;
+  padding: 2px 8px;
+  border-radius: var(--cq-radius-pill);
+  background: rgba(8, 5, 30, 0.78);
+  box-shadow: inset 0 0 0 1px var(--cq-border-strong);
+  color: #fff;
+  font-family: var(--cq-font-body);
+  font-size: 0.6875rem;
+  font-weight: 800;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 @keyframes cq-emoji-float {
   0% { transform: translateY(20px) scale(0.4); opacity: 0; }
   20% { transform: translateY(0) scale(1.15); opacity: 1; }
@@ -324,6 +353,72 @@
 .nextInUrgent {
   color: var(--cq-gold);
   animation: cq-pulse 0.8s ease-in-out infinite;
+}
+
+/* Classificação da eliminatória (resultado do duelo e fim de ciclo) */
+.standings {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  text-align: left;
+}
+
+.standingsRow {
+  display: flex;
+  align-items: center;
+  gap: var(--cq-space-3);
+  min-height: 48px;
+  padding: 6px var(--cq-space-3);
+  border-radius: var(--cq-radius-md);
+  background: rgba(8, 5, 30, 0.38);
+  box-shadow: inset 0 0 0 1px var(--cq-border);
+}
+
+.standingsSelf {
+  background: rgba(123, 92, 255, 0.16);
+  box-shadow: inset 0 0 0 2px rgba(166, 144, 255, 0.6);
+}
+
+.standingsOut {
+  background: rgba(255, 92, 108, 0.1);
+  box-shadow: inset 0 0 0 2px rgba(255, 92, 108, 0.6);
+}
+
+.standingsPos {
+  flex-shrink: 0;
+  min-width: 2ch;
+  color: var(--cq-text-3);
+  font-family: var(--cq-font-display);
+  font-weight: 700;
+}
+
+.standingsMain {
+  flex: 1 1 auto;
+  display: grid;
+  min-width: 0;
+  line-height: 1.2;
+}
+
+.standingsName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 800;
+}
+
+.standingsSub {
+  color: #ff9aa5;
+  font-size: var(--cq-text-xs);
+  font-weight: 800;
+}
+
+.standingsScore {
+  flex-shrink: 0;
+  font-family: var(--cq-font-display);
+  font-size: var(--cq-text-xl);
+  line-height: 1;
 }
 
 /* Desktop: jogadores nas laterais */
@@ -419,7 +514,27 @@
   }
 
   .scorePlayer {
+    gap: 6px;
     padding: 6px;
+  }
+
+  /* Avatar e "VS" menores no placar: sobra espaço para o nome */
+  .scoreboard {
+    gap: 6px;
+  }
+
+  .scorePlayer :global(.cq-avatar) {
+    --avatar-size: 34px;
+  }
+
+  .scoreboard > .vs {
+    width: 32px;
+    height: 32px;
+    font-size: var(--cq-text-sm);
+  }
+
+  .roundLabel {
+    font-size: var(--cq-text-md);
   }
 
   /* O rodapé não sobrepõe o conteúdo (o palco rola por dentro): sem as margens negativas

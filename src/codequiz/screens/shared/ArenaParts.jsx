@@ -20,6 +20,7 @@ export function PlayerCard({
   side = '',
   self = false,
   vertical = false,
+  stackOnMobile = false,
   avatarSize = 'md',
   className = ''
 }) {
@@ -30,6 +31,7 @@ export function PlayerCard({
       className={cx(
         styles.player,
         vertical ? styles.playerVertical : '',
+        stackOnMobile ? styles.playerStackMobile : '',
         side ? styles[side] : '',
         self ? styles.self : '',
         state ? styles[state] : '',
@@ -122,8 +124,15 @@ export function AreaPicker({ value, onChoose, disabled = false, label = 'Área d
   );
 }
 
-// Painel de fila: quando `searching`, mostra o radar e o tempo de busca.
-export function QueuePanel({ searching, timeLabel = '', action, title = 'Procurando adversário', text = 'Você será avisado quando a partida for encontrada.' }) {
+// Painel de fila: quando `searching`, mostra o radar, o tempo de busca e (em `details`) o que foi escolhido.
+export function QueuePanel({
+  searching,
+  timeLabel = '',
+  action,
+  title = 'Procurando adversário',
+  text = 'Você será avisado quando a partida for encontrada.',
+  details = null
+}) {
   if (searching) {
     return (
       <div className={styles.queue} role="status" aria-live="polite">
@@ -133,6 +142,7 @@ export function QueuePanel({ searching, timeLabel = '', action, title = 'Procura
         <h3 className={styles.queueTitle}>{title}</h3>
         <span className={styles.queueTime}>{timeLabel}</span>
         <p className={styles.queueText}>{text}</p>
+        {details ? <div className={styles.queueDetails}>{details}</div> : null}
         {action ? (
           <Button variant="secondary" block onClick={action.onClick} disabled={action.disabled}>
             {action.label}

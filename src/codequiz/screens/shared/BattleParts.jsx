@@ -124,13 +124,15 @@ export function EmojiFxLayer({ items = [] }) {
       {items.map((fx) => (
         <span
           key={fx.id}
-          className={styles.fx}
+          className={cx(styles.fx, fx.label ? styles.fxLabeled : '')}
           style={{
             top: `${Number.isFinite(Number(fx?.topPct)) ? Number(fx.topPct) : 58}%`,
             [String(fx?.side || '') === 'left' ? 'left' : 'right']: `calc(8% + ${Math.max(0, Number(fx?.offsetPx || 0))}px)`
           }}
         >
           {fx.emoji}
+          {/* Partidas com mais de dois jogadores: mostra quem mandou */}
+          {fx.label ? <span className={styles.fxLabel}>{fx.label}</span> : null}
         </span>
       ))}
     </div>,

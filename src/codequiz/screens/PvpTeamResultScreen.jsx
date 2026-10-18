@@ -19,8 +19,10 @@ function TeamResult({ side, label, members, winner, mine, buildCosmeticSnapshot,
       className={cx(team.team, side === 'blue' ? team.blue : '', mine ? team.mine : '', winner ? team.winner : '')}
       aria-label={`Time ${label}`}
     >
+      {/* No celular o "(você)" vira a etiqueta "Seu time" na borda do cartão (o nome não corta) */}
+      {mine ? <span className={team.youTag}>Seu time</span> : null}
       <div className={team.teamHead}>
-        <span className={team.teamName}>{label}{mine ? ' (você)' : ''}</span>
+        <span className={team.teamName}>{label}{mine ? <span className={team.youSuffix}> (você)</span> : null}</span>
         {winner ? (
           <Badge tone="gold" variant="solid" size="sm" icon={Crown}>
             <span className={team.winnerText}>Venceu</span>
@@ -90,12 +92,12 @@ export default function PvpTeamResultScreen({ vm }) {
             <div className={cx(battle.scoreline, outcome.heroScore)} aria-label={`Placar: Vermelho ${redScore}, Azul ${blueScore}`}>
               <span className={battle.scorelineItem}>
                 <span className={battle.scorelineName}>Vermelho</span>
-                <span className={cx(battle.scorelineValue, team.scoreRed)}>{redScore}</span>
+                <span className={cx(battle.scorelineValue, outcome.heroScoreValue, team.scoreRed)}>{redScore}</span>
               </span>
               <span className={battle.scorelineDivider} aria-hidden="true">×</span>
               <span className={battle.scorelineItem}>
                 <span className={battle.scorelineName}>Azul</span>
-                <span className={cx(battle.scorelineValue, team.scoreBlue)}>{blueScore}</span>
+                <span className={cx(battle.scorelineValue, outcome.heroScoreValue, team.scoreBlue)}>{blueScore}</span>
               </span>
             </div>
           </section>

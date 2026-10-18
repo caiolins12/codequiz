@@ -953,7 +953,7 @@ export const PVP_TEAM_BATTLE_TOTAL_ROUNDS = PVP_TEAM_BATTLE_ROUNDS_PER_BLOCK * P
 export const PVP_ELIMINATION_ROOM_CAPACITY = 4;
 export const PVP_ELIMINATION_ROUNDS_PER_CYCLE = 3;
 export const PVP_ELIMINATION_MAX_TOTAL_BATTLES = 12;
-export const PVP_ELIMINATION_BATTLE_INTRO_MS = 1600;
+export const PVP_ELIMINATION_BATTLE_INTRO_MS = 2500;
 export const PVP_ELIMINATION_QUEUE_RETRY_MS = 900;
 export const PVP_ELIMINATION_QUEUE_BOT_FILL_MIN_ELAPSED_MS = PVP_QUEUE_BOT_FIRST_THRESHOLD_MS;
 export const PVP_ELIMINATION_QUEUE_BOT_FILL_RETRY_MS = 1100;
@@ -1242,6 +1242,10 @@ export const ENABLE_CLIENT_BOT_AUTOMATION = process.env.NODE_ENV === 'developmen
 export const MOBILE_UA_PATTERN = /android|iphone|ipad|ipod|mobile|iemobile|opera mini/i;
 export const MOBILE_SW_CLEANUP_STORAGE_KEY = 'cq_mobile_sw_cleanup_sha_v2';
 export const LAST_CONFIRMED_BUILD_SHA_STORAGE_KEY = 'cq_last_confirmed_build_sha_v1';
+// Partida PvP em andamento neste aparelho (por usuário): se a página fechar ou cair,
+// ao reabrir o jogador volta para ela ou para a recompensa que ficou sem coletar.
+export const ACTIVE_MATCH_STORAGE_KEY_PREFIX = 'cq_active_match_v1:';
+export const ACTIVE_MATCH_RESUME_MAX_AGE_MS = 6 * 60 * 60 * 1000;
 
 export function isLikelyMobileWeb() {
   if (typeof navigator === 'undefined') return false;

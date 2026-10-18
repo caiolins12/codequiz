@@ -85,6 +85,18 @@ function ModeMenu({ openPvpMode }) {
   );
 }
 
+// O que o jogador escolheu para a fila (aparece no radar enquanto procura)
+function QueueChoice({ difficulty, areaId, knowledgeAreaById }) {
+  const level = normalizeDifficulty(difficulty || 'easy');
+  const area = knowledgeAreaById?.get(String(areaId || '').trim()) || null;
+  return (
+    <>
+      <Badge tone={DIFFICULTY_TONES[level] || 'lime'} size="sm">{DIFFICULTY_LABELS[level]}</Badge>
+      {area ? <Badge tone="neutral" size="sm">{`${area.icon} ${area.name}`}</Badge> : null}
+    </>
+  );
+}
+
 function EmojiCard({ emojis, onEdit }) {
   return (
     <Card padding="lg" className={styles.emojiCard}>
@@ -105,6 +117,7 @@ function DuelPanel({ vm }) {
     arenaPrimaryAction,
     chooseKnowledgeAreaForPvp,
     choosePvpDifficulty,
+    knowledgeAreaById,
     matchAcceptBusy,
     matchAcceptCountdownLabel,
     matchBothAccepted,
@@ -209,6 +222,7 @@ function DuelPanel({ vm }) {
           searching={searching}
           timeLabel={pvpQueueTimeLabel}
           action={arenaPrimaryAction}
+          details={<QueueChoice difficulty={pvpSelectedDifficulty} areaId={pvpKnowledgeArea} knowledgeAreaById={knowledgeAreaById} />}
         />
         <EmojiCard emojis={pvpBattleEmojis} onEdit={openPvpEmojiPicker} />
       </div>
@@ -307,22 +321,14 @@ function TeamPanel({ vm }) {
 
   return (
     <>
-      <Card padding="lg" className={styles.room}>
-        <span className={styles.roomHead}>
-          <span className={styles.roomName}>
-            {pvpTeamRoom?.has_password ? <Lock aria-label="Sala privada" strokeWidth={2.6} /> : null}
-            {pvpTeamRoom?.name || 'Sala de equipe'}
-          </span>
-          <Badge tone={DIFFICULTY_TONES[roomDifficulty] || 'lime'} size="sm">{DIFFICULTY_LABELS[roomDifficulty]}</Badge>
-        </span>
-        <span className={styles.roomMeta}>
-          <span>{pvpTeamRoomAreaMeta ? `${pvpTeamRoomAreaMeta.icon} ${pvpTeamRoomAreaMeta.name}` : 'Área geral'}</span>
-          <span>·</span>
-          <span>{getPvpTeamRoomStatusLabel(pvpTeamRoom)}</span>
-          <span>·</span>
-          <span>{isHost ? 'Você é o líder da sala' : 'Aguardando o líder iniciar'}</span>
-        </span>
-      </Card>
+      {/* O nome da sala já está no título da tela: aqui ficam só as etiquetas da partida */}
+      <div className={styles.roomInfo}>
+        <Badge tone={DIFFICULTY_TONES[roomDifficulty] || 'lime'} size="sm">{DIFFICULTY_LABELS[roomDifficulty]}</Badge>
+        <Badge tone="neutral" size="sm">
+          {pvpTeamRoomAreaMeta ? `${pvpTeamRoomAreaMeta.icon} ${pvpTeamRoomAreaMeta.name}` : 'Área geral'}
+        </Badge>
+        {pvpTeamRoom?.has_password ? <Badge tone="neutral" size="sm" icon={Lock}>Privada</Badge> : null}
+      </div>
 
       <div className={styles.sides}>
         {['red', 'blue'].map((side) => {
@@ -331,7 +337,7 @@ function TeamPanel({ vm }) {
           return (
             <section key={side} className={cx(styles.sidePanel, side === 'blue' ? styles.sideBlue : '', isMine ? styles.sideMine : '')}>
               <div className={styles.sideHead}>
-                <span>Time {getPvpTeamSideColorLabel(side)}</span>
+                <span><span className={styles.labelLong}>Time </span>{getPvpTeamSideColorLabel(side)}</span>
                 <Badge tone={side === 'blue' ? 'blue' : 'red'} size="sm">{members.length}/{PVP_TEAM_ROOM_SIDE_CAPACITY}</Badge>
               </div>
               {Array.from({ length: PVP_TEAM_ROOM_SIDE_CAPACITY }, (_, slotIndex) => {
@@ -360,6 +366,7 @@ function TeamPanel({ vm }) {
                     tags={tags}
                     side={side}
                     self={memberId === selfId}
+                    stackOnMobile
                     avatarSize="sm"
                   />
                 );
@@ -370,7 +377,9 @@ function TeamPanel({ vm }) {
                 disabled={pvpTeamActionBusy || isMine}
                 onClick={() => joinPvpTeamRoomSide(side)}
               >
-                {isMine ? 'Você está neste time' : `Entrar no ${getPvpTeamSideColorLabel(side)}`}
+                {/* No mobile os times ficam lado a lado: o texto curto cabe no botão */}
+                <span className={styles.labelLong}>{isMine ? 'Você está neste time' : `Entrar no ${getPvpTeamSideColorLabel(side)}`}</span>
+                <span className={styles.labelShort}>{isMine ? 'Seu time' : 'Entrar'}</span>
               </Button>
             </section>
           );
@@ -391,24 +400,27 @@ function TeamPanel({ vm }) {
               {pvpTeamAutoStartPending ? 'Completando a sala...' : 'Iniciar batalha'}
             </Button>
             {openSlots > 0 ? (
-              <p className={styles.muted} role="status">
+              <p className={styles.hint} role="status">
                 {pvpTeamAutoStartPending
-                  ? 'Jogadores entrando nas vagas abertas. A batalha começa quando a sala lotar.'
-                  : `${openSlots === 1 ? '1 vaga aberta' : `${openSlots} vagas abertas`}. Ao iniciar, outros jogadores completam a sala.`}
+                  ? 'Completando as vagas. A batalha começa quando a sala lotar.'
+                  : `${openSlots === 1 ? '1 vaga livre será completada' : `${openSlots} vagas livres serão completadas`} ao iniciar.`}
               </p>
             ) : null}
           </>
         ) : (
-          <Button
-            size="xl"
-            variant={pvpTeamCurrentUserReady ? 'secondary' : 'success'}
-            icon={pvpTeamCurrentUserReady ? UserCheck : undefined}
-            block
-            disabled={pvpTeamActionBusy}
-            onClick={() => togglePvpTeamReadyState()}
-          >
-            {pvpTeamCurrentUserReady ? 'Pronto! (toque para cancelar)' : 'Estou pronto'}
-          </Button>
+          <>
+            <Button
+              size="xl"
+              variant={pvpTeamCurrentUserReady ? 'secondary' : 'success'}
+              icon={pvpTeamCurrentUserReady ? UserCheck : undefined}
+              block
+              disabled={pvpTeamActionBusy}
+              onClick={() => togglePvpTeamReadyState()}
+            >
+              {pvpTeamCurrentUserReady ? 'Pronto! (toque para cancelar)' : 'Estou pronto'}
+            </Button>
+            <p className={styles.hint} role="status">O líder inicia a batalha quando a sala estiver pronta.</p>
+          </>
         )}
       </div>
     </>
@@ -418,9 +430,11 @@ function TeamPanel({ vm }) {
 function EliminationPanel({ vm }) {
   const {
     acceptPvpEliminationRoomInvite,
+    authUser,
     buildCosmeticSnapshot,
     chooseKnowledgeAreaForPvp,
     choosePvpDifficulty,
+    knowledgeAreaById,
     pvpEliminationAcceptCountdownLabel,
     pvpEliminationAcceptMembers,
     pvpEliminationAcceptStateMap,
@@ -443,19 +457,31 @@ function EliminationPanel({ vm }) {
     .map((member) => buildPlayerView(member, buildCosmeticSnapshot));
 
   const eliminationSearching = pvpEliminationQueueing && !pvpEliminationActionBusy && !pvpEliminationHasLiveMatch;
+  const acceptStates = members.map((player) => normalizePvpEliminationAcceptState(pvpEliminationAcceptStateMap[player.userId]));
+  // Quem já aceitou vê o aviso no lugar dos botões (até todos confirmarem)
+  const waitingOthers = !pvpEliminationShouldShowAcceptActions
+    && normalizePvpEliminationAcceptState(pvpEliminationAcceptStateMap[String(authUser?.uid || '').trim()]) === 'accepted'
+    && acceptStates.some((state) => state === 'pending')
+    && !acceptStates.includes('rejected');
   return (
-    <div className={cx(styles.layout, eliminationSearching ? styles.layoutSearching : '')}>
+    <div
+      className={cx(
+        styles.layout,
+        eliminationSearching && !pvpEliminationPendingAccept ? styles.layoutSearching : '',
+        pvpEliminationPendingAccept ? styles.layoutSolo : ''
+      )}
+    >
       {!pvpEliminationPendingAccept ? (
         <Card padding="lg" className={styles.config}>
           <DifficultyPicker value={pvpSelectedDifficulty} onChoose={choosePvpDifficulty} disabled={pvpEliminationAreaSelectionLocked} label="Dificuldade da fila" />
           <AreaPicker value={pvpKnowledgeArea} onChoose={chooseKnowledgeAreaForPvp} disabled={pvpEliminationAreaSelectionLocked} />
         </Card>
       ) : pvpEliminationShowMatchFoundTransition ? (
-        <section className={arena.found} role="status" aria-live="polite">
+        <section className={cx(arena.found, styles.groupCard)} role="status" aria-live="polite">
           <span className={arena.foundKicker}>Matchmaking</span>
           <h2 className={arena.foundTitle}>Grupo encontrado!</h2>
           <p className={styles.muted}>Confirmando o aceite dos 4 jogadores.</p>
-          <div className={arena.group}>
+          <div className={cx(arena.group, styles.groupGrid)}>
             {members.map((player) => (
               <PlayerCard key={player.userId} player={player} vertical avatarSize="md" />
             ))}
@@ -463,10 +489,10 @@ function EliminationPanel({ vm }) {
           <LoadingDots />
         </section>
       ) : (
-        <section className={arena.found} aria-live="polite">
+        <section className={cx(arena.found, styles.groupCard)} aria-live="polite">
           <span className={arena.foundKicker}>Confirme sua vaga</span>
           <h2 className={arena.foundTitle}>Partida encontrada</h2>
-          <div className={arena.group}>
+          <div className={cx(arena.group, styles.groupGrid)}>
             {members.map((player) => (
               <PlayerCard
                 key={player.userId}
@@ -483,33 +509,47 @@ function EliminationPanel({ vm }) {
               <Button size="lg" variant="success" disabled={pvpEliminationInviteBusy} onClick={acceptPvpEliminationRoomInvite}>Aceitar</Button>
               <Button size="lg" variant="secondary" disabled={pvpEliminationInviteBusy} onClick={rejectPvpEliminationRoomInvite}>Recusar</Button>
             </div>
+          ) : waitingOthers ? (
+            <p className={styles.muted}>Você confirmou. Aguardando os outros jogadores.</p>
           ) : null}
         </section>
       )}
-      <div className={styles.side}>
-        <QueuePanel
-          searching={eliminationSearching}
-          timeLabel={pvpEliminationQueueTimeLabel}
-          action={pvpEliminationPrimaryAction}
-          title="Montando o grupo"
-          text="A partida começa quando 4 jogadores estiverem na fila."
-        />
-      </div>
+      {/* No aceite (como no duelo) o radar da fila sai de cena: o grupo já foi encontrado */}
+      {!pvpEliminationPendingAccept ? (
+        <div className={styles.side}>
+          <QueuePanel
+            searching={eliminationSearching}
+            timeLabel={pvpEliminationQueueTimeLabel}
+            action={pvpEliminationPrimaryAction}
+            title="Montando o grupo"
+            text="A partida começa quando 4 jogadores estiverem na fila."
+            details={<QueueChoice difficulty={pvpSelectedDifficulty} areaId={pvpKnowledgeArea} knowledgeAreaById={knowledgeAreaById} />}
+          />
+        </div>
+      ) : null}
     </div>
   );
 }
 
 export default function PvpLobbyScreen({ vm }) {
-  const { openPvpMode, pvpMode, triggerAppBackNavigation } = vm;
-  const header = MODE_HEADERS[pvpMode] || {
-    title: 'Arena PvP',
-    subtitle: 'Escolha como você quer disputar.'
-  };
+  const { openPvpMode, pvpMode, pvpTeamRoom, pvpTeamRoomId, triggerAppBackNavigation } = vm;
+  const inTeamRoom = pvpMode === PVP_MODE_TEAM_BATTLE && !!pvpTeamRoomId;
+  // Dentro da sala o título é o nome dela (o cartão da sala saiu: libera altura no celular)
+  const header = inTeamRoom
+    ? {
+      eyebrow: 'Batalha de equipes',
+      title: pvpTeamRoom?.name || 'Sala de equipe',
+      subtitle: 'Escolha seu time. A batalha começa quando o líder iniciar.'
+    }
+    : {
+      eyebrow: pvpMode ? 'Arena PvP' : 'Modo online',
+      ...(MODE_HEADERS[pvpMode] || { title: 'Arena PvP', subtitle: 'Escolha como você quer disputar.' })
+    };
 
   return (
-    <div className={styles.screen}>
+    <div className={cx(styles.screen, inTeamRoom ? styles.screenRoom : '')}>
       <PageHeader
-        eyebrow={pvpMode ? 'Arena PvP' : 'Modo online'}
+        eyebrow={header.eyebrow}
         title={header.title}
         subtitle={header.subtitle}
         onBack={() => triggerAppBackNavigation('button')}

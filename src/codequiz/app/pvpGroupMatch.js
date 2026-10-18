@@ -9,7 +9,6 @@ import {
   PVP_ELIMINATION_BATTLE_INTRO_MS,
   PVP_ELIMINATION_MAX_TOTAL_BATTLES,
   PVP_ROUND_EXTRA_ANSWER_MS,
-  PVP_ROUND_RESULT_DURATION_MS,
   PVP_TEAM_BATTLE_TOTAL_ROUNDS,
   buildPvpEliminationCycleRounds,
   buildPvpEliminationCycleScoreMap,
@@ -71,10 +70,32 @@ import {
 export const PVP_GROUP_MODE_TEAM = 'team';
 export const PVP_GROUP_MODE_ELIMINATION = 'elimination';
 
-// Bot responde entre 2s e 6s depois que a pergunta abre (sorteio fixo por partida,
-// bot e confronto: todos os clientes agendam o mesmo instante e a mesma resposta).
-const PVP_GROUP_BOT_ANSWER_MIN_MS = 2000;
-const PVP_GROUP_BOT_ANSWER_MAX_MS = 6000;
+// Tempo de resposta dos bots (sorteio fixo por partida, bot e confronto: todos os clientes
+// agendam o mesmo instante e a mesma resposta). Imita uma pessoa: primeiro lê a pergunta
+// (mais texto, mais tempo), depois pensa por uma fração do tempo que sobra, que depende
+// da força do bot. Errar costuma levar mais tempo e, de vez em quando, o bot hesita e
+// responde mais perto do fim.
+const PVP_GROUP_BOT_READ_BASE_MS = 1000;
+const PVP_GROUP_BOT_READ_MS_PER_CHAR = 18;
+const PVP_GROUP_BOT_READ_MIN_MS = 2200;
+const PVP_GROUP_BOT_READ_MAX_MS = 5500;
+const PVP_GROUP_BOT_THINK_RATIO_BY_STRENGTH = {
+  forte: [0.06, 0.3],
+  medio: [0.1, 0.4],
+  fraco: [0.15, 0.52]
+};
+const PVP_GROUP_BOT_WRONG_THINK_FACTOR = 1.2;
+const PVP_GROUP_BOT_HESITATE_CHANCE = 0.12;
+// O bot sempre responde antes do fim do tempo, com esta folga.
+const PVP_GROUP_BOT_ANSWER_END_MARGIN_MS = 1500;
+// Tempo extra de resposta nos modos em grupo (além do tempo do duelo 1x1).
+const PVP_GROUP_EXTRA_ANSWER_MS = 5000;
+// Quanto tempo o resultado do confronto e o fim de ciclo da eliminatória ficam na tela.
+const PVP_GROUP_ROUND_RESULT_DURATION_MS = 8000;
+const PVP_ELIMINATION_CYCLE_RESULT_DURATION_MS = 10000;
+// Quando a dupla toda já respondeu, segura um instante antes de mostrar o resultado
+// (dá para ver o "Respondeu" do segundo jogador antes do placar).
+const PVP_GROUP_ALL_ANSWERED_HOLD_MS = 1200;
 // Folga depois do fim do tempo antes de fechar a rodada, para respostas enviadas
 // no último segundo chegarem ao banco.
 export const PVP_GROUP_FINALIZE_GRACE_MS = 1200;
@@ -174,6 +195,7 @@ export function getPvpGroupBattleTiming(match = null, mode = PVP_GROUP_MODE_TEAM
     1000,
     Number(getRoundDurationSeconds(match?.difficulty || match?.category || 'easy') || 20) * 1000
     + PVP_ROUND_EXTRA_ANSWER_MS
+    + PVP_GROUP_EXTRA_ANSWER_MS
   );
   const opensAtMs = startedAtMs + introMs;
   const closesAtMs = opensAtMs + answerMs;
@@ -246,6 +268,17 @@ function mergeAnswerRows(...lists) {
   return Array.from(merged.values());
 }
 
+// Dupla toda respondeu (ou saiu): fecha um instante depois da última resposta.
+function isPvpGroupPairDoneAndHeld(pairIds, answered, isGone, nowMs) {
+  if (!pairIds.every((userId) => answered.has(userId) || isGone(userId))) return false;
+  const lastAnsweredAtMs = pairIds.reduce((latest, userId) => (
+    Math.max(latest, Math.max(0, Number(answered.get(userId)?.answered_at_ms || 0)))
+  ), 0);
+  const sinceMs = nowMs - lastAnsweredAtMs;
+  // Horário muito no futuro vem de relógio adiantado de outro aparelho: não fica esperando.
+  return sinceMs >= PVP_GROUP_ALL_ANSWERED_HOLD_MS || sinceMs < -PVP_GROUP_ALL_ANSWERED_HOLD_MS;
+}
+
 function buildMissingAnswer(userId, nowMs) {
   return {
     user_id: userId,
@@ -276,21 +309,48 @@ export function getPvpGroupBotAnswerPlan(match = null, mode = PVP_GROUP_MODE_TEA
     roundNo: Math.min(battleNo, totalBattles),
     totalRounds: totalBattles
   });
-  const roll = createBotSeededRandom(hashBotSeed(`pvp_group:${matchId}:${safeBotId}:${battleNo}:delay`))();
-  const maxDelayMs = Math.max(
-    PVP_GROUP_BOT_ANSWER_MIN_MS,
-    Math.min(PVP_GROUP_BOT_ANSWER_MAX_MS, timing.answerMs - 1500)
-  );
-  const delayMs = Math.round(PVP_GROUP_BOT_ANSWER_MIN_MS + roll * (maxDelayMs - PVP_GROUP_BOT_ANSWER_MIN_MS));
   const correctIdx = Number(question.answer ?? -1);
+  const isCorrect = answerIdx >= 0 && answerIdx === correctIdx;
+  const random = createBotSeededRandom(hashBotSeed(`pvp_group:${matchId}:${safeBotId}:${battleNo}:delay`));
+  const delayMs = getPvpGroupBotAnswerDelayMs(question, strength, isCorrect, timing.answerMs, random);
   return {
     botId: safeBotId,
     battleNo,
     answerIdx,
     correctIdx,
-    isCorrect: answerIdx >= 0 && answerIdx === correctIdx,
+    isCorrect,
     dueAtMs: timing.opensAtMs + delayMs
   };
+}
+
+function getPvpGroupQuestionTextLength(question) {
+  const options = Array.isArray(question?.opts) ? question.opts : [];
+  return String(question?.q || '').length
+    + Math.round(String(question?.code || '').length * 0.6)
+    + options.reduce((total, option) => total + String(option || '').length, 0);
+}
+
+function getPvpGroupBotAnswerDelayMs(question, strength, isCorrect, answerMs, random) {
+  const latestMs = Math.max(1000, answerMs - PVP_GROUP_BOT_ANSWER_END_MARGIN_MS);
+  const readMs = Math.min(
+    PVP_GROUP_BOT_READ_MAX_MS,
+    Math.max(
+      PVP_GROUP_BOT_READ_MIN_MS,
+      PVP_GROUP_BOT_READ_BASE_MS + getPvpGroupQuestionTextLength(question) * PVP_GROUP_BOT_READ_MS_PER_CHAR
+    )
+  ) * (0.85 + random() * 0.3);
+  const [minRatio, maxRatio] = PVP_GROUP_BOT_THINK_RATIO_BY_STRENGTH[strength]
+    || PVP_GROUP_BOT_THINK_RATIO_BY_STRENGTH.medio;
+  // Média de dois sorteios: tempos do meio são mais comuns que os extremos.
+  const spread = (random() + random()) / 2;
+  const thinkWindowMs = Math.max(0, latestMs - readMs);
+  let thinkMs = thinkWindowMs * (minRatio + spread * (maxRatio - minRatio));
+  if (!isCorrect) thinkMs *= PVP_GROUP_BOT_WRONG_THINK_FACTOR;
+  let delayMs = readMs + thinkMs;
+  if (random() < PVP_GROUP_BOT_HESITATE_CHANCE) {
+    delayMs += (latestMs - delayMs) * (0.35 + random() * 0.4);
+  }
+  return Math.round(Math.max(1000, Math.min(latestMs, delayMs)));
 }
 
 // Bots da dupla atual que ainda não responderam.
@@ -315,8 +375,7 @@ export function isPvpTeamBattleReadyToFinalize(match = null, answerRows = [], no
   if (!redId || !blueId) return false;
   const goneIds = getPvpGroupMatchGoneIds(match, PVP_GROUP_MODE_TEAM);
   const answered = indexPvpGroupBattleAnswers(answerRows, battleNo);
-  const done = [redId, blueId].every((userId) => answered.has(userId) || goneIds.includes(userId));
-  if (done) return true;
+  if (isPvpGroupPairDoneAndHeld([redId, blueId], answered, (userId) => goneIds.includes(userId), nowMs)) return true;
   return nowMs >= getPvpGroupBattleTiming(match, PVP_GROUP_MODE_TEAM).finalizeAtMs;
 }
 
@@ -398,7 +457,7 @@ export function buildPvpTeamFinalizePatch(match = null, answerRows = [], battleN
     ...resultFields,
     status: 'round_result',
     next_battle_no: safeBattleNo + 1,
-    round_result_until_ms: nowMs + PVP_ROUND_RESULT_DURATION_MS
+    round_result_until_ms: nowMs + PVP_GROUP_ROUND_RESULT_DURATION_MS
   };
 }
 
@@ -544,8 +603,7 @@ export function isPvpEliminationBattleReadyToFinalize(match = null, answerRows =
   const battleNo = Math.max(1, Number(match?.battle_no || 1));
   const answered = indexPvpGroupBattleAnswers(answerRows, battleNo);
   const activeIds = getPvpEliminationActiveMemberIds(match);
-  const done = [user1, user2].every((userId) => answered.has(userId) || !activeIds.includes(userId));
-  if (done) return true;
+  if (isPvpGroupPairDoneAndHeld([user1, user2], answered, (userId) => !activeIds.includes(userId), nowMs)) return true;
   return nowMs >= timing.finalizeAtMs;
 }
 
@@ -615,7 +673,7 @@ export function buildPvpEliminationFinalizePatch(match = null, answerRows = [], 
       next_pair_no: Math.max(1, Number(nextPair.pair_no || 1)),
       next_active_pair_user_ids: [safeId(nextPair.player1_user_id), safeId(nextPair.player2_user_id)],
       next_status: null,
-      round_result_until_ms: nowMs + PVP_ROUND_RESULT_DURATION_MS,
+      round_result_until_ms: nowMs + PVP_GROUP_ROUND_RESULT_DURATION_MS,
       elimination_until_ms: null,
       eliminated_user_id: null,
       eliminated_reason: null
@@ -633,7 +691,7 @@ export function buildPvpEliminationFinalizePatch(match = null, answerRows = [], 
     elimination_order: uniqueIds([...(match?.elimination_order || []), eliminatedUserId]),
     eliminated_user_id: eliminatedUserId || null,
     eliminated_reason: 'score',
-    elimination_until_ms: nowMs + PVP_ROUND_RESULT_DURATION_MS,
+    elimination_until_ms: nowMs + PVP_ELIMINATION_CYCLE_RESULT_DURATION_MS,
     round_result_until_ms: null
   };
 
@@ -889,7 +947,7 @@ export function buildPvpEliminationExitPatch(match = null, userId = '', nowMs = 
       safeId(nextCycle.pair.player2_user_id)
     ],
     next_final_elimination_order: null,
-    elimination_until_ms: nowMs + PVP_ROUND_RESULT_DURATION_MS,
+    elimination_until_ms: nowMs + PVP_ELIMINATION_CYCLE_RESULT_DURATION_MS,
     round_result_until_ms: null
   };
 }
@@ -1192,6 +1250,96 @@ export async function sweepStalePvpGroupState(options = {}) {
   })();
   return pvpGroupSweepInFlight;
 }
+
+// ---------------------------------------------------------------------------
+// Emojis dos bots
+// ---------------------------------------------------------------------------
+
+// Só um humano presente (o de menor id) agenda os emojis dos bots: cada reação sai uma
+// vez só, mesmo com vários aparelhos acompanhando a partida.
+export function getPvpGroupEmojiDriverId(match = null, mode = PVP_GROUP_MODE_TEAM) {
+  return [...getPvpGroupMatchPresentHumanIds(match, mode)].sort()[0] || '';
+}
+
+function getPvpGroupResultPairIds(match, mode) {
+  if (normalizeMode(mode) === PVP_GROUP_MODE_ELIMINATION) return getPvpGroupBattlePairIds(match, mode);
+  const entry = getPvpTeamBattleEntry(match, Math.max(1, Number(match?.result_battle_no || match?.battle_no || 1)));
+  return [safeId(entry?.red_user_id), safeId(entry?.blue_user_id)];
+}
+
+function capPvpGroupBotEmojiPlan(plan, random, maxBots = 3) {
+  return plan.slice(0, maxBots).map((entry, index) => ({
+    ...entry,
+    // Um bot de cada vez, como pessoas reagindo em momentos diferentes.
+    delayMs: Math.round(900 + index * 1100 + random() * 900)
+  }));
+}
+
+// Fim de um confronto: quem venceu comemora mais, quem perdeu às vezes reage e os outros
+// bots (parceiro no 2x2, quem assiste na eliminatória) entram de vez em quando.
+export function planPvpGroupBotRoundEmojis(match = null, mode = PVP_GROUP_MODE_TEAM, random = Math.random) {
+  const safeMode = normalizeMode(mode);
+  const pairIds = getPvpGroupResultPairIds(match, safeMode).filter(Boolean);
+  const winnerId = safeId(match?.result_battle_winner_user_id);
+  const winnerSide = safeMode === PVP_GROUP_MODE_TEAM && winnerId ? getPvpTeamUserSide(match, winnerId) : '';
+  const plan = [];
+  pairIds.forEach((userId) => {
+    if (!isSystemBotUserId(userId)) return;
+    const won = !!winnerId && winnerId === userId;
+    const chance = won ? 0.7 : (winnerId ? 0.3 : 0.25);
+    if (random() < chance) plan.push({ botId: userId, count: won && random() < 0.4 ? 2 : 1 });
+  });
+  getPvpGroupMatchBotIds(match, safeMode)
+    .filter((botId) => !pairIds.includes(botId))
+    .forEach((botId) => {
+      const cheering = !!winnerSide && getPvpTeamUserSide(match, botId) === winnerSide;
+      if (random() < (cheering ? 0.35 : 0.12)) plan.push({ botId, count: 1 });
+    });
+  return capPvpGroupBotEmojiPlan(plan, random);
+}
+
+// Fim de ciclo na eliminatória: o bot eliminado costuma reagir, os demais às vezes, e o
+// campeão (quando a partida acaba) quase sempre comemora.
+export function planPvpGroupBotEliminationEmojis(match = null, random = Math.random) {
+  const eliminatedId = safeId(match?.eliminated_user_id);
+  const championId = safeId(match?.next_status).toLowerCase() === 'finished' ? safeId(match?.winner_user_id) : '';
+  const plan = [];
+  if (championId && isSystemBotUserId(championId) && random() < 0.8) plan.push({ botId: championId, count: 2 });
+  if (eliminatedId && isSystemBotUserId(eliminatedId) && random() < 0.6) plan.push({ botId: eliminatedId, count: 1 });
+  getPvpGroupMatchBotIds(match, PVP_GROUP_MODE_ELIMINATION)
+    .filter((botId) => botId !== eliminatedId && botId !== championId)
+    .forEach((botId) => {
+      if (random() < 0.3) plan.push({ botId, count: 1 });
+    });
+  return capPvpGroupBotEmojiPlan(plan, random);
+}
+
+// Alguém mandou emoji: às vezes um bot responde. No 2x2 quem responde costuma ser do time
+// adversário (provocação) e às vezes o parceiro; na eliminatória, de preferência quem está duelando.
+export function pickPvpGroupBotEmojiReply(match = null, mode = PVP_GROUP_MODE_TEAM, senderId = '', random = Math.random) {
+  const safeMode = normalizeMode(mode);
+  const safeSenderId = safeId(senderId);
+  const botIds = getPvpGroupMatchBotIds(match, safeMode).filter((botId) => botId !== safeSenderId);
+  if (!botIds.length || random() >= 0.6) return null;
+  let candidates = botIds;
+  if (safeMode === PVP_GROUP_MODE_TEAM) {
+    const senderSide = getPvpTeamUserSide(match, safeSenderId);
+    const rivals = botIds.filter((botId) => getPvpTeamUserSide(match, botId) !== senderSide);
+    const mates = botIds.filter((botId) => getPvpTeamUserSide(match, botId) === senderSide);
+    candidates = (rivals.length && (random() < 0.7 || !mates.length)) ? rivals : (mates.length ? mates : botIds);
+  } else {
+    const dueling = getPvpGroupBattlePairIds(match, safeMode).filter((userId) => botIds.includes(userId));
+    if (dueling.length && random() < 0.7) candidates = dueling;
+  }
+  return {
+    botId: candidates[Math.floor(random() * candidates.length)],
+    count: random() < 0.25 ? 2 : 1,
+    delayMs: Math.round(900 + random() * 1300)
+  };
+}
+
+// Bot da dupla respondeu antes do adversário: de vez em quando provoca enquanto espera.
+export const PVP_GROUP_BOT_FIRST_ANSWER_EMOJI_CHANCE = 0.18;
 
 // Sorteia quando o próximo bot entra numa sala 2x2 com vaga aberta.
 export function getPvpTeamRoomBotFillDelayMs(room = null, afterBotJoin = false) {

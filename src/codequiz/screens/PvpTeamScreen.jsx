@@ -2,12 +2,23 @@ import { DoorOpen, Eye, Music2, Swords, Users, VolumeX } from 'lucide-react';
 import { getPvpTeamBattleDisplayLabel } from '../app/helpers';
 import { Avatar, Button, IconButton, Modal, TimerDisplay, cx } from '../ui';
 import AnswerOptions from './shared/AnswerOptions';
-import { battleStyles as styles } from './shared/BattleParts';
+import { EmojiBar, EmojiFxLayer, EmojiToggle, battleStyles as styles } from './shared/BattleParts';
 import { buildPlayerView } from './shared/players';
 import QuestionCard from './shared/QuestionCard';
 import team from './shared/TeamBattle.module.css';
 
-function TeamPanel({ side, label, members, score, activeUserId, mine, buildCosmeticSnapshot, memberScores, leftMemberIds = [] }) {
+function TeamPanel({
+  side,
+  label,
+  members,
+  score,
+  activeUserId,
+  mine,
+  buildCosmeticSnapshot,
+  memberScores,
+  leftMemberIds = [],
+  answeredIds = null
+}) {
   return (
     <section className={cx(team.team, side === 'blue' ? team.blue : '', side === 'blue' ? team.teamBlue : team.teamRed, mine ? team.mine : '')}>
       {mine ? <span className={team.youTag} aria-hidden="true">Seu time</span> : null}
@@ -20,15 +31,23 @@ function TeamPanel({ side, label, members, score, activeUserId, mine, buildCosme
           const player = buildPlayerView(member, buildCosmeticSnapshot);
           const memberScore = Math.max(0, Number(memberScores?.[player.userId] || 0));
           const left = leftMemberIds.includes(player.userId);
+          const dueling = activeUserId === player.userId;
+          // Durante o confronto, quem duela mostra se já respondeu (todos veem, inclusive quem assiste).
+          const answered = dueling && !left && Array.isArray(answeredIds) ? answeredIds.includes(player.userId) : null;
           return (
-            <li key={`${side}_${player.userId}`} className={cx(team.member, activeUserId === player.userId ? team.memberActive : '')}>
+            <li key={`${side}_${player.userId}`} className={cx(team.member, dueling ? team.memberActive : '')}>
               <Avatar avatar={player.avatar} frameClass={player.frameClass} frameStyle={player.frameStyle} size="xs" />
               <span className={team.memberText}>
                 <span className={team.memberName}>{player.nickname}</span>
                 <span className={team.memberMeta}>
                   {memberScore} acerto{memberScore === 1 ? '' : 's'}
-                  {left ? ' · saiu da partida' : (activeUserId === player.userId ? ' · duelando' : '')}
+                  {left ? ' · saiu da partida' : (dueling ? ' · duelando' : '')}
                 </span>
+                {answered !== null ? (
+                  <span className={cx(team.memberStatus, answered ? team.memberStatusDone : '')}>
+                    {answered ? 'Respondeu' : 'Pensando...'}
+                  </span>
+                ) : null}
               </span>
             </li>
           );
@@ -42,6 +61,7 @@ export default function PvpTeamScreen({ vm }) {
   const {
     buildCosmeticSnapshot,
     confirmPvpTeamAnswer,
+    emojis,
     leavePvpTeamFlow,
     music,
     pickPvpTeamAnswer,
@@ -54,6 +74,7 @@ export default function PvpTeamScreen({ vm }) {
     pvpTeamCurrentBattleLabel,
     pvpTeamCurrentPairLabel,
     pvpTeamAnswerWindowOpen,
+    pvpTeamAnsweredUserIds,
     pvpTeamIsActivePlayer,
     pvpTeamLeftMemberIds,
     pvpTeamMatch,
@@ -80,6 +101,16 @@ export default function PvpTeamScreen({ vm }) {
   const redScore = Math.max(0, Number(pvpTeamMatch?.red_score || 0));
   const blueScore = Math.max(0, Number(pvpTeamMatch?.blue_score || 0));
   const timerLevel = pvpTeamTimerClass === 'danger' ? 'danger' : (pvpTeamTimerClass === 'warning' ? 'warning' : '');
+  const answeredIds = pvpTeamBattleStatus === 'active' && Array.isArray(pvpTeamAnsweredUserIds) ? pvpTeamAnsweredUserIds : null;
+  const watching = !pvpTeamIsActivePlayer && pvpTeamBattleStatus === 'active';
+  // Reações: quem duela tem o botão ao lado do "Confirmar" (mobile); quem assiste, a fileira toda.
+  const emojiProps = emojis?.onSend ? {
+    emojis: emojis.list,
+    onSend: emojis.onSend,
+    cooldownActive: emojis.cooldownActive,
+    cooldownPct: emojis.cooldownPct,
+    cooldownLabel: emojis.cooldownLabel
+  } : null;
 
   return (
     <div className={styles.battle}>
@@ -112,6 +143,7 @@ export default function PvpTeamScreen({ vm }) {
             buildCosmeticSnapshot={buildCosmeticSnapshot}
             memberScores={pvpTeamMatch?.member_scores}
             leftMemberIds={leftIds}
+            answeredIds={answeredIds}
           />
           <TeamPanel
             side="blue"
@@ -123,6 +155,7 @@ export default function PvpTeamScreen({ vm }) {
             buildCosmeticSnapshot={buildCosmeticSnapshot}
             memberScores={pvpTeamMatch?.member_scores}
             leftMemberIds={leftIds}
+            answeredIds={answeredIds}
           />
         </div>
 
@@ -139,7 +172,8 @@ export default function PvpTeamScreen({ vm }) {
             disabled={locked}
             keyPrefix={`team${pvpTeamBattleNo}`}
           />
-          <footer className={cx(styles.footer, !pvpTeamIsActivePlayer && pvpTeamBattleStatus === 'active' ? styles.footerIdle : '')}>
+          <footer className={cx(styles.footer, watching ? styles.footerIdle : (emojiProps ? styles.footerDuel : ''))}>
+            {emojiProps && !isRoundResult && !watching ? <EmojiToggle {...emojiProps} /> : null}
             <Button
               size="xl"
               variant="success"
@@ -154,6 +188,9 @@ export default function PvpTeamScreen({ vm }) {
                 <span className={styles.waitingDot} aria-hidden="true" />
                 Resposta enviada. Aguardando o adversário...
               </span>
+            ) : null}
+            {emojiProps && !isRoundResult ? (
+              <EmojiBar {...emojiProps} className={watching ? '' : styles.emojiBarWide} />
             ) : null}
           </footer>
         </main>
@@ -193,9 +230,12 @@ export default function PvpTeamScreen({ vm }) {
             <span className={cx(styles.nextIn, pvpTeamRoundResultCountdownClass ? styles.nextInUrgent : '')} role="timer">
               Próximo confronto em {pvpTeamRoundResultRemainingSec}s
             </span>
+            {emojiProps ? <EmojiBar {...emojiProps} /> : null}
           </div>
         </Modal>
       ) : null}
+
+      <EmojiFxLayer items={Array.isArray(emojis?.fx) ? emojis.fx : []} />
     </div>
   );
 }

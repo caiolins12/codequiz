@@ -310,6 +310,14 @@
   font-weight: 700;
 }
 
+/* Dificuldade e área escolhidas para a fila */
+.queueDetails {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+}
+
 @keyframes cq-radar {
   0% { transform: scale(0.55); opacity: 0.9; }
   100% { transform: scale(1.35); opacity: 0; }
@@ -460,9 +468,114 @@
     --avatar-size: 44px;
   }
 
+  /* Card que vira coluna só no mobile (ex.: times lado a lado na sala 2x2) */
+  .playerStackMobile {
+    flex-direction: column;
+    justify-content: center;
+    gap: 6px;
+    padding: var(--cq-space-3) var(--cq-space-2);
+    text-align: center;
+  }
+
+  .playerStackMobile .playerShade {
+    background: linear-gradient(180deg, rgba(10, 6, 34, 0.05), rgba(10, 6, 34, 0.62));
+  }
+
+  .playerStackMobile .playerText {
+    justify-items: center;
+    width: 100%;
+  }
+
+  .playerStackMobile .playerName {
+    max-width: 100%;
+    font-size: var(--cq-text-md);
+  }
+
+  .playerStackMobile .playerMeta {
+    max-width: 100%;
+    font-size: var(--cq-text-xs);
+  }
+
+  .playerStackMobile .playerTags {
+    justify-content: center;
+  }
+
   .queue {
     gap: var(--cq-space-3);
     padding: var(--cq-space-4);
+  }
+
+  .queueText {
+    max-width: 30ch;
+    font-size: var(--cq-text-sm);
+    line-height: 1.4;
+  }
+}
+
+/* Celular alto: o radar da fila ganha presença no espaço que sobra */
+@media (max-width: 767px) and (min-height: 700px) {
+  .radar {
+    width: 150px;
+    height: 150px;
+  }
+
+  .radarCore {
+    width: 76px;
+    height: 76px;
+  }
+
+  .radarCore svg {
+    width: 38px;
+    height: 38px;
+  }
+
+  .group .playerVertical :global(.cq-avatar) {
+    --avatar-size: 56px;
+  }
+}
+
+/* Celular baixo: radar e textos menores */
+@media (max-width: 767px) and (max-height: 620px) {
+  .radar {
+    width: 96px;
+    height: 96px;
+  }
+
+  .radarCore {
+    width: 54px;
+    height: 54px;
+  }
+
+  .radarCore svg {
+    width: 28px;
+    height: 28px;
+  }
+
+  .queueTime {
+    font-size: var(--cq-text-2xl);
+  }
+
+  .found {
+    gap: 10px;
+    padding: var(--cq-space-3);
+  }
+
+  .foundTitle {
+    font-size: var(--cq-text-xl);
+  }
+
+  .group .playerVertical {
+    gap: 4px;
+    padding: var(--cq-space-2);
+  }
+
+  .group .playerVertical :global(.cq-avatar) {
+    --avatar-size: 38px;
+  }
+
+  .countdown {
+    padding: 6px 14px;
+    font-size: var(--cq-text-md);
   }
 }
 

@@ -563,7 +563,9 @@
     overscroll-behavior: contain;
   }
 
-  /* Resultados PvP em grupo: herói menor e ações encostadas no rodapé */
+  /* Resultados PvP em grupo: o herói (título + placar) cresce e ocupa a altura que sobra,
+     com o conteúdo centralizado; times/classificação logo abaixo e as ações no rodapé.
+     Assim não fica um vão vazio entre o placar individual e as recompensas. */
   .split {
     display: flex;
     flex-direction: column;
@@ -576,32 +578,186 @@
     gap: var(--cq-space-3);
   }
 
+  .splitMain {
+    flex: 1 1 auto;
+    grid-template-rows: minmax(0, 1fr);
+  }
+
+  .splitSide,
   .splitActions {
-    margin-top: auto;
+    flex-shrink: 0;
   }
 
   .split .hero {
-    padding: var(--cq-space-3) var(--cq-space-4);
+    align-content: center;
+    padding: var(--cq-space-4);
   }
 
   .split .heroIcon {
-    width: 52px;
-    height: 52px;
+    width: 56px;
+    height: 56px;
     border-radius: 18px;
   }
 
   .split .heroIcon svg {
-    width: 30px;
-    height: 30px;
+    width: 32px;
+    height: 32px;
   }
 
   .split .heroScore {
-    margin-top: 0;
+    margin-top: 2px;
   }
 
   .split .rankCard {
     padding: var(--cq-space-3);
   }
+
+  .splitActions > p {
+    font-size: var(--cq-text-sm);
+  }
+}
+
+/* Celular com altura de sobra: herói, placar e listas maiores (preenchem a tela com conteúdo) */
+@media (max-width: 767px) and (min-height: 700px) {
+  .split .hero {
+    gap: 6px;
+  }
+
+  .split .heroIcon {
+    width: 72px;
+    height: 72px;
+    border-radius: 24px;
+  }
+
+  .split .heroIcon svg {
+    width: 40px;
+    height: 40px;
+  }
+
+  .split .heroTitle {
+    font-size: 1.75rem;
+  }
+
+  .split .heroText {
+    font-size: var(--cq-text-md);
+  }
+
+  .split .heroScore {
+    margin-top: var(--cq-space-2);
+  }
+
+  .split .heroScoreValue {
+    font-size: 2.75rem;
+  }
+
+  .split .rankRow {
+    padding: 8px 10px;
+  }
+
+  .split .rankCard .list {
+    gap: 6px;
+  }
+}
+
+@media (max-width: 767px) and (min-height: 800px) {
+  .split .heroIcon {
+    width: 84px;
+    height: 84px;
+    border-radius: 28px;
+  }
+
+  .split .heroIcon svg {
+    width: 46px;
+    height: 46px;
+  }
+
+  .split .heroTitle {
+    font-size: 2rem;
+  }
+
+  .split .heroScoreValue {
+    font-size: 3.25rem;
+  }
+
+  .split .rankRow {
+    padding: 10px;
+  }
+}
+
+/* Celular baixo: textos de apoio saem para o botão de coletar não ser empurrado */
+@media (max-width: 767px) and (max-height: 620px) {
+  .split .heroText,
+  .splitActions > p {
+    display: none;
+  }
+
+  .split .heroIcon {
+    width: 48px;
+    height: 48px;
+    border-radius: 16px;
+  }
+
+  .split .heroIcon svg {
+    width: 28px;
+    height: 28px;
+  }
+
+  .split .heroTitle {
+    font-size: var(--cq-text-xl);
+  }
+
+  .split .hero {
+    padding: var(--cq-space-3);
+  }
+
+  /* Classificação da eliminatória: 4 linhas justas */
+  .split .rankCard > div:first-child {
+    margin-bottom: var(--cq-space-2);
+  }
+
+  .split .rankCard .list {
+    gap: 2px;
+  }
+
+  .split .rankRow {
+    padding: 4px 8px;
+  }
+
+  .splitActions > button {
+    --btn-height: 54px;
+    --btn-font: var(--cq-text-lg);
+  }
+}
+
+/* Raios girando atrás do herói do resultado em grupo */
+.split .hero {
+  isolation: isolate;
+}
+
+.split .hero::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  z-index: -1;
+  width: 640px;
+  height: 640px;
+  margin: -320px 0 0 -320px;
+  background: repeating-conic-gradient(
+    color-mix(in srgb, var(--hero-color) 16%, transparent) 0deg 8deg,
+    transparent 8deg 22.5deg
+  );
+  -webkit-mask-image: radial-gradient(circle, #000 0%, transparent 58%);
+  mask-image: radial-gradient(circle, #000 0%, transparent 58%);
+  animation: cq-spin 48s linear infinite;
+  pointer-events: none;
+}
+
+/* Derrota / colocação baixa: raios parados e mais discretos */
+.split .bad::before,
+.split .low::before {
+  opacity: 0.45;
+  animation: none;
 }
 
 /* ---------------------------------------------------------------- */

@@ -2,7 +2,7 @@ import { Crown, DoorOpen, Eye, Music2, Skull, Swords, VolumeX } from 'lucide-rea
 import { Avatar, Button, IconButton, Modal, TimerDisplay, cx } from '../ui';
 import AnswerOptions from './shared/AnswerOptions';
 import { LoadingDots, arenaStyles as arena } from './shared/ArenaParts';
-import { ScorePlayer, SidePlayer, battleStyles as styles } from './shared/BattleParts';
+import { EmojiBar, EmojiFxLayer, EmojiToggle, ScorePlayer, SidePlayer, battleStyles as styles } from './shared/BattleParts';
 import overlay from '../overlays/Overlays.module.css';
 import QuestionCard from './shared/QuestionCard';
 import team from './shared/TeamBattle.module.css';
@@ -18,25 +18,32 @@ function liveRowToPlayer(entry) {
     background: entry.bgStyle,
     backgroundMeta: { className: entry.bgClassName, id: entry.bgId, rarity: entry.bgRarity },
     score: Math.max(0, Number(entry.score || 0)),
-    isSelf: !!entry.isSelf
+    isSelf: !!entry.isSelf,
+    answered: !!entry.answered
   };
 }
 
 function ScoreRows({ rows, highlightId = '', eliminatedId = '' }) {
   return (
-    <ol className={overlay.list}>
+    <ol className={styles.standings}>
       {rows.map((entry, index) => {
         const id = String(entry?.user_id || '');
+        const score = Math.max(0, Number(entry?.score || 0));
         return (
           <li
             key={`row_${id}_${index}`}
-            className={cx(overlay.row, id === eliminatedId ? overlay.rowDanger : (id === highlightId ? overlay.rowSelf : ''))}
+            className={cx(
+              styles.standingsRow,
+              id === highlightId ? styles.standingsSelf : '',
+              id === eliminatedId ? styles.standingsOut : ''
+            )}
           >
-            <span className={overlay.rowMain}>
-              <span className={overlay.rowTitle}>{index + 1}º · {entry?.nickname || 'Jogador'}{id === highlightId ? ' (você)' : ''}</span>
-              {id === eliminatedId ? <span className={overlay.rowSub}>Eliminado neste ciclo</span> : null}
+            <span className={styles.standingsPos}>{index + 1}º</span>
+            <span className={styles.standingsMain}>
+              <span className={styles.standingsName}>{entry?.nickname || 'Jogador'}{id === highlightId ? ' (você)' : ''}</span>
+              {id === eliminatedId ? <span className={styles.standingsSub}>Eliminado neste ciclo</span> : null}
             </span>
-            <strong>{Math.max(0, Number(entry?.score || 0))}</strong>
+            <strong className={styles.standingsScore} aria-label={`${score} acerto${score === 1 ? '' : 's'}`}>{score}</strong>
           </li>
         );
       })}
@@ -47,6 +54,7 @@ function ScoreRows({ rows, highlightId = '', eliminatedId = '' }) {
 export default function PvpEliminationScreen({ vm }) {
   const {
     confirmPvpEliminationAnswer,
+    emojis,
     leavePvpEliminationFlow,
     music,
     pickPvpEliminationAnswer,
@@ -99,6 +107,10 @@ export default function PvpEliminationScreen({ vm }) {
   const hasSelection = Number.isFinite(selected) && selected >= 0 && pvpEliminationSelectedIndex !== null;
   const timerLevel = pvpEliminationTimerClass === 'danger' ? 'danger' : (pvpEliminationTimerClass === 'warning' ? 'warning' : '');
   const countdown = Math.max(0, Number(pvpEliminationCountdownSec || 0));
+  // Durante o duelo todos veem se cada um já respondeu (como no duelo 1x1).
+  const showAnswerState = active && !pvpEliminationShowBattleIntro;
+  const leftAnswered = showAnswerState && left ? left.answered : null;
+  const rightAnswered = showAnswerState && right ? right.answered : null;
 
   let status = null;
   if (active) {
@@ -106,6 +118,14 @@ export default function PvpEliminationScreen({ vm }) {
     else if (pvpEliminationIsSpectator) status = { icon: Eye, text: 'Você foi eliminado e está assistindo aos confrontos.' };
     else if (!pvpEliminationIsActivePairMember) status = { icon: Eye, text: 'Aguardando o duelo de outros jogadores...' };
   }
+  // Reações: quem duela tem o botão ao lado do "Confirmar" (mobile); quem assiste, a fileira toda.
+  const emojiProps = emojis?.onSend ? {
+    emojis: emojis.list,
+    onSend: emojis.onSend,
+    cooldownActive: emojis.cooldownActive,
+    cooldownPct: emojis.cooldownPct,
+    cooldownLabel: emojis.cooldownLabel
+  } : null;
 
   return (
     <div className={styles.battle}>
@@ -125,15 +145,15 @@ export default function PvpEliminationScreen({ vm }) {
       </header>
 
       <div className={styles.scoreboard}>
-        <ScorePlayer player={left} score={left?.score || 0} me={!!left?.isSelf} />
+        <ScorePlayer player={left} score={left?.score || 0} me={!!left?.isSelf} answered={leftAnswered} />
         <span className={styles.vs} aria-hidden="true">VS</span>
-        <ScorePlayer player={right} score={right?.score || 0} me={!!right?.isSelf} right />
+        <ScorePlayer player={right} score={right?.score || 0} me={!!right?.isSelf} answered={rightAnswered} right />
       </div>
 
       <TimerDisplay seconds={pvpEliminationBattleRemainingSec} percent={pvpEliminationTimerPct} level={timerLevel} />
 
       <div className={styles.arena}>
-        <SidePlayer player={left} score={left?.score || 0} me={!!left?.isSelf} />
+        <SidePlayer player={left} score={left?.score || 0} me={!!left?.isSelf} answered={leftAnswered} />
         <main className={styles.stage}>
           <span className={team.duelNow}>
             <Swords strokeWidth={2.6} aria-hidden="true" />
@@ -152,7 +172,8 @@ export default function PvpEliminationScreen({ vm }) {
             disabled={locked}
             keyPrefix={`elim${pvpEliminationMatch?.battle_no || 1}`}
           />
-          <footer className={cx(styles.footer, status ? styles.footerIdle : '')}>
+          <footer className={cx(styles.footer, status ? styles.footerIdle : (emojiProps ? styles.footerDuel : ''))}>
+            {emojiProps && active && !status ? <EmojiToggle {...emojiProps} /> : null}
             <Button size="xl" variant="success" block disabled={locked || !hasSelection} onClick={confirmPvpEliminationAnswer}>
               Confirmar resposta
             </Button>
@@ -162,9 +183,12 @@ export default function PvpEliminationScreen({ vm }) {
                 Resposta enviada. Aguardando o adversário...
               </span>
             ) : null}
+            {emojiProps && active ? (
+              <EmojiBar {...emojiProps} className={status ? '' : styles.emojiBarWide} />
+            ) : null}
           </footer>
         </main>
-        <SidePlayer player={right} score={right?.score || 0} me={!!right?.isSelf} />
+        <SidePlayer player={right} score={right?.score || 0} me={!!right?.isSelf} answered={rightAnswered} />
       </div>
 
       {pvpEliminationShowBattleIntro ? (
@@ -191,6 +215,7 @@ export default function PvpEliminationScreen({ vm }) {
             <span className={cx(styles.nextIn, pvpEliminationCountdownClass ? styles.nextInUrgent : '')} role="timer">
               Próximo duelo em {countdown}s
             </span>
+            {emojiProps ? <EmojiBar {...emojiProps} /> : null}
           </div>
         </Modal>
       ) : null}
@@ -205,9 +230,12 @@ export default function PvpEliminationScreen({ vm }) {
             <span className={cx(styles.nextIn, pvpEliminationCountdownClass ? styles.nextInUrgent : '')} role="timer">
               {pvpEliminationWinnerUserId ? 'Resultado final em ' : 'Novo ciclo em '}{countdown}s
             </span>
+            {emojiProps ? <EmojiBar {...emojiProps} /> : null}
           </div>
         </Modal>
       ) : null}
+
+      <EmojiFxLayer items={Array.isArray(emojis?.fx) ? emojis.fx : []} />
     </div>
   );
 }
