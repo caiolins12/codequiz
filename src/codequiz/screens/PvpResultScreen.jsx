@@ -1,5 +1,5 @@
 import { Frown, Handshake, Swords, Trophy } from 'lucide-react';
-import { formatSignedPoints } from '../app/helpers';
+import { formatPvpDurationBonusLabel, formatSignedPoints } from '../app/helpers';
 import { Button, CoinIcon, Confetti, StatTile, XpIcon, cx } from '../ui';
 import { PlayerCard } from './shared/ArenaParts';
 import { playerViewFromShop } from './shared/players';
@@ -57,18 +57,19 @@ export default function PvpResultScreen({ vm }) {
   });
   const winnerSide = pvpFinalScoreParts?.winnerSide;
   const points = Number(pvpResultReward?.points || 0);
+  const durationBonusLabel = formatPvpDurationBonusLabel(pvpResultReward, 'rodadas');
 
   return (
     <div className={game.game}>
       {key === 'win' ? <Confetti count={80} seed={7} /> : null}
-      <main className={game.stage}>
+      <main className={cx(game.stage, outcome.duel)}>
         <section className={cx(outcome.hero, view.tone)}>
           <span className={outcome.heroIcon} aria-hidden="true"><Icon strokeWidth={2.4} /></span>
           <h1 className={outcome.heroTitle}>{view.title}</h1>
           <p className={outcome.heroText}>{view.text}</p>
         </section>
 
-        <section className={arena.versus} aria-label="Placar final">
+        <section className={cx(arena.versus, arena.resultVersus)} aria-label="Placar final">
           <PlayerCard
             player={player1}
             meta={`${pvpFinalScoreParts?.player1 ?? 0} pontos`}
@@ -96,7 +97,12 @@ export default function PvpResultScreen({ vm }) {
             <Button size="xl" variant="warning" block loading={pvpRewardCollecting} onClick={(event) => collectPvpResultRewards(event)}>
               Coletar recompensas
             </Button>
-            <p className={cx(outcome.muted, outcome.centerText)}>Depois da coleta você volta para o início.</p>
+            {/* Partidas longas: mostra o bônus de duração no lugar do aviso, sem ocupar mais altura. */}
+            {durationBonusLabel ? (
+              <p className={cx(outcome.bonusNote, outcome.centerText)}>{durationBonusLabel}</p>
+            ) : (
+              <p className={cx(outcome.muted, outcome.centerText)}>Depois da coleta você volta para o início.</p>
+            )}
           </>
         ) : (
           <p className={cx(outcome.muted, outcome.centerText)} role="status">Preparando recompensas...</p>

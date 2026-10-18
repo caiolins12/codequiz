@@ -181,7 +181,7 @@ test('group bots: the 2x2 answer plan reads the team score of the bot', () => {
   assert.ok(rate(0, 4) - rate(4, 0) > 0.15);
 });
 
-test('group bots: winners celebrate on the final result screen', () => {
+test('group bots: no emojis on the final result screen, where nobody can send them', () => {
   const match = {
     id: 'final',
     status: 'finished',
@@ -189,12 +189,11 @@ test('group bots: winners celebrate on the final result screen', () => {
     red_members: [{ user_id: 'human-1' }, { user_id: COMPETITIVE_BOT }],
     blue_members: [{ user_id: SWINGY_BOT }, { user_id: ELITE_BOT }]
   };
-  const plan = engine.planPvpGroupBotFinalEmojis(match, engine.PVP_GROUP_MODE_TEAM, sequence([0.1, 0.3, 0.2, 0.4]));
-  const winners = plan.filter((entry) => entry.mood === 'celebrate').map((entry) => entry.botId).sort();
-  assert.deepEqual(winners, [ELITE_BOT, SWINGY_BOT].sort());
-  assert.ok(plan.some((entry) => entry.botId === COMPETITIVE_BOT));
-  plan.slice(1).forEach((entry, index) => assert.ok(entry.delayMs > plan[index].delayMs));
-  assert.deepEqual(engine.planPvpGroupBotFinalEmojis({ ...match, result_void: true }, engine.PVP_GROUP_MODE_TEAM), []);
+  assert.equal(engine.planPvpGroupBotAmbientEmoji(match, engine.PVP_GROUP_MODE_TEAM, { phase: 'finished', random: () => 0 }), null);
+  assert.equal(
+    engine.planPvpGroupBotAmbientEmoji(match, engine.PVP_GROUP_MODE_ELIMINATION, { phase: 'finished', random: () => 0 }),
+    null
+  );
 });
 
 test('group bots: a person sending an emoji almost always gets a bot reply', () => {

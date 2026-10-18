@@ -1,7 +1,7 @@
 import { Crown, Flag, Frown, Home, Swords, Trophy } from 'lucide-react';
-import { formatSignedPoints } from '../app/helpers';
+import { formatPvpDurationBonusLabel, formatSignedPoints } from '../app/helpers';
 import { Avatar, Badge, Button, CoinIcon, Confetti, StatTile, XpIcon, cx } from '../ui';
-import { EmojiBar, EmojiFxLayer, battleStyles as battle } from './shared/BattleParts';
+import { battleStyles as battle } from './shared/BattleParts';
 import { buildPlayerView } from './shared/players';
 import game from './shared/Game.module.css';
 import outcome from './shared/Outcome.module.css';
@@ -52,7 +52,6 @@ export default function PvpTeamResultScreen({ vm }) {
   const {
     buildCosmeticSnapshot,
     collectPvpTeamResultRewards,
-    emojis,
     pvpTeamBlueMembers,
     pvpTeamMatch,
     pvpTeamMySide,
@@ -74,6 +73,7 @@ export default function PvpTeamResultScreen({ vm }) {
   const redScore = Math.max(0, Number(pvpTeamMatch?.red_score || 0));
   const blueScore = Math.max(0, Number(pvpTeamMatch?.blue_score || 0));
   const points = Number(pvpTeamResultReward?.points || 0);
+  const durationBonusLabel = formatPvpDurationBonusLabel(pvpTeamResultReward, 'confrontos');
   const memberScores = pvpTeamMatch?.member_scores;
 
   const goHome = () => {
@@ -102,16 +102,6 @@ export default function PvpTeamResultScreen({ vm }) {
                 <span className={cx(battle.scorelineValue, outcome.heroScoreValue, team.scoreBlue)}>{blueScore}</span>
               </span>
             </div>
-            {emojis?.onSend ? (
-              <EmojiBar
-                emojis={emojis.list}
-                onSend={emojis.onSend}
-                cooldownActive={emojis.cooldownActive}
-                cooldownPct={emojis.cooldownPct}
-                cooldownLabel={emojis.cooldownLabel}
-                className={battle.emojiBarResult}
-              />
-            ) : null}
           </section>
         </div>
 
@@ -153,7 +143,12 @@ export default function PvpTeamResultScreen({ vm }) {
               <Button size="xl" variant="warning" block loading={pvpTeamRewardCollecting} onClick={(event) => collectPvpTeamResultRewards(event)}>
                 Coletar recompensas
               </Button>
-              <p className={cx(outcome.muted, outcome.centerText)}>Depois da coleta você volta para o início.</p>
+              {/* Partidas longas: mostra o bônus de duração no lugar do aviso, sem ocupar mais altura. */}
+              {durationBonusLabel ? (
+                <p className={cx(outcome.bonusNote, outcome.centerText)}>{durationBonusLabel}</p>
+              ) : (
+                <p className={cx(outcome.muted, outcome.centerText)}>Depois da coleta você volta para o início.</p>
+              )}
             </>
           ) : !pvpTeamResultProcessed ? (
             <p className={cx(outcome.muted, outcome.centerText)} role="status">Preparando recompensas...</p>
@@ -164,7 +159,6 @@ export default function PvpTeamResultScreen({ vm }) {
           )}
         </div>
       </main>
-      <EmojiFxLayer items={Array.isArray(emojis?.fx) ? emojis.fx : []} />
     </div>
   );
 }

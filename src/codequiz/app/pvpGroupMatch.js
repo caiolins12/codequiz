@@ -33,7 +33,7 @@ import {
   hashBotSeed,
   PVP_MODE_ELIMINATION,
   pickBotAnswerIndex,
-  pickPvpTiebreakQuestion,
+  pickPvpGroupExtraQuestion,
   toMillis
 } from './helpers';
 import {
@@ -225,20 +225,25 @@ function isPvpEliminationMatchRow(match = null) {
   return safeId(match?.mode) === PVP_MODE_ELIMINATION || Array.isArray(match?.cycle_rounds);
 }
 
-// Nível de desempate do confronto. No 2x2, cada confronto extra depois dos normais
-// sobe um nível. No Um contra todos, cada ciclo que termina empatado sobe um nível a
-// partir do confronto em que o ciclo seguinte começa, e o nível não volta a cair.
-export function getPvpGroupBattleTiebreakLevel(match = null, battleNo = 0) {
+// Confronto extra: no 2x2, os do desempate, depois dos confrontos normais; no Um
+// contra todos, os que passam das perguntas normais (os ciclos empatados usam
+// primeiro as normais que ainda não saíram). Devolve o índice do extra (0 = o
+// primeiro) ou -1 nos confrontos normais.
+function getPvpGroupExtraBattleIndex(match = null, battleNo = 0) {
   const safeBattleNo = Math.max(1, Math.floor(Number(battleNo || match?.battle_no || 1)));
-  if (isPvpEliminationMatchRow(match)) {
-    const startBattleNos = Array.isArray(match?.tiebreak_start_battle_nos) ? match.tiebreak_start_battle_nos : [];
-    return startBattleNos.filter((startNo) => {
-      const safeStartNo = Math.floor(Number(startNo || 0));
-      return safeStartNo > 0 && safeStartNo <= safeBattleNo;
-    }).length;
-  }
-  const totalBattles = Math.max(1, Number(match?.total_rounds || PVP_TEAM_BATTLE_TOTAL_ROUNDS));
-  return Math.max(0, safeBattleNo - totalBattles);
+  const normalBattles = isPvpEliminationMatchRow(match)
+    ? getPvpGroupQuestionCount(match, PVP_GROUP_MODE_ELIMINATION)
+    : Math.max(1, Number(match?.total_rounds || PVP_TEAM_BATTLE_TOTAL_ROUNDS));
+  return safeBattleNo > normalBattles ? safeBattleNo - normalBattles - 1 : -1;
+}
+
+// Nível de desempate do confronto: quantas dificuldades acima da escolhida está a
+// pergunta dele. Os confrontos extras continuam na dificuldade escolhida e só sobem
+// quando todas as perguntas dela na área já saíram, sem voltar a descer.
+export function getPvpGroupBattleTiebreakLevel(match = null, battleNo = 0) {
+  const extraIndex = getPvpGroupExtraBattleIndex(match, battleNo);
+  if (extraIndex < 0) return 0;
+  return Math.max(0, Number(pickPvpGroupExtraQuestion(match, extraIndex)?.level || 0));
 }
 
 export function getPvpGroupBattleDifficulty(match = null, battleNo = 0) {
@@ -249,18 +254,14 @@ export function getPvpGroupBattleDifficulty(match = null, battleNo = 0) {
 }
 
 // O número do confronto continua crescendo no desempate. Todos os clientes usam a
-// mesma pergunta: no desempate ela vem das perguntas reservadas da dificuldade do
-// nível (sem repetir as da partida normal); partidas antigas, sem essa reserva,
-// voltam ao começo da sequência.
+// mesma pergunta: nos confrontos extras ela vem do plano de perguntas extras da
+// partida (reservadas e depois o resto da área, sem repetir as da partida normal).
 export function getPvpGroupBattleQuestion(match = null, battleNo = 0) {
   const safeBattleNo = Math.max(1, Math.floor(Number(battleNo || match?.battle_no || 1)));
-  if (getPvpGroupBattleTiebreakLevel(match, safeBattleNo) > 0) {
-    const tiebreakQuestion = pickPvpTiebreakQuestion(
-      match?.tiebreak_question_sets,
-      getPvpGroupBattleDifficulty(match, safeBattleNo),
-      safeBattleNo
-    );
-    if (tiebreakQuestion) return tiebreakQuestion;
+  const extraIndex = getPvpGroupExtraBattleIndex(match, safeBattleNo);
+  if (extraIndex >= 0) {
+    const extraQuestion = pickPvpGroupExtraQuestion(match, extraIndex)?.question;
+    if (extraQuestion) return extraQuestion;
   }
   const questions = Array.isArray(match?.question_set) ? match.question_set : [];
   if (!questions.length) return null;
@@ -1069,19 +1070,28 @@ export function getPvpGroupMatchOutcomeForUser(match = null, mode = PVP_GROUP_MO
     resultKey = getPvpTeamResultForUser(match, safeUserId);
   }
   const battleCountBefore = Math.max(0, Number(options?.battleCountBefore || 0));
+  const battlesPlayed = getPvpGroupMatchDecisiveBattleNo(match);
   const points = getPvpPointsDeltaAdvanced(resultKey, {
     battleNo: battleCountBefore + 1,
-    roundNo: getPvpGroupMatchDecisiveBattleNo(match),
+    roundNo: battlesPlayed,
     matchRow: match,
     userId: safeUserId
   });
-  const baseRewards = getPvpRewardsByDifficulty(match?.difficulty || match?.category || 'easy', resultKey);
+  // Recompensa da colocação com o bônus pela duração (confrontos da partida).
+  const rewards = getPvpRewardsByDifficulty(
+    match?.difficulty || match?.category || 'easy',
+    resultKey,
+    battlesPlayed,
+    rewardScale
+  );
   return {
     resultKey,
     placement,
     points,
-    xp: Math.max(0, Math.round(Number(baseRewards.xp || 0) * rewardScale)),
-    coins: Math.max(0, Math.round(Number(baseRewards.coins || 0) * rewardScale))
+    xp: rewards.xp,
+    coins: rewards.coins,
+    roundsPlayed: rewards.roundsPlayed,
+    durationBonusPct: rewards.durationBonusPct
   };
 }
 
@@ -1433,50 +1443,17 @@ export function planPvpGroupBotEliminationEmojis(match = null, random = Math.ran
   return capPvpGroupBotEmojiPlan(plan, random);
 }
 
-// Tela de resultado final: quem venceu comemora logo que a tela abre, quem perdeu
-// cumprimenta ou lamenta; as reações se espalham pelos primeiros segundos.
-export function planPvpGroupBotFinalEmojis(match = null, mode = PVP_GROUP_MODE_TEAM, random = Math.random) {
-  const safeMode = normalizeMode(mode);
-  if (match?.result_void === true) return [];
-  const winnerSide = safeId(match?.winner_side);
-  const championId = safeId(match?.winner_user_id);
-  const winners = [];
-  const others = [];
-  getPvpGroupMatchBotIds(match, safeMode).forEach((botId) => {
-    const won = safeMode === PVP_GROUP_MODE_TEAM
-      ? !!winnerSide && getPvpTeamUserSide(match, botId) === winnerSide
-      : !!championId && botId === championId;
-    if (won) {
-      if (random() < 0.92) winners.push({ botId, count: random() < 0.55 ? 2 : 1, mood: 'celebrate' });
-      return;
-    }
-    if (random() < (safeMode === PVP_GROUP_MODE_TEAM ? 0.65 : 0.5)) {
-      others.push({ botId, count: 1, mood: random() < 0.6 ? 'gg' : 'lament' });
-    }
-  });
-  return capPvpGroupBotEmojiPlan([...winners, ...others], random, 4, 1300);
-}
-
 // Conversa de fundo: a cada tique, o aparelho que conduz os bots pergunta se algum bot
 // manda um emoji agora. Cada fase tem seu ritmo; o clima depende do momento do bot.
+// Partida encerrada (tela de coletar recompensas) não tem emojis: lá ninguém consegue mandar.
 export const PVP_GROUP_BOT_AMBIENT_TICK_MS = 3500;
-// Na tela de resultado final os bots conversam só no primeiro minuto e pouco.
-export const PVP_GROUP_RESULT_BOT_EMOJI_WINDOW_MS = 75000;
 const PVP_GROUP_BOT_AMBIENT_CHANCE_BY_PHASE = {
   active: 0.16,
   round_result: 0.12,
-  elimination_result: 0.14,
-  finished: 0.2
+  elimination_result: 0.14
 };
 
 function getPvpGroupBotAmbientMood(match, mode, botId, phase, answeredIds, random) {
-  if (phase === 'finished') {
-    if (match?.result_void === true) return 'gg';
-    const won = mode === PVP_GROUP_MODE_TEAM
-      ? getPvpTeamUserSide(match, botId) === safeId(match?.winner_side)
-      : safeId(match?.winner_user_id) === botId;
-    return won ? pickRandomEntry(['celebrate', 'celebrate', 'tease'], random) : pickRandomEntry(['gg', 'gg', 'lament'], random);
-  }
   if (phase === 'active') {
     const pairIds = getPvpGroupBattlePairIds(match, mode);
     // Na vez dele: pensa antes de responder e provoca depois.

@@ -406,6 +406,11 @@
   font-weight: 700;
 }
 
+.bonusNote {
+  color: var(--cq-gold);
+  font-weight: 800;
+}
+
 .actionsRow {
   display: grid;
   gap: var(--cq-space-3);
@@ -511,6 +516,33 @@
   }
 }
 
+/* Celular estreito: ícone e valor menores para "+120" não quebrar e esticar o bloco */
+@media (max-width: 380px) {
+  .rewards > div {
+    gap: 2px 4px;
+    padding: 6px 4px;
+  }
+
+  .rewards > div > span:first-child {
+    width: 22px;
+    height: 22px;
+    border-radius: 7px;
+  }
+
+  .rewards > div > span:first-child svg {
+    width: 14px;
+    height: 14px;
+  }
+
+  .rewards > div > span:last-child > span:first-child {
+    font-size: var(--cq-text-lg);
+  }
+
+  .rewards > div > span:last-child > span:last-child {
+    letter-spacing: 0;
+  }
+}
+
 /* Mobile: herói compacto e explicação ocupando o espaço que sobra */
 @media (max-width: 767px) {
   .hero {
@@ -593,6 +625,11 @@
     padding: var(--cq-space-4);
   }
 
+  /* Títulos longos ("Campeão da eliminatória!") ficam numa linha até em 320px */
+  .split .heroTitle {
+    font-size: min(var(--cq-text-2xl), 6.9vw);
+  }
+
   .split .heroIcon {
     width: 56px;
     height: 56px;
@@ -635,7 +672,7 @@
   }
 
   .split .heroTitle {
-    font-size: 1.75rem;
+    font-size: min(1.75rem, 6.9vw);
   }
 
   .split .heroText {
@@ -672,7 +709,7 @@
   }
 
   .split .heroTitle {
-    font-size: 2rem;
+    font-size: min(2rem, 6.9vw);
   }
 
   .split .heroScoreValue {
@@ -684,10 +721,35 @@
   }
 }
 
+/* A dica "Depois da coleta você volta para o início" só cabe em celular bem alto.
+   O bônus de duração fica: faz parte da recompensa. */
+@media (max-width: 767px) and (max-height: 779px) {
+  .splitActions > p {
+    display: none;
+  }
+
+  .splitActions > p.bonusNote {
+    display: block;
+    margin: 0;
+    line-height: 1.2;
+  }
+}
+
+/* Celular baixo com bônus: a linha encosta no botão para a lista não rolar */
+@media (max-width: 767px) and (max-height: 679px) {
+  .splitActions:has(> p.bonusNote) {
+    gap: var(--cq-space-2);
+  }
+
+  .splitActions > p.bonusNote {
+    margin-top: calc(var(--cq-space-1) * -1);
+    font-size: var(--cq-text-xs);
+  }
+}
+
 /* Celular baixo: textos de apoio saem para o botão de coletar não ser empurrado */
 @media (max-width: 767px) and (max-height: 620px) {
-  .split .heroText,
-  .splitActions > p {
+  .split .heroText {
     display: none;
   }
 
@@ -726,6 +788,50 @@
   .splitActions > button {
     --btn-height: 54px;
     --btn-font: var(--cq-text-lg);
+  }
+}
+
+/* Celular muito baixo: o ícone do herói sai e o título abre o resultado */
+@media (max-width: 767px) and (max-height: 560px) {
+  .split .heroIcon {
+    display: none;
+  }
+
+  .split .heroTitle {
+    margin-top: 0;
+  }
+}
+
+/* Resultado do duelo (1x1) em celular baixo: a dica e o texto do herói saem e o herói
+   encolhe, para o botão de coletar caber sem rolagem */
+@media (max-width: 767px) and (max-height: 580px) {
+  .duel .heroText,
+  .duel > button + p {
+    display: none;
+  }
+
+  /* O bônus de duração fica: faz parte da recompensa. */
+  .duel > button + p.bonusNote {
+    display: block;
+  }
+
+  .duel .hero {
+    padding: var(--cq-space-3);
+  }
+
+  .duel .heroIcon {
+    width: 48px;
+    height: 48px;
+    border-radius: 16px;
+  }
+
+  .duel .heroIcon svg {
+    width: 28px;
+    height: 28px;
+  }
+
+  .duel .heroTitle {
+    font-size: var(--cq-text-xl);
   }
 }
 
@@ -867,6 +973,70 @@
 
   .reviewSummary {
     padding: 10px var(--cq-space-3);
+  }
+}
+
+/* Resultado do quiz em celular baixo: herói, placar e espaços mais justos para o resumo
+   caber sem rolagem */
+@media (max-width: 767px) and (max-height: 700px) {
+  .resultLayout .column {
+    gap: var(--cq-space-2);
+  }
+
+  .resultHero {
+    padding: var(--cq-space-3);
+  }
+
+  .resultHero .star {
+    width: 28px;
+    height: 28px;
+  }
+
+  .resultLayout .scoreCard {
+    padding: var(--cq-space-3);
+  }
+
+  .scoreRow > [role='progressbar'] {
+    zoom: 0.8;
+  }
+
+  .scoreXp {
+    margin-top: var(--cq-space-2);
+  }
+
+  .resultLayout .levelUp {
+    gap: var(--cq-space-2);
+    padding: 6px var(--cq-space-3);
+    font-size: var(--cq-text-sm);
+  }
+
+  .resultLayout .levelUp svg {
+    width: 20px;
+    height: 20px;
+  }
+
+  .passCompact {
+    padding: var(--cq-space-2) var(--cq-space-3);
+  }
+}
+
+/* Mais baixo ainda: com o aviso de nível novo, a barra de XP do placar sai; com aviso e
+   passe juntos (ou em tela muito baixa), saem também as etiquetas de trilha/tema/dificuldade */
+@media (max-width: 767px) and (max-height: 620px) {
+  .summaryPanel:has(.levelUp) .scoreXp {
+    display: none;
+  }
+}
+
+@media (max-width: 767px) and (max-height: 580px) {
+  .summaryPanel:has(.levelUp):has(.passCompact) .heroMeta {
+    display: none;
+  }
+}
+
+@media (max-width: 767px) and (max-height: 540px) {
+  .resultHero .heroMeta {
+    display: none;
   }
 }
 

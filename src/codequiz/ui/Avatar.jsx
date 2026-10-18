@@ -16,7 +16,8 @@ export default function Avatar({
 }) {
   const value = String(avatar || '').trim() || '🙂';
   const fallback = <span className={styles.emoji} aria-hidden="true">🙂</span>;
-  return (
+  const showBadge = badge !== null && badge !== undefined && badge !== '' && size !== 'xs' && size !== 'sm';
+  const avatarNode = (
     <span
       className={cx('cq-avatar', styles.avatar, styles[size] || '', frameClass, className)}
       style={frameStyle}
@@ -29,7 +30,15 @@ export default function Avatar({
           <span className={styles.emoji} role={alt ? 'img' : undefined} aria-label={alt || undefined}>{value}</span>
         )}
       </span>
-      {badge !== null && badge !== undefined && badge !== '' ? <span className={styles.badge}>{badge}</span> : null}
+    </span>
+  );
+  if (!showBadge) return avatarNode;
+  // O selo de nível fica fora do avatar: as molduras lendárias recortam tudo
+  // que passa da borda (overflow: hidden) e cortariam o selo.
+  return (
+    <span className={styles.badgeWrap}>
+      {avatarNode}
+      <span className={styles.badge}>{badge}</span>
     </span>
   );
 }

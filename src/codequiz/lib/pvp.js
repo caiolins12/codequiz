@@ -211,6 +211,37 @@ export function getPvpPointsDelta(resultKey) {
   return -2;
 }
 
+// Placar do jogador na partida: no duelo, o do seu lado; nos modos em grupo, o
+// individual.
+export function getPvpMatchScoreForUser(matchRow = null, userId = '') {
+  const row = matchRow && typeof matchRow === 'object' ? matchRow : {};
+  const uid = String(userId || '').trim();
+  if (!uid) return 0;
+  if (uid === String(row.player1_user_id || '').trim()) return Math.max(0, Number(row.player1_score || 0));
+  if (uid === String(row.player2_user_id || '').trim()) return Math.max(0, Number(row.player2_score || 0));
+  const memberScores = row.member_scores && typeof row.member_scores === 'object' ? row.member_scores : {};
+  return Math.max(0, Number(memberScores[uid] || 0));
+}
+
+// Bônus de ganhos (XP e moedas) pela duração da partida, medida em rodadas ou
+// confrontos jogados (cada um leva um tempo parecido e todos os aparelhos chegam ao
+// mesmo número). As 5 rodadas de um duelo normal não dão bônus; cada rodada a mais
+// soma 5%, até +100%.
+export const PVP_DURATION_BONUS_FREE_ROUNDS = PVP_ROUNDS_PER_MATCH;
+export const PVP_DURATION_BONUS_PCT_PER_ROUND = 5;
+export const PVP_DURATION_BONUS_MAX_PCT = 100;
+
+export function getPvpDurationBonusPct(roundsPlayed = 0) {
+  const rounds = Math.max(0, Math.floor(Number(roundsPlayed || 0)));
+  const extraRounds = Math.max(0, rounds - PVP_DURATION_BONUS_FREE_ROUNDS);
+  return Math.min(PVP_DURATION_BONUS_MAX_PCT, extraRounds * PVP_DURATION_BONUS_PCT_PER_ROUND);
+}
+
+export function applyPvpDurationBonus(value = 0, roundsPlayed = 0) {
+  const base = Math.max(0, Number(value || 0));
+  return Math.round(base * (1 + getPvpDurationBonusPct(roundsPlayed) / 100));
+}
+
 export function getPvpPointsDeltaAdvanced(resultKey, context = {}) {
   const key = String(resultKey || '').trim().toLowerCase();
   const decisiveRoundNo = Math.max(
@@ -243,6 +274,14 @@ export function getPvpPointsDeltaAdvanced(resultKey, context = {}) {
 
   if (key === 'loss') {
     return -2;
+  }
+
+  // Empate: quem acertou pelo menos uma pergunta também ganha pontos (metade da
+  // vitória, que cresce do mesmo jeito em partidas mais longas).
+  if (key === 'draw' && uid && getPvpMatchScoreForUser(row, uid) > 0) {
+    if (decisiveRoundNo >= 8) return 4;
+    if (decisiveRoundNo >= 6) return 3;
+    return 2;
   }
 
   return 0;
@@ -315,7 +354,8 @@ export function getPvpResultForUser(matchRow, userId) {
   const lastRoundWinnerId = String(row.last_round_winner_user_id || '').trim();
   const winnerId = explicitWinnerId || byScoreWinnerId || forfeitWinnerId || lastRoundWinnerId;
   if (!uid) return 'loss';
-  if (!winnerId) return 'loss';
+  // Sem vencedor, o placar terminou igual: empate para os dois.
+  if (!winnerId) return 'draw';
   if (winnerId === uid) return 'win';
   return 'loss';
 }

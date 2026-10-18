@@ -5,6 +5,7 @@ const { createAppLoader } = require('./support/load-app.cjs');
 const load = createAppLoader();
 const helpers = load('src/codequiz/app/helpers.js');
 const engine = load('src/codequiz/app/pvpGroupMatch.js');
+const { getQuestionHistoryKey } = load('src/codequiz/lib/quizEngine.js');
 const NOW = 100_000;
 const QUESTION = { q: 'Qual alternativa está correta?', opts: ['Correta', 'Errada'], answer: 0 };
 
@@ -86,15 +87,19 @@ test('2x2: a lead at the end of regulation finishes immediately', () => {
   assert.equal(patch.winner_side, 'red');
 });
 
-test('2x2: rounds and questions cycle after regulation without losing any pairing', () => {
+test('2x2: rounds cycle after regulation without losing any pairing and overtime brings new questions', () => {
   const match = teamMatch();
+  const seen = new Set(match.question_set.map(getQuestionHistoryKey));
   for (let battleNo = 13; battleNo <= 48; battleNo += 1) {
     const expected = helpers.getPvpTeamBattleEntry(match, ((battleNo - 1) % 12) + 1);
     const actual = helpers.getPvpTeamBattleEntry(match, battleNo);
     assert.ok(actual, `missing scheduled pair at battle ${battleNo}`);
     assert.equal(actual.red_user_id, expected.red_user_id);
     assert.equal(actual.blue_user_id, expected.blue_user_id);
-    assert.deepEqual(engine.getPvpGroupBattleQuestion(match, battleNo), match.question_set[(battleNo - 1) % 12]);
+    const question = engine.getPvpGroupBattleQuestion(match, battleNo);
+    assert.ok(question?.opts?.length >= 2, `missing question at battle ${battleNo}`);
+    assert.ok(!seen.has(getQuestionHistoryKey(question)), `battle ${battleNo} repeats a question`);
+    seen.add(getQuestionHistoryKey(question));
   }
 });
 
@@ -247,7 +252,7 @@ test('elimination: tied players continue through more cycles and exhausted quest
     }
     match = advanceElimination(result);
     assert.equal(match.status, 'active');
-    assert.deepEqual(engine.getPvpGroupBattleQuestion(match, match.battle_no), QUESTION);
+    assert.ok(engine.getPvpGroupBattleQuestion(match, match.battle_no)?.opts?.length >= 2);
   }
   assert.ok(match.battle_no > 12);
   assert.deepEqual(initial, original, 'pure transitions must leave the initial match untouched');
@@ -451,14 +456,15 @@ test('2x2: missing questions cancel the match instead of producing a draw', () =
   assert.equal(patch.winner_side, null);
 });
 
-test('group bots: overtime uses the cycled question and still schedules an answer', () => {
+test('group bots: overtime uses the overtime question and still schedules an answer', () => {
   const match = teamMatch({ battle_no: 26 });
+  const question = engine.getPvpGroupBattleQuestion(match, 26);
   for (const mode of ['team', 'elimination']) {
     const plan = engine.getPvpGroupBotAnswerPlan(match, mode, 'bot_sys_codequiz_regression');
     assert.ok(plan);
     assert.equal(plan.battleNo, 26);
-    assert.equal(plan.correctIdx, match.question_set[1].answer);
-    assert.ok(plan.answerIdx >= 0 && plan.answerIdx < QUESTION.opts.length);
+    assert.equal(plan.correctIdx, question.answer);
+    assert.ok(plan.answerIdx >= 0 && plan.answerIdx < question.opts.length);
     const timing = engine.getPvpGroupBattleTiming(match, mode);
     assert.ok(plan.dueAtMs > timing.opensAtMs);
     assert.ok(plan.dueAtMs < timing.closesAtMs);

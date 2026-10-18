@@ -39,7 +39,7 @@ function ItemCard({ item, status, selected, previewState, profileAvatar, onSelec
       >
         <ShopItemThumb item={item} previewState={previewState} profileAvatar={profileAvatar} />
         {status.equipped ? (
-          <span className={cx(styles.tag, styles.tagEquipped)}><Check aria-hidden="true" strokeWidth={3} /> Equipado</span>
+          <span className={cx(styles.tag, styles.tagEquipped)} title="Equipado"><Check aria-hidden="true" strokeWidth={3} /><span className={styles.tagLabel}>Equipado</span></span>
         ) : status.owned ? (
           <span className={cx(styles.tag, styles.tagOwned)} title="Adquirido"><Check aria-hidden="true" strokeWidth={3} /></span>
         ) : status.passOnly ? (
@@ -47,7 +47,7 @@ function ItemCard({ item, status, selected, previewState, profileAvatar, onSelec
         ) : null}
       </button>
       <span className={styles.itemName}>{item.name}</span>
-      {action}
+      <div className={styles.itemAction}>{action}</div>
     </li>
   );
 }

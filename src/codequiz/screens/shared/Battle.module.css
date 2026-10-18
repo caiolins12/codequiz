@@ -250,12 +250,6 @@
   font-weight: 800;
 }
 
-/* Reações na tela de resultado final (dentro do herói, abaixo do placar). */
-.emojiBarResult {
-  flex-wrap: wrap;
-  margin-top: var(--cq-space-2);
-}
-
 /* Acima do modal de resultado da rodada, para as reações aparecerem também nele. */
 .fxLayer {
   position: fixed;
@@ -653,19 +647,6 @@
     height: 44px;
     border-radius: 14px;
     font-size: 22px;
-  }
-
-  /* No resultado final a fileira cabe em telas de 320px sem empurrar as recompensas. */
-  .emojiBarResult {
-    gap: 4px;
-    margin-top: 4px;
-  }
-
-  .emojiBarResult .emojiButton {
-    width: 38px;
-    height: 38px;
-    border-radius: 12px;
-    font-size: 20px;
   }
 }
 

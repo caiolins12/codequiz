@@ -361,7 +361,7 @@ const QUESTIONS = {
         { q: 'Qual resultado de: verdadeiro AND falso?', opts: ['Verdadeiro', 'Falso', 'Erro', 'Nulo'], answer: 1, explain: 'No AND, basta uma condição falsa para o resultado final ser falso.' },
         { q: 'Qual resultado de: falso OR verdadeiro?', opts: ['Verdadeiro', 'Falso', 'Erro', 'Depende da linguagem'], answer: 0, explain: 'No OR, uma condição verdadeira já torna o resultado verdadeiro.' },
         { q: 'Qual expressão representa: "idade entre 18 e 60"?', opts: ['idade > 18 OR idade < 60', 'idade >= 18 AND idade <= 60', 'idade == 18 AND idade == 60', 'idade < 18 AND idade > 60'], answer: 1, explain: 'Para estar entre dois limites, as duas comparações devem ser verdadeiras.' },
-        { q: 'Qual é a saída lógica de NOT(verdadeiro OR falso)?', opts: ['Verdadeiro', 'Falso', 'Erro', 'Nulo'], answer: 1, explain: 'verdadeiro OR falso = verdadeiro; NOT(verdadeiro) = falso.' },
+        { q: 'Qual é a saída lógica de NOT(verdadeiro OR falso)?', opts: ['Verdadeiro', 'Falso', 'Erro', 'Depende da linguagem'], answer: 1, explain: 'verdadeiro OR falso = verdadeiro; NOT(verdadeiro) = falso.' },
         { q: 'Se temChave = falso, qual o valor de NÃO temChave?', opts: ['Falso', 'Verdadeiro', 'Erro', 'Nulo'], answer: 1, explain: 'NÃO inverte o valor lógico: NÃO falso = verdadeiro.' },
         { q: 'Maria entra no show se tiver ingresso E o show não estiver lotado. Ela tem ingresso e o show não lotou. Ela entra?', opts: ['Sim', 'Não', 'Só se pagar de novo', 'Impossível saber'], answer: 0, explain: 'As duas condições do E são verdadeiras, então o resultado é verdadeiro.' },
         { q: 'O botão "Enviar" fica ativo se o nome OU o e-mail estiver preenchido. Nenhum dos dois foi preenchido. O botão fica ativo?', opts: ['Sim', 'Não', 'Depende do navegador', 'Fica ativo pela metade'], answer: 1, explain: 'O OU só é falso quando as duas condições são falsas, que é o caso aqui.' }
@@ -404,7 +404,7 @@ const QUESTIONS = {
         { q: 'Se x = 2 e depois x = x + 3, qual o valor final de x?', opts: ['2', '3', '5', '6'], answer: 2, explain: 'x começa em 2 e recebe 2 + 3, ficando 5.' },
         { q: 'Se total = 10 e fazemos total = total - 4, total vira...', opts: ['14', '6', '4', '10'], answer: 1, explain: '10 - 4 = 6.' },
         { q: 'Qual valor de y após: y = 1; y = y * 4?', opts: ['1', '4', '5', '0'], answer: 1, explain: 'y é atualizado para 1*4, então y=4.' },
-        { q: 'Após: a = 5; b = a; a = 9, qual valor de b?', opts: ['9', '5', '14', '0'], answer: 1, explain: 'b recebeu cópia de a quando a valia 5.' },
+        { q: 'Após: a = 5; b = a; a = 9, o que b guarda?', opts: ['9', '5', '14', '0'], answer: 1, explain: 'b recebeu cópia de a quando a valia 5.' },
         { q: 'Qual técnica ajuda a acompanhar variáveis passo a passo?', opts: ['Tabela de rastreio', 'Ignorar testes', 'Somente decorar sintaxe', 'Remover comentários'], answer: 0, explain: 'Tabela de rastreio mostra como cada variável muda por linha.' },
         { q: 'Após: texto = "ab"; texto = texto + "c", qual o conteúdo de texto?', opts: ['"abc"', '"ab"', '"c"', '"cab"'], answer: 0, explain: 'O + junta (concatena) textos: "ab" + "c" = "abc".' }
       ],
@@ -797,7 +797,7 @@ const QUESTIONS = {
         { q: 'O que o for com i -= 2 imprime?', code: 'for (int i = 5; i > 0; i -= 2) {\n    System.out.print(i + " ");\n}', opts: ['"5 3 1 "', '"5 4 3 2 1 "', '"5 3 "', '"4 2 0 "'], answer: 0, explain: 'i assume 5, 3 e 1; em seguida vira -1 e a condição i > 0 falha.' }
       ],
       hard: [
-        { q: 'Qual é o resultado?', code: 'outer:\nfor (int i=0; i<3; i++) {\n  for (int j=0; j<3; j++) {\n    if (j==1) continue outer;\n    System.out.print(i+""+j+" ");\n  }\n}', opts: ['"00 10 20"', '"00 01 10 11 20 21"', '"00 10 20 "', 'Error'], answer: 0, explain: 'Label "outer" faz continue pular para o próximo i. Só j=0 é impresso.' },
+        { q: 'Qual é o resultado?', code: 'outer:\nfor (int i=0; i<3; i++) {\n  for (int j=0; j<3; j++) {\n    if (j==1) continue outer;\n    System.out.print(i+""+j+" ");\n  }\n}', opts: ['"00 10 20 "', '"00 01 10 11 20 21 "', '"00 01 02 "', 'Error'], answer: 0, explain: 'Label "outer" faz continue pular para o próximo i. Só j=0 é impresso.' },
         { q: 'Quantas vezes c++ executa nos dois for aninhados?', code: 'int c = 0;\nfor (int i = 0; i < 3; i++)\n    for (int j = 0; j < 4; j++)\n        c++;\nSystem.out.println(c);', opts: ['12', '7', '16', '9'], answer: 0, explain: 'O laço interno roda 4 vezes para cada uma das 3 voltas do externo: 3 × 4 = 12.' },
         { q: 'O que acontece ao remover da lista dentro do for-each?', code: 'List<Integer> lista = new ArrayList<>(List.of(1, 2, 3));\nfor (Integer n : lista) {\n    if (n == 1) lista.remove(n);\n}', opts: ['ConcurrentModificationException', 'Remove o 1 normalmente', 'Erro de compilação', 'Loop infinito'], answer: 0, explain: 'Alterar a lista durante o for-each invalida o iterador; use Iterator.remove() ou removeIf().' },
         { q: 'Em que valor de i o while (true) para?', code: 'int i = 0;\nwhile (true) {\n    if (++i == 4) break;\n}\nSystem.out.println(i);', opts: ['4', '3', '5', 'Loop infinito'], answer: 0, explain: '++i incrementa antes de comparar; quando i chega a 4, o break encerra o laço.' },
@@ -901,7 +901,7 @@ const QUESTIONS = {
     conditionals: {
       easy: [
         { q: 'Qual é a sintaxe do if em C?', opts: ['if x > 5:', 'if (x > 5) {}', 'if x > 5 then', 'if [x > 5]'], answer: 1, explain: 'C usa parênteses para condição e chaves para bloco.' },
-        { q: 'Qual operador significa "diferente de"?', opts: ['<>', '!=', '=/=', 'not'], answer: 1, explain: '!= é o operador "não igual" em C.' },
+        { q: 'Em C, qual operador testa se dois valores são diferentes?', opts: ['<>', '!=', '=/=', 'not'], answer: 1, explain: '!= é o operador "diferente de" em C; <> não existe na linguagem.' },
         { q: 'Em C, qual valor é considerado "false"?', opts: ['0', '-1', 'null', '"false"'], answer: 0, explain: 'Em C, 0 é false. Qualquer valor diferente de 0 é true.' },
         { q: 'O que este if-else imprime para x = 3?', code: 'int x = 3;\nif (x > 5) {\n    printf("A");\n} else {\n    printf("B");\n}', opts: ['"B"', '"A"', '"AB"', 'Nada'], answer: 0, explain: '3 > 5 é falso, então executa o else.' },
         { q: 'Em C, quanto vale a expressão (5 > 3)?', opts: ['1', '0', 'true', '"verdadeiro"'], answer: 0, explain: 'Em C, comparações resultam em int: 1 para verdadeiro e 0 para falso.' }
@@ -1310,7 +1310,7 @@ const QUESTIONS = {
       medium: [
         { q: 'Quanto é 2⁰ (2 elevado a 0)?', opts: ['0', '1', '2', 'Indefinido'], answer: 1, explain: 'Qualquer número (exceto 0) elevado a 0 é igual a 1.' },
         { q: 'Qual é o resultado de (3 + 5) × 2 - 4?', opts: ['12', '14', '16', '10'], answer: 0, explain: '(3+5) = 8. 8 × 2 = 16. 16 - 4 = 12.' },
-        { q: 'Quanto é 2⁻² (2 elevado a -2)?', opts: ['−4', '4', '0.25', '−0.25'], answer: 2, explain: '2⁻² = 1/2² = 1/4 = 0.25.' },
+        { q: 'Quanto vale uma potência com expoente negativo, como 2⁻²?', opts: ['−4', '4', '0.25', '−0.25'], answer: 2, explain: '2⁻² = 1/2² = 1/4 = 0.25.' },
         { q: 'Qual é o MDC de 12 e 18?', opts: ['2', '3', '6', '36'], answer: 2, explain: 'Máximo Divisor Comum: fatores de 12={1,2,3,4,6,12}, de 18={1,2,3,6,9,18}. MDC=6.' },
         { q: 'Qual é o MMC de 4 e 6?', opts: ['2', '12', '24', '10'], answer: 1, explain: 'Mínimo Múltiplo Comum: múltiplos de 4={4,8,12...}, de 6={6,12...}. MMC=12.' },
         { q: 'Quanto é log₂(8)?', opts: ['2', '3', '4', '8'], answer: 1, explain: 'log₂(8) = 3, porque 2³ = 8.' }
@@ -1329,7 +1329,7 @@ const QUESTIONS = {
         { q: 'Se 2x = 10, qual é o valor de x?', opts: ['2', '5', '10', '20'], answer: 1, explain: '2x = 10 → x = 10 / 2 = 5.' },
         { q: 'Qual é o valor de 3x quando x = 4?', opts: ['7', '12', '34', '1'], answer: 1, explain: '3x = 3 × 4 = 12.' },
         { q: 'O que é uma variável em álgebra?', opts: ['Um número fixo', 'Um símbolo que representa um valor desconhecido', 'Uma operação', 'Um resultado'], answer: 1, explain: 'Variáveis (como x, y) representam valores que queremos descobrir.' },
-        { q: 'Se x = 3 e y = 2, quanto vale x + y?', opts: ['5', '6', '1', '32'], answer: 0, explain: 'x + y = 3 + 2 = 5.' },
+        { q: 'Se x = 3 e y = 2, qual é a soma x + y?', opts: ['5', '6', '1', '32'], answer: 0, explain: 'x + y = 3 + 2 = 5.' },
         { q: 'Quanto vale 2(x + 3) quando x = 1?', opts: ['5', '7', '8', '10'], answer: 2, explain: '2(1 + 3) = 2 × 4 = 8.' }
       ],
       medium: [
@@ -1400,7 +1400,7 @@ const QUESTIONS = {
       easy: [
         { q: 'O que é a UNIÃO de dois conjuntos (A ∪ B)?', opts: ['Elementos em A e B', 'Elementos em A ou B (ou ambos)', 'Elementos só em A', 'Elementos só em B'], answer: 1, explain: 'União inclui todos os elementos que estão em A, em B, ou em ambos.' },
         { q: 'O que é a INTERSEÇÃO (A ∩ B)?', opts: ['Todos elementos', 'Elementos em ambos A e B', 'Elementos só em A', 'Conjunto vazio'], answer: 1, explain: 'Interseção são os elementos que pertencem a A E a B simultaneamente.' },
-        { q: 'Se A = {1,2,3} e B = {2,3,4}, qual é a interseção A ∩ B?', opts: ['{1,2,3,4}', '{2,3}', '{1,4}', '{1}'], answer: 1, explain: 'Elementos em ambos: 2 e 3. A ∩ B = {2,3}.' },
+        { q: 'Se A = {1,2,3} e B = {2,3,4}, quais elementos estão em A ∩ B?', opts: ['{1,2,3,4}', '{2,3}', '{1,4}', '{1}'], answer: 1, explain: 'Elementos em ambos: 2 e 3. A ∩ B = {2,3}.' },
         { q: 'O que é o conjunto vazio?', opts: ['Um conjunto com zero', 'Um conjunto sem elementos', 'Um conjunto infinito', 'Não existe'], answer: 1, explain: 'Conjunto vazio (∅) não contém nenhum elemento.' },
         { q: 'Se A = {1,2,3} e B = {2,3,4}, qual é a união A ∪ B?', opts: ['{2,3}', '{1,4}', '{1,2,3,4}', '{1,2,3}'], answer: 2, explain: 'União de todos os elementos: {1,2,3,4}.' },
         { q: 'Qual símbolo indica que um elemento pertence a um conjunto?', opts: ['∈', '⊂', '∪', '∅'], answer: 0, explain: '∈ indica pertinência: 2 ∈ {1, 2, 3}. ⊂ relaciona conjuntos (subconjunto).' }
@@ -1439,7 +1439,7 @@ const QUESTIONS = {
         { q: 'Quanto é C(10, 3)?', opts: ['30', '120', '720', '1000'], answer: 1, explain: 'C(10,3) = 10! / (3! × 7!) = (10×9×8) / (3×2×1) = 120.' },
         { q: 'Qual é o Princípio da Multiplicação?', opts: ['Somar as possibilidades', 'Multiplicar possibilidades de cada etapa', 'Dividir pelo total', 'Fatorar'], answer: 1, explain: 'Se há m formas na etapa 1 e n na etapa 2, o total é m × n.' },
         { q: 'Qual a probabilidade de NÃO tirar 6 ao lançar um dado?', opts: ['1/6', '5/6', '1/2', '4/6'], answer: 1, explain: 'P(não 6) = 1 - P(6) = 1 - 1/6 = 5/6.' },
-        { q: 'Quantos anagramas tem "ARARA"?', opts: ['120', '60', '20', '10'], answer: 2, explain: '5 letras com repetição: 5! / (3!×1!×1!) = 120/6 = 20.' },
+        { q: 'Quantos anagramas tem "ARARA"?', opts: ['120', '60', '20', '10'], answer: 3, explain: 'São 5 letras, com o A repetido 3 vezes e o R 2 vezes: 5! / (3! × 2!) = 120 / 12 = 10.' },
         { q: 'De quantas formas é possível escolher presidente e vice entre 5 candidatos?', opts: ['10', '20', '25', '120'], answer: 1, explain: 'A ordem importa (cargos diferentes): 5 × 4 = 20 arranjos.' }
       ]
     }
@@ -1737,7 +1737,8 @@ const QUESTIONS = {
         { q: 'Qual é o animal terrestre mais rápido do mundo?', opts: ['Leão', 'Guepardo', 'Cavalo', 'Gazela'], answer: 1, explain: 'O guepardo passa de 100 km/h em arrancadas curtas, mais do que qualquer outro animal terrestre.' },
         { q: 'Quantas cores tem o arco-íris na divisão tradicional?', opts: ['5', '6', '7', '9'], answer: 2, explain: 'Pela divisão tradicional, o arco-íris tem sete cores: vermelho, laranja, amarelo, verde, azul, anil e violeta.' },
         { q: 'Qual é o maior mamífero do planeta?', opts: ['Elefante-africano', 'Baleia-azul', 'Girafa', 'Tubarão-baleia'], answer: 1, explain: 'A baleia-azul pode passar de 30 metros de comprimento. O tubarão-baleia é enorme, mas é um peixe.' },
-        { q: 'Qual é a montanha mais alta do mundo acima do nível do mar?', opts: ['K2', 'Aconcágua', 'Monte Everest', 'Kilimanjaro'], answer: 2, explain: 'O Monte Everest, no Himalaia, tem cerca de 8.849 metros e fica na fronteira entre o Nepal e a China.' }
+        { q: 'Qual é a montanha mais alta do mundo acima do nível do mar?', opts: ['K2', 'Aconcágua', 'Monte Everest', 'Kilimanjaro'], answer: 2, explain: 'O Monte Everest, no Himalaia, tem cerca de 8.849 metros e fica na fronteira entre o Nepal e a China.' },
+        { q: 'Quantas patas tem uma aranha?', opts: ['6', '8', '10', '12'], answer: 1, explain: 'Aranhas são aracnídeos e têm oito patas. Os insetos, como formigas e besouros, têm seis.' }
       ],
       medium: [
         { q: 'Por que a Estátua da Liberdade tem cor esverdeada hoje?', opts: ['Foi pintada de verde', 'É feita de bronze pintado', 'O cobre oxidou com o tempo', 'Mudou de cor por causa da chuva ácida'], answer: 2, explain: 'A camada externa da estátua é de cobre. Com o tempo, o metal oxidou e formou a coloração esverdeada.' },
@@ -1747,7 +1748,8 @@ const QUESTIONS = {
         { q: 'Qual é o único mamífero capaz de voar batendo as asas?', opts: ['Esquilo-voador', 'Morcego', 'Petauro', 'Colugo'], answer: 1, explain: 'O morcego é o único mamífero com voo ativo. Esquilos-voadores, petauros e colugos apenas planam.' },
         { q: 'Qual metal fica líquido em temperatura ambiente?', opts: ['Mercúrio', 'Chumbo', 'Alumínio', 'Estanho'], answer: 0, explain: 'O mercúrio é o metal que permanece líquido em temperatura ambiente, por isso já foi muito usado em termômetros.' },
         { q: 'Qual língua tem o maior número de falantes nativos no mundo?', opts: ['Inglês', 'Espanhol', 'Mandarim', 'Hindi'], answer: 2, explain: 'O chinês mandarim lidera em falantes nativos. O inglês só fica à frente quando se somam os falantes de segunda língua.' },
-        { q: 'Por que os flamingos costumam ter a plumagem rosada?', opts: ['Por causa do sol forte', 'Por pigmentos presentes na alimentação', 'Por uma doença comum na espécie', 'Porque já nascem cor-de-rosa'], answer: 1, explain: 'Algas e pequenos crustáceos que os flamingos comem têm carotenoides, pigmentos que deixam as penas rosadas. Os filhotes nascem acinzentados.' }
+        { q: 'Por que os flamingos costumam ter a plumagem rosada?', opts: ['Por causa do sol forte', 'Por pigmentos presentes na alimentação', 'Por uma doença comum na espécie', 'Porque já nascem cor-de-rosa'], answer: 1, explain: 'Algas e pequenos crustáceos que os flamingos comem têm carotenoides, pigmentos que deixam as penas rosadas. Os filhotes nascem acinzentados.' },
+        { q: 'Qual país é o maior produtor de café do mundo?', opts: ['Colômbia', 'Vietnã', 'Brasil', 'Etiópia'], answer: 2, explain: 'O Brasil lidera a produção mundial de café há mais de um século e responde por cerca de um terço da colheita do planeta.' }
       ],
       hard: [
         { q: 'Qual papa promulgou o calendário gregoriano em 1582?', opts: ['Leão X', 'Gregório XIII', 'Inocêncio III', 'Júlio II'], answer: 1, explain: 'O calendário gregoriano recebeu esse nome porque foi promulgado pelo papa Gregório XIII para corrigir defasagens do calendário juliano.' },
@@ -1756,7 +1758,8 @@ const QUESTIONS = {
         { q: 'Qual país tem mais fusos horários quando se contam seus territórios ultramarinos?', opts: ['Rússia', 'Estados Unidos', 'França', 'China'], answer: 2, explain: 'Somando territórios espalhados por vários oceanos, a França chega a 12 fusos horários. A Rússia tem 11 em território contínuo.' },
         { q: 'Qual das Sete Maravilhas do Mundo Antigo ainda está de pé?', opts: ['Farol de Alexandria', 'Jardins Suspensos da Babilônia', 'Colosso de Rodes', 'Grande Pirâmide de Gizé'], answer: 3, explain: 'A Grande Pirâmide de Gizé é a mais antiga das Sete Maravilhas e a única que resistiu até hoje.' },
         { q: 'Como se chama o ponto mais profundo conhecido dos oceanos?', opts: ['Fossa de Porto Rico', 'Abismo Challenger', 'Fossa de Java', 'Fossa de Tonga'], answer: 1, explain: 'O Abismo Challenger fica na Fossa das Marianas, no Pacífico, e tem cerca de 11 mil metros de profundidade.' },
-        { q: 'A bandeira de qual país é tradicionalmente considerada a mais antiga ainda em uso contínuo?', opts: ['Dinamarca', 'Reino Unido', 'Japão', 'Portugal'], answer: 0, explain: 'A Dannebrog, cruz branca sobre fundo vermelho da Dinamarca, é tradicionalmente apontada como a bandeira nacional mais antiga em uso contínuo.' }
+        { q: 'A bandeira de qual país é tradicionalmente considerada a mais antiga ainda em uso contínuo?', opts: ['Dinamarca', 'Reino Unido', 'Japão', 'Portugal'], answer: 0, explain: 'A Dannebrog, cruz branca sobre fundo vermelho da Dinamarca, é tradicionalmente apontada como a bandeira nacional mais antiga em uso contínuo.' },
+        { q: 'Qual é o único país cuja bandeira nacional não é retangular nem quadrada?', opts: ['Butão', 'Nepal', 'Suíça', 'Catar'], answer: 1, explain: 'A bandeira do Nepal é formada por dois triângulos sobrepostos. Suíça e Vaticano têm bandeiras quadradas; as demais são retangulares.' }
       ]
     },
     historia_geral: {
@@ -1769,7 +1772,8 @@ const QUESTIONS = {
         { q: 'Em que ano a expedição de Cristóvão Colombo chegou à América?', opts: ['1492', '1500', '1453', '1588'], answer: 0, explain: 'Em 12 de outubro de 1492, a expedição de Colombo, financiada pelos reis da Espanha, chegou às ilhas do Caribe.' },
         { q: 'Quem foi o primeiro ser humano a pisar na Lua?', opts: ['Yuri Gagarin', 'Buzz Aldrin', 'Neil Armstrong', 'Michael Collins'], answer: 2, explain: 'Neil Armstrong pisou na Lua em 20 de julho de 1969, na missão Apollo 11. Buzz Aldrin desceu logo depois.' },
         { q: 'Qual civilização antiga criou os Jogos Olímpicos?', opts: ['Romana', 'Grega', 'Egípcia', 'Persa'], answer: 1, explain: 'Os Jogos Olímpicos surgiram em Olímpia, na Grécia Antiga, e a tradição registra a primeira edição em 776 a.C.' },
-        { q: 'Qual guerra mundial terminou em 1945?', opts: ['Primeira Guerra Mundial', 'Segunda Guerra Mundial', 'Guerra Fria', 'Guerra dos Cem Anos'], answer: 1, explain: 'A Segunda Guerra Mundial durou de 1939 a 1945 e foi o conflito mais destrutivo da história.' }
+        { q: 'Qual guerra mundial terminou em 1945?', opts: ['Primeira Guerra Mundial', 'Segunda Guerra Mundial', 'Guerra Fria', 'Guerra dos Cem Anos'], answer: 1, explain: 'A Segunda Guerra Mundial durou de 1939 a 1945 e foi o conflito mais destrutivo da história.' },
+        { q: 'Em que ano o Brasil proclamou sua independência de Portugal?', opts: ['1500', '1822', '1889', '1922'], answer: 1, explain: 'Em 7 de setembro de 1822, D. Pedro proclamou a independência às margens do riacho Ipiranga, em São Paulo.' }
       ],
       medium: [
         { q: 'Qual evento de 1453 costuma ser usado para marcar o fim da Idade Média?', opts: ['A descoberta da América', 'A queda de Constantinopla', 'A Revolução Francesa', 'A independência dos EUA'], answer: 1, explain: 'A queda de Constantinopla para os otomanos, em 1453, é um marco tradicional do fim da Idade Média.' },
@@ -1779,7 +1783,8 @@ const QUESTIONS = {
         { q: 'Quem foi o primeiro imperador de Roma?', opts: ['Júlio César', 'Augusto', 'Nero', 'Constantino'], answer: 1, explain: 'Otaviano recebeu o título de Augusto em 27 a.C. e se tornou o primeiro imperador. Júlio César nunca chegou a ser imperador.' },
         { q: 'Qual navegador português chegou à Índia por mar contornando a África, em 1498?', opts: ['Pedro Álvares Cabral', 'Vasco da Gama', 'Bartolomeu Dias', 'Fernão de Magalhães'], answer: 1, explain: 'Vasco da Gama chegou a Calicute em 1498, abrindo a rota marítima entre a Europa e a Índia.' },
         { q: 'Quem desenvolveu, por volta de 1450, a prensa de tipos móveis que revolucionou a impressão na Europa?', opts: ['Johannes Gutenberg', 'Leonardo da Vinci', 'Galileu Galilei', 'Martinho Lutero'], answer: 0, explain: 'A prensa de Gutenberg barateou a produção de livros e acelerou a circulação de ideias pela Europa.' },
-        { q: 'A Guerra Fria foi uma disputa política e ideológica principalmente entre quais potências?', opts: ['Reino Unido e França', 'Estados Unidos e União Soviética', 'China e Japão', 'Alemanha e Itália'], answer: 1, explain: 'Estados Unidos e União Soviética disputaram influência no mundo entre o fim da Segunda Guerra e 1991, sem um confronto direto entre os dois.' }
+        { q: 'A Guerra Fria foi uma disputa política e ideológica principalmente entre quais potências?', opts: ['Reino Unido e França', 'Estados Unidos e União Soviética', 'China e Japão', 'Alemanha e Itália'], answer: 1, explain: 'Estados Unidos e União Soviética disputaram influência no mundo entre o fim da Segunda Guerra e 1991, sem um confronto direto entre os dois.' },
+        { q: 'Qual imperador francês foi derrotado na Batalha de Waterloo, em 1815?', opts: ['Luís XIV', 'Napoleão Bonaparte', 'Carlos Magno', 'Luís XVI'], answer: 1, explain: 'Napoleão foi vencido em Waterloo, na atual Bélgica, por britânicos e prussianos e passou o resto da vida exilado na ilha de Santa Helena.' }
       ],
       hard: [
         { q: 'Qual documento inglês de 1215 limitou o poder do rei e influenciou o constitucionalismo?', opts: ['Bill of Rights', 'Magna Carta', 'Código Napoleônico', 'Petição de Direito'], answer: 1, explain: 'A Magna Carta, assinada em 1215, limitou o poder real e se tornou referência histórica para liberdades e garantias legais.' },
@@ -1788,7 +1793,8 @@ const QUESTIONS = {
         { q: 'Qual tratado de 1494 dividiu entre Portugal e Espanha as terras descobertas e por descobrir?', opts: ['Tratado de Madri', 'Tratado de Tordesilhas', 'Tratado de Utrecht', 'Tratado de Zamora'], answer: 1, explain: 'O Tratado de Tordesilhas traçou uma linha imaginária: as terras a oeste ficariam com a Espanha e as a leste com Portugal.' },
         { q: 'Durante qual dinastia chinesa foi construída a maior parte da Grande Muralha que se vê hoje?', opts: ['Dinastia Qin', 'Dinastia Han', 'Dinastia Ming', 'Dinastia Tang'], answer: 2, explain: 'As primeiras muralhas são bem mais antigas, mas os trechos mais conhecidos e preservados foram erguidos pela dinastia Ming, entre os séculos XIV e XVII.' },
         { q: 'Qual líder fundou o Império Mongol no início do século XIII?', opts: ['Kublai Khan', 'Gengis Khan', 'Tamerlão', 'Átila'], answer: 1, explain: 'Temujin foi proclamado Gengis Khan em 1206. O império que ele fundou se tornou o maior império contínuo da história.' },
-        { q: 'Qual povo da Mesopotâmia desenvolveu a escrita cuneiforme, uma das mais antigas conhecidas?', opts: ['Egípcios', 'Sumérios', 'Fenícios', 'Hititas'], answer: 1, explain: 'Por volta de 3200 a.C., os sumérios marcavam sinais em forma de cunha em tabuletas de argila.' }
+        { q: 'Qual povo da Mesopotâmia desenvolveu a escrita cuneiforme, uma das mais antigas conhecidas?', opts: ['Egípcios', 'Sumérios', 'Fenícios', 'Hititas'], answer: 1, explain: 'Por volta de 3200 a.C., os sumérios marcavam sinais em forma de cunha em tabuletas de argila.' },
+        { q: 'Qual faraó teve a tumba encontrada quase intacta por Howard Carter em 1922?', opts: ['Ramsés II', 'Quéops', 'Tutancâmon', 'Akhenaton'], answer: 2, explain: 'A tumba de Tutancâmon, no Vale dos Reis, guardava milhares de objetos, entre eles a famosa máscara funerária de ouro.' }
       ]
     },
     geografia_culturas: {
@@ -1800,7 +1806,9 @@ const QUESTIONS = {
         { q: 'Qual festa tradicional mexicana é marcada por altares coloridos e homenagens aos mortos?', opts: ['Cinco de Mayo', 'Día de los Muertos', 'San Fermín', 'Carnaval de Barranquilla'], answer: 1, explain: 'O Día de los Muertos é uma tradição mexicana que celebra a memória de familiares e amigos com altares e símbolos coloridos.' },
         { q: 'Qual é o maior país do mundo em área territorial?', opts: ['Canadá', 'China', 'Estados Unidos', 'Rússia'], answer: 3, explain: 'A Rússia tem mais de 17 milhões de km² e se estende pela Europa e pela Ásia.' },
         { q: 'Qual é a capital do Japão?', opts: ['Pequim', 'Seul', 'Tóquio', 'Bangcoc'], answer: 2, explain: 'Tóquio é a capital do Japão e forma uma das maiores regiões metropolitanas do mundo.' },
-        { q: 'Qual rio é o maior do mundo em volume de água?', opts: ['Rio Nilo', 'Rio Amazonas', 'Rio São Francisco', 'Rio Paraná'], answer: 1, explain: 'O Amazonas despeja no oceano mais água do que qualquer outro rio e disputa com o Nilo o título de mais extenso.' }
+        { q: 'Qual rio é o maior do mundo em volume de água?', opts: ['Rio Nilo', 'Rio Amazonas', 'Rio São Francisco', 'Rio Paraná'], answer: 1, explain: 'O Amazonas despeja no oceano mais água do que qualquer outro rio e disputa com o Nilo o título de mais extenso.' },
+        { q: 'Qual é a capital da França?', opts: ['Lyon', 'Paris', 'Marselha', 'Nice'], answer: 1, explain: 'Paris é a capital e a maior cidade da França, cortada pelo rio Sena.' },
+        { q: 'Qual é o país mais populoso da América do Sul?', opts: ['Argentina', 'Colômbia', 'Brasil', 'Peru'], answer: 2, explain: 'Com mais de 200 milhões de habitantes, o Brasil concentra cerca de metade da população sul-americana.' }
       ],
       medium: [
         { q: 'O que é um arquipélago?', opts: ['Uma floresta tropical fechada', 'Um conjunto de ilhas', 'Uma montanha vulcânica isolada', 'Um rio que atravessa vários países'], answer: 1, explain: 'Arquipélago é um conjunto de ilhas próximas entre si, como acontece em várias regiões do mundo.' },
@@ -1809,7 +1817,9 @@ const QUESTIONS = {
         { q: 'O que são fiordes?', opts: ['Rios subterrâneos', 'Planícies congeladas', 'Entradas estreitas do mar entre montanhas', 'Ilhas artificiais ligadas por pontes'], answer: 2, explain: 'Fiordes são entradas do mar cercadas por encostas íngremes, muito comuns em regiões moldadas por geleiras.' },
         { q: 'Segundo estimativas da ONU, qual país passou a ser o mais populoso do mundo em 2023?', opts: ['China', 'Índia', 'Estados Unidos', 'Indonésia'], answer: 1, explain: 'Em 2023, as estimativas da ONU apontaram que a Índia ultrapassou a China em número de habitantes.' },
         { q: 'Em qual país fica Petra, a cidade histórica esculpida em rocha rosada?', opts: ['Egito', 'Jordânia', 'Turquia', 'Marrocos'], answer: 1, explain: 'Petra fica na Jordânia e foi a capital dos nabateus, que esculpiram templos e túmulos direto nos paredões de arenito.' },
-        { q: 'Qual é a cordilheira mais extensa do mundo, ao longo do oeste da América do Sul?', opts: ['Himalaia', 'Alpes', 'Andes', 'Montanhas Rochosas'], answer: 2, explain: 'Os Andes se estendem por cerca de 7 mil km, da Venezuela até a Patagônia.' }
+        { q: 'Qual é a cordilheira mais extensa do mundo, ao longo do oeste da América do Sul?', opts: ['Himalaia', 'Alpes', 'Andes', 'Montanhas Rochosas'], answer: 2, explain: 'Os Andes se estendem por cerca de 7 mil km, da Venezuela até a Patagônia.' },
+        { q: 'Qual é o rio mais longo da Europa?', opts: ['Danúbio', 'Reno', 'Volga', 'Tâmisa'], answer: 2, explain: 'O Volga corre cerca de 3.500 km pela Rússia até o mar Cáspio. O Danúbio, segundo colocado, tem uns 2.850 km.' },
+        { q: 'Em qual país ficam as cidades de Marrakech e Casablanca?', opts: ['Egito', 'Tunísia', 'Marrocos', 'Argélia'], answer: 2, explain: 'Marrakech e Casablanca ficam no Marrocos, no noroeste da África. A capital do país é Rabat.' }
       ],
       hard: [
         { q: 'Qual estreito separa a Ásia da América do Norte?', opts: ['Estreito de Gibraltar', 'Estreito de Bering', 'Canal de Suez', 'Estreito de Malaca'], answer: 1, explain: 'O Estreito de Bering separa o extremo leste da Ásia do extremo oeste da América do Norte.' },
@@ -1817,7 +1827,9 @@ const QUESTIONS = {
         { q: 'Qual é a capital da Mongólia?', opts: ['Astana', 'Tashkent', 'Ulan Bator', 'Katmandu'], answer: 2, explain: 'Ulan Bator é a capital da Mongólia e concentra boa parte da população do país.' },
         { q: 'Qual país africano é totalmente cercado pelo território da África do Sul?', opts: ['Essuatíni', 'Lesoto', 'Botsuana', 'Namíbia'], answer: 1, explain: 'O Lesoto é um enclave dentro da África do Sul. Essuatíni também faz fronteira com Moçambique.' },
         { q: 'Qual é a capital da Austrália?', opts: ['Sydney', 'Melbourne', 'Camberra', 'Perth'], answer: 2, explain: 'Camberra foi planejada para ser a capital e encerrar a disputa entre Sydney e Melbourne pelo posto.' },
-        { q: 'Qual é o lago mais profundo do mundo?', opts: ['Lago Vitória', 'Lago Superior', 'Lago Baikal', 'Lago Titicaca'], answer: 2, explain: 'O Baikal, na Sibéria, passa de 1.600 metros de profundidade e guarda cerca de um quinto da água doce em superfície do planeta.' }
+        { q: 'Qual é o lago mais profundo do mundo?', opts: ['Lago Vitória', 'Lago Superior', 'Lago Baikal', 'Lago Titicaca'], answer: 2, explain: 'O Baikal, na Sibéria, passa de 1.600 metros de profundidade e guarda cerca de um quinto da água doce em superfície do planeta.' },
+        { q: 'Qual é a capital do Canadá?', opts: ['Toronto', 'Vancouver', 'Ottawa', 'Montreal'], answer: 2, explain: 'Ottawa, na província de Ontário, é a capital do Canadá, embora Toronto seja a maior cidade do país.' },
+        { q: 'Qual é o ponto mais alto do Brasil?', opts: ['Pico da Bandeira', 'Pico da Neblina', 'Monte Roraima', 'Pico das Agulhas Negras'], answer: 1, explain: 'O Pico da Neblina, no Amazonas, perto da fronteira com a Venezuela, tem cerca de 2.995 metros de altitude.' }
       ]
     },
     ciencia_espaco: {
@@ -1829,7 +1841,9 @@ const QUESTIONS = {
         { q: 'Qual instrumento é usado para observar astros distantes com mais detalhe?', opts: ['Microscópio', 'Telescópio', 'Barômetro', 'Termômetro'], answer: 1, explain: 'O telescópio ajuda a observar planetas, estrelas e galáxias com mais ampliação e precisão.' },
         { q: 'Qual planeta é conhecido como Planeta Vermelho?', opts: ['Vênus', 'Marte', 'Mercúrio', 'Júpiter'], answer: 1, explain: 'Marte tem a superfície coberta por óxido de ferro, a mesma substância da ferrugem, o que lhe dá o tom avermelhado.' },
         { q: 'Em qual estado físico a água está quando vira gelo?', opts: ['Líquido', 'Gasoso', 'Sólido', 'Plasma'], answer: 2, explain: 'Abaixo de 0 °C, ao nível do mar, a água congela e passa para o estado sólido.' },
-        { q: 'Qual órgão bombeia o sangue pelo corpo humano?', opts: ['Coração', 'Pulmão', 'Fígado', 'Estômago'], answer: 0, explain: 'O coração é um músculo que se contrai sem parar para levar o sangue a todo o corpo.' }
+        { q: 'Qual órgão bombeia o sangue pelo corpo humano?', opts: ['Coração', 'Pulmão', 'Fígado', 'Estômago'], answer: 0, explain: 'O coração é um músculo que se contrai sem parar para levar o sangue a todo o corpo.' },
+        { q: 'Quantos planetas existem no Sistema Solar?', opts: ['7', '8', '9', '10'], answer: 1, explain: 'São oito planetas. Desde 2006, Plutão é classificado como planeta-anão.' },
+        { q: 'Qual é a fórmula química da água?', opts: ['CO2', 'H2O', 'O2', 'NaCl'], answer: 1, explain: 'Cada molécula de água tem dois átomos de hidrogênio ligados a um átomo de oxigênio: H2O.' }
       ],
       medium: [
         { q: 'O que a escala Richter mede?', opts: ['Velocidade do vento', 'Magnitude dos terremotos', 'Intensidade da luz solar', 'Profundidade do oceano'], answer: 1, explain: 'A escala Richter ficou conhecida por medir a magnitude dos terremotos, indicando a energia liberada.' },
@@ -1838,7 +1852,9 @@ const QUESTIONS = {
         { q: 'O que é um ano-luz?', opts: ['O tempo que a Lua leva para orbitar a Terra', 'A distância que a luz percorre em um ano', 'O brilho emitido por uma estrela durante um ano', 'O tempo que a Terra leva para dar duas voltas no Sol'], answer: 1, explain: 'Ano-luz é uma unidade de distância usada em astronomia, não uma medida de tempo.' },
         { q: 'Qual é o planeta mais quente do Sistema Solar?', opts: ['Mercúrio', 'Vênus', 'Marte', 'Júpiter'], answer: 1, explain: 'A atmosfera densa de dióxido de carbono provoca um efeito estufa intenso em Vênus, que fica mais quente que Mercúrio mesmo estando mais longe do Sol.' },
         { q: 'Qual é a velocidade aproximada da luz no vácuo?', opts: ['300 mil km/s', '30 mil km/s', '3 mil km/s', '3 milhões de km/s'], answer: 0, explain: 'A luz viaja a cerca de 299.792 km por segundo no vácuo.' },
-        { q: 'Qual é o símbolo químico do ouro?', opts: ['Ag', 'Au', 'Fe', 'Pb'], answer: 1, explain: 'Au vem do latim aurum. Ag é o símbolo da prata, Fe do ferro e Pb do chumbo.' }
+        { q: 'Qual é o símbolo químico do ouro?', opts: ['Ag', 'Au', 'Fe', 'Pb'], answer: 1, explain: 'Au vem do latim aurum. Ag é o símbolo da prata, Fe do ferro e Pb do chumbo.' },
+        { q: 'Quantos ossos tem o esqueleto de um ser humano adulto?', opts: ['106', '186', '206', '306'], answer: 2, explain: 'O adulto tem 206 ossos. O bebê nasce com cerca de 300, e vários se fundem durante o crescimento.' },
+        { q: 'Qual estrutura da célula é conhecida como a "usina de energia"?', opts: ['Ribossomo', 'Mitocôndria', 'Núcleo', 'Complexo de Golgi'], answer: 1, explain: 'A mitocôndria realiza a respiração celular e produz ATP, a principal fonte de energia da célula.' }
       ],
       hard: [
         { q: 'Em qual camada da atmosfera se concentra a maior parte do ozônio que protege a Terra?', opts: ['Troposfera', 'Mesosfera', 'Estratosfera', 'Termosfera'], answer: 2, explain: 'A camada de ozônio fica principalmente na estratosfera e ajuda a bloquear parte da radiação ultravioleta.' },
@@ -1846,7 +1862,9 @@ const QUESTIONS = {
         { q: 'O que é um exoplaneta?', opts: ['Um planeta localizado fora do Sistema Solar', 'Um planeta anão coberto por gelo', 'Um satélite natural muito grande', 'Um asteroide capturado por um planeta'], answer: 0, explain: 'Exoplaneta é qualquer planeta que orbita uma estrela que não seja o Sol.' },
         { q: 'Como se chama o limite ao redor de um buraco negro a partir do qual nem a luz consegue escapar?', opts: ['Horizonte de eventos', 'Heliopausa', 'Cinturão de Kuiper', 'Limite de Roche'], answer: 0, explain: 'Depois de cruzar o horizonte de eventos, nada escapa da gravidade do buraco negro, nem mesmo a luz.' },
         { q: 'Qual elemento químico é o mais abundante no universo?', opts: ['Oxigênio', 'Hélio', 'Hidrogênio', 'Carbono'], answer: 2, explain: 'O hidrogênio responde por cerca de três quartos da massa da matéria comum do universo e é o principal combustível das estrelas.' },
-        { q: 'Qual é a grande galáxia espiral mais próxima da Via Láctea, que está se aproximando de nós?', opts: ['Galáxia do Triângulo', 'Galáxia de Andrômeda', 'Grande Nuvem de Magalhães', 'Galáxia Sombrero'], answer: 1, explain: 'Andrômeda fica a cerca de 2,5 milhões de anos-luz e se aproxima da Via Láctea. As duas podem se fundir daqui a bilhões de anos.' }
+        { q: 'Qual é a grande galáxia espiral mais próxima da Via Láctea, que está se aproximando de nós?', opts: ['Galáxia do Triângulo', 'Galáxia de Andrômeda', 'Grande Nuvem de Magalhães', 'Galáxia Sombrero'], answer: 1, explain: 'Andrômeda fica a cerca de 2,5 milhões de anos-luz e se aproxima da Via Láctea. As duas podem se fundir daqui a bilhões de anos.' },
+        { q: 'Qual planeta gira praticamente "deitado", com o eixo inclinado cerca de 98 graus?', opts: ['Netuno', 'Urano', 'Saturno', 'Vênus'], answer: 1, explain: 'Urano tem o eixo tão inclinado que parece rolar em sua órbita, provavelmente por causa de uma grande colisão no passado.' },
+        { q: 'Qual cientista descobriu a penicilina em 1928?', opts: ['Louis Pasteur', 'Alexander Fleming', 'Marie Curie', 'Robert Koch'], answer: 1, explain: 'Alexander Fleming percebeu que um fungo do gênero Penicillium matava bactérias em suas placas de cultura, abrindo caminho para os antibióticos.' }
       ]
     },
     artes_entretenimento: {
@@ -1858,7 +1876,9 @@ const QUESTIONS = {
         { q: 'Como se chama a narrativa que combina imagens em sequência e balões de fala?', opts: ['História em quadrinhos', 'Sinfonia', 'Performance', 'Curta-metragem'], answer: 0, explain: 'Histórias em quadrinhos contam narrativas por meio de desenhos em sequência, texto e balões.' },
         { q: 'Quem escreveu a peça "Romeu e Julieta"?', opts: ['Machado de Assis', 'William Shakespeare', 'Charles Dickens', 'Molière'], answer: 1, explain: 'Romeu e Julieta é uma tragédia de William Shakespeare, escrita no fim do século XVI.' },
         { q: 'Qual pintor holandês criou o quadro "A Noite Estrelada"?', opts: ['Rembrandt', 'Vincent van Gogh', 'Johannes Vermeer', 'Piet Mondrian'], answer: 1, explain: 'Van Gogh pintou A Noite Estrelada em 1889, com o céu em pinceladas espirais que se tornaram sua marca.' },
-        { q: 'Qual personagem de Mauricio de Sousa usa vestido vermelho e carrega um coelhinho de pelúcia?', opts: ['Magali', 'Mônica', 'Cascão', 'Cebolinha'], answer: 1, explain: 'Mônica dá nome à Turma da Mônica e anda sempre com o Sansão, seu coelho de pelúcia azul.' }
+        { q: 'Qual personagem de Mauricio de Sousa usa vestido vermelho e carrega um coelhinho de pelúcia?', opts: ['Magali', 'Mônica', 'Cascão', 'Cebolinha'], answer: 1, explain: 'Mônica dá nome à Turma da Mônica e anda sempre com o Sansão, seu coelho de pelúcia azul.' },
+        { q: 'Qual banda britânica tinha John Lennon e Paul McCartney?', opts: ['The Rolling Stones', 'Queen', 'The Beatles', 'Pink Floyd'], answer: 2, explain: 'Lennon e McCartney formavam, com George Harrison e Ringo Starr, os Beatles, banda de Liverpool que marcou a música dos anos 1960.' },
+        { q: 'Qual personagem do Sítio do Picapau Amarelo é uma boneca de pano falante?', opts: ['Narizinho', 'Emília', 'Dona Benta', 'Tia Nastácia'], answer: 1, explain: 'Emília, criada por Monteiro Lobato, é a boneca de pano que ganha a fala e se torna uma das personagens mais espertas do Sítio.' }
       ],
       medium: [
         { q: 'O que é um remake no cinema?', opts: ['Um filme feito sem roteiro', 'Uma nova versão de uma obra já existente', 'Um documentário sobre bastidores', 'Uma sequência filmada em plano único'], answer: 1, explain: 'Remake é uma nova adaptação ou recriação de uma obra que já havia sido lançada antes.' },
@@ -1867,7 +1887,9 @@ const QUESTIONS = {
         { q: 'O que é um storyboard?', opts: ['Uma trilha sonora provisória', 'Uma sequência de quadros usada para planejar cenas', 'Uma legenda automática para filmes', 'Um tipo de câmera analógica'], answer: 1, explain: 'Storyboard é um planejamento visual de cenas, muito usado em cinema, animação e publicidade.' },
         { q: 'Qual compositor continuou criando obras mesmo depois de ficar praticamente surdo, como a Nona Sinfonia?', opts: ['Wolfgang Amadeus Mozart', 'Ludwig van Beethoven', 'Johann Sebastian Bach', 'Frédéric Chopin'], answer: 1, explain: 'Beethoven estreou a Nona Sinfonia, com o coral da "Ode à Alegria", em 1824, quando já estava quase totalmente surdo.' },
         { q: 'Qual escritor brasileiro criou os romances "Dom Casmurro" e "Memórias Póstumas de Brás Cubas"?', opts: ['José de Alencar', 'Machado de Assis', 'Jorge Amado', 'Graciliano Ramos'], answer: 1, explain: 'Machado de Assis é um dos maiores nomes da literatura brasileira e foi o primeiro presidente da Academia Brasileira de Letras.' },
-        { q: 'Qual foi o primeiro longa-metragem de animação dos estúdios Disney, lançado em 1937?', opts: ['Pinóquio', 'Branca de Neve e os Sete Anões', 'Fantasia', 'Cinderela'], answer: 1, explain: 'Branca de Neve e os Sete Anões estreou em 1937 e provou que um desenho animado podia sustentar um filme inteiro.' }
+        { q: 'Qual foi o primeiro longa-metragem de animação dos estúdios Disney, lançado em 1937?', opts: ['Pinóquio', 'Branca de Neve e os Sete Anões', 'Fantasia', 'Cinderela'], answer: 1, explain: 'Branca de Neve e os Sete Anões estreou em 1937 e provou que um desenho animado podia sustentar um filme inteiro.' },
+        { q: 'Quem pintou o teto da Capela Sistina, no Vaticano?', opts: ['Rafael', 'Michelangelo', 'Donatello', 'Botticelli'], answer: 1, explain: 'Michelangelo pintou o teto entre 1508 e 1512; a cena "A Criação de Adão" é a mais famosa.' },
+        { q: 'Qual cantora brasileira, apelidada de "Pequena Notável", fez sucesso em Hollywood?', opts: ['Elis Regina', 'Carmen Miranda', 'Gal Costa', 'Clara Nunes'], answer: 1, explain: 'Carmen Miranda levou o samba aos Estados Unidos nos anos 1940, com figurinos de frutas na cabeça que viraram sua marca.' }
       ],
       hard: [
         { q: 'Qual termo italiano indica um andamento lento na música erudita?', opts: ['Allegro', 'Presto', 'Adagio', 'Vivace'], answer: 2, explain: 'Adagio indica andamento mais lento e expressivo, comum em trechos mais contemplativos.' },
@@ -1875,7 +1897,9 @@ const QUESTIONS = {
         { q: 'Qual técnica de animação fotografa quadro a quadro objetos reais para criar movimento?', opts: ['Motion capture', 'Rotoscopia', 'Stop-motion', 'Time-lapse'], answer: 2, explain: 'Stop-motion cria movimento ao registrar pequenas mudanças em objetos reais quadro a quadro.' },
         { q: 'Qual movimento artístico, criado por Picasso e Braque, mostra objetos vistos de vários ângulos ao mesmo tempo?', opts: ['Fauvismo', 'Cubismo', 'Dadaísmo', 'Expressionismo'], answer: 1, explain: 'O cubismo fragmenta figuras em formas geométricas e junta, na mesma imagem, pontos de vista diferentes.' },
         { q: 'Qual evento de 1922, em São Paulo, marcou o início do Modernismo no Brasil?', opts: ['Semana de Arte Moderna', 'Bienal de São Paulo', 'Tropicália', 'Exposição Universal'], answer: 0, explain: 'A Semana de Arte Moderna reuniu nomes como Mário de Andrade, Oswald de Andrade e Anita Malfatti no Theatro Municipal.' },
-        { q: 'Qual ópera de Georges Bizet tem como protagonista uma cigana de Sevilha?', opts: ['La Traviata', 'Carmen', 'Aida', 'Tosca'], answer: 1, explain: 'Carmen estreou em Paris em 1875 e tem árias famosas, como a "Habanera".' }
+        { q: 'Qual ópera de Georges Bizet tem como protagonista uma cigana de Sevilha?', opts: ['La Traviata', 'Carmen', 'Aida', 'Tosca'], answer: 1, explain: 'Carmen estreou em Paris em 1875 e tem árias famosas, como a "Habanera".' },
+        { q: 'Qual escritor colombiano escreveu "Cem Anos de Solidão"?', opts: ['Jorge Luis Borges', 'Gabriel García Márquez', 'Mario Vargas Llosa', 'Pablo Neruda'], answer: 1, explain: 'Gabriel García Márquez publicou o romance em 1967 e recebeu o Nobel de Literatura em 1982. É um marco do realismo mágico.' },
+        { q: 'Qual arquiteto projetou os principais edifícios de Brasília, como o Congresso Nacional?', opts: ['Lúcio Costa', 'Oscar Niemeyer', 'Burle Marx', 'Lina Bo Bardi'], answer: 1, explain: 'Oscar Niemeyer projetou os prédios; Lúcio Costa fez o plano urbanístico da cidade, o Plano Piloto.' }
       ]
     },
     cotidiano_sociedade: {
@@ -1887,7 +1911,9 @@ const QUESTIONS = {
         { q: 'O que um QR code permite fazer rapidamente com a câmera do celular?', opts: ['Aumentar o volume do aparelho', 'Abrir ou transferir informações digitais', 'Melhorar o sinal da internet', 'Carregar a bateria mais rápido'], answer: 1, explain: 'QR codes podem levar a links, pagamentos, cardápios, formulários e várias outras informações digitais.' },
         { q: 'Qual número de telefone chama o SAMU no Brasil?', opts: ['190', '192', '193', '199'], answer: 1, explain: 'O SAMU atende pelo 192. O 190 é da Polícia Militar, o 193 dos Bombeiros e o 199 da Defesa Civil.' },
         { q: 'Qual é a moeda oficial do Brasil?', opts: ['Peso', 'Real', 'Cruzeiro', 'Dólar'], answer: 1, explain: 'O real é a moeda brasileira desde 1994, quando entrou em vigor o Plano Real.' },
-        { q: 'O que a faixa de pedestres indica no trânsito?', opts: ['Local para estacionar', 'Ponto preferencial para pedestres atravessarem a via', 'Pista exclusiva para bicicletas', 'Área de carga e descarga'], answer: 1, explain: 'Na faixa de pedestres, quem atravessa tem preferência e os motoristas devem parar.' }
+        { q: 'O que a faixa de pedestres indica no trânsito?', opts: ['Local para estacionar', 'Ponto preferencial para pedestres atravessarem a via', 'Pista exclusiva para bicicletas', 'Área de carga e descarga'], answer: 1, explain: 'Na faixa de pedestres, quem atravessa tem preferência e os motoristas devem parar.' },
+        { q: 'O que significa a sigla CPF?', opts: ['Cadastro de Pessoas Físicas', 'Código Pessoal Federal', 'Certificado de Pessoa Física', 'Controle de Pagamento Fiscal'], answer: 0, explain: 'O CPF é o Cadastro de Pessoas Físicas da Receita Federal, número que identifica cada contribuinte no Brasil.' },
+        { q: 'Na coleta seletiva, qual cor de lixeira é usada para papel?', opts: ['Azul', 'Vermelha', 'Verde', 'Amarela'], answer: 0, explain: 'No padrão brasileiro, azul é para papel, vermelho para plástico, verde para vidro e amarelo para metal.' }
       ],
       medium: [
         { q: 'O que é phishing?', opts: ['Uma técnica de pesca esportiva', 'Um golpe para roubar dados fingindo ser fonte confiável', 'Um antivírus para celular', 'Um tipo de conexão sem fio'], answer: 1, explain: 'Phishing é um golpe digital em que alguém tenta enganar a vítima para roubar senhas, códigos ou dados pessoais.' },
@@ -1896,7 +1922,9 @@ const QUESTIONS = {
         { q: 'Qual foi a principal ideia por trás do código de barras no comércio?', opts: ['Trocar preços por cores', 'Permitir leitura óptica rápida de produtos e dados', 'Eliminar a necessidade de embalagens', 'Substituir dinheiro por cartões'], answer: 1, explain: 'O código de barras facilitou identificar produtos e processar vendas com leitura automática e rápida.' },
         { q: 'O que é a Constituição de um país?', opts: ['Um livro sobre a história nacional', 'A lei fundamental que organiza o Estado e garante direitos', 'Um código que trata apenas de crimes', 'Um acordo comercial com outros países'], answer: 1, explain: 'A Constituição está acima das outras leis. A atual Constituição brasileira foi promulgada em 1988.' },
         { q: 'A partir de que idade o voto passa a ser obrigatório no Brasil?', opts: ['16 anos', '18 anos', '21 anos', '25 anos'], answer: 1, explain: 'O voto é obrigatório dos 18 aos 70 anos. Para quem tem 16 ou 17 anos, mais de 70 ou não é alfabetizado, ele é facultativo.' },
-        { q: 'O que significa a sigla ONU?', opts: ['Organização das Nações Unidas', 'Ordem Nacional Universal', 'Organização dos Negócios Unidos', 'Ofício das Nações Unificadas'], answer: 0, explain: 'A Organização das Nações Unidas foi fundada em 1945, depois da Segunda Guerra Mundial, para promover a paz e a cooperação entre os países.' }
+        { q: 'O que significa a sigla ONU?', opts: ['Organização das Nações Unidas', 'Ordem Nacional Universal', 'Organização dos Negócios Unidos', 'Ofício das Nações Unificadas'], answer: 0, explain: 'A Organização das Nações Unidas foi fundada em 1945, depois da Segunda Guerra Mundial, para promover a paz e a cooperação entre os países.' },
+        { q: 'O que é inflação?', opts: ['Uma queda geral dos preços', 'Um aumento generalizado e contínuo dos preços', 'Um aumento dos salários', 'Uma redução de impostos'], answer: 1, explain: 'Inflação é a alta geral e persistente dos preços, que faz o dinheiro comprar cada vez menos.' },
+        { q: 'Quantos são os Poderes da República no Brasil?', opts: ['Dois', 'Três', 'Quatro', 'Cinco'], answer: 1, explain: 'A Constituição define três Poderes independentes e harmônicos: Executivo, Legislativo e Judiciário.' }
       ],
       hard: [
         { q: 'O que significa autenticação em dois fatores?', opts: ['Usar duas contas ao mesmo tempo', 'Confirmar a identidade com uma segunda etapa além da senha', 'Ter duas senhas idênticas para o mesmo app', 'Trocar a senha a cada duas semanas'], answer: 1, explain: 'A autenticação em dois fatores adiciona uma segunda prova de identidade, como código, biometria ou aplicativo autenticador.' },
@@ -1904,7 +1932,9 @@ const QUESTIONS = {
         { q: 'O que define a criptografia de ponta a ponta em uma conversa digital?', opts: ['A mensagem fica pública para auditoria', 'Somente remetente e destinatário conseguem ler o conteúdo', 'O texto pode ser lido por qualquer roteador da rede', 'A conversa some automaticamente após um minuto'], answer: 1, explain: 'Na criptografia de ponta a ponta, o conteúdo é protegido de modo que apenas as pontas da conversa consigam acessá-lo.' },
         { q: 'O que o IDH (Índice de Desenvolvimento Humano) leva em conta?', opts: ['Apenas a riqueza total produzida pelo país', 'Saúde, educação e renda da população', 'O número de habitantes por quilômetro quadrado', 'O volume de exportações'], answer: 1, explain: 'Calculado pela ONU, o IDH combina expectativa de vida, escolaridade e renda por pessoa.' },
         { q: 'O que é a pegada de carbono?', opts: ['A marca deixada por pneus no asfalto', 'O total de gases de efeito estufa emitidos por uma pessoa, empresa ou produto', 'A quantidade de carvão queimada nas usinas', 'A área de floresta desmatada por ano'], answer: 1, explain: 'A pegada de carbono soma as emissões diretas e indiretas de gases de efeito estufa de uma atividade, produto ou pessoa.' },
-        { q: 'Qual lei brasileira regula o tratamento de dados pessoais por empresas e órgãos públicos?', opts: ['Marco Civil da Internet', 'Lei Geral de Proteção de Dados (LGPD)', 'Lei de Acesso à Informação', 'Código de Defesa do Consumidor'], answer: 1, explain: 'A LGPD (Lei 13.709/2018) entrou em vigor em 2020 e define regras para coletar, guardar e compartilhar dados pessoais.' }
+        { q: 'Qual lei brasileira regula o tratamento de dados pessoais por empresas e órgãos públicos?', opts: ['Marco Civil da Internet', 'Lei Geral de Proteção de Dados (LGPD)', 'Lei de Acesso à Informação', 'Código de Defesa do Consumidor'], answer: 1, explain: 'A LGPD (Lei 13.709/2018) entrou em vigor em 2020 e define regras para coletar, guardar e compartilhar dados pessoais.' },
+        { q: 'O que é a taxa Selic na economia brasileira?', opts: ['A taxa básica de juros da economia', 'O imposto sobre produtos importados', 'O índice oficial de inflação', 'O reajuste anual do salário mínimo'], answer: 0, explain: 'A Selic é a taxa básica de juros, definida pelo Comitê de Política Monetária (Copom) do Banco Central, e serve de referência para os demais juros.' },
+        { q: 'Quanto dura o mandato de um senador no Brasil?', opts: ['4 anos', '6 anos', '8 anos', '10 anos'], answer: 2, explain: 'Senadores têm mandato de 8 anos. As eleições renovam o Senado alternadamente em um terço e em dois terços a cada 4 anos.' }
       ]
     }
   },
@@ -1988,7 +2018,7 @@ const QUESTIONS = {
         { q: 'De que trata o livro de Jó?', opts: ['A criação do mundo', 'O sofrimento do justo', 'A história de Israel', 'As leis de Moisés'], answer: 1, explain: 'Jó aborda o sofrimento de um homem justo e a soberania de Deus.' }
       ],
       medium: [
-        { q: '"O temor do Senhor é o princípio da sabedoria" está em qual livro?', opts: ['Salmos', 'Eclesiastes', 'Provérbios', 'Jó'], answer: 2, explain: 'Esta famosa frase está em Provérbios 9:10.' },
+        { q: '"O temor do Senhor é o princípio da sabedoria" está em qual livro?', opts: ['Cantares', 'Eclesiastes', 'Provérbios', 'Jó'], answer: 2, explain: 'A frase está em Provérbios 9:10 (com palavras parecidas, também em Provérbios 1:7 e no Salmo 111:10).' },
         { q: 'O Salmo 119 é especial porque...', opts: ['É o mais curto da Bíblia', 'É o mais longo capítulo da Bíblia', 'Foi escrito por Moisés', 'Não contém referência a Deus'], answer: 1, explain: 'O Salmo 119 é o mais longo capítulo da Bíblia com 176 versículos, cada seção segue o alfabeto hebraico.' },
         { q: 'Quem disse "Há tempo para tudo debaixo do céu"?', opts: ['Davi nos Salmos', 'O Pregador em Eclesiastes', 'Salomão em Provérbios', 'Jó'], answer: 1, explain: 'Esta passagem está em Eclesiastes 3:1, atribuída ao Pregador (Qohelet).' },
         { q: 'Em Provérbios, a sabedoria é personificada como...', opts: ['Um rei', 'Uma mulher', 'Um anjo', 'Uma criança'], answer: 1, explain: 'Em Provérbios 8, a sabedoria é personificada como uma mulher que clama nas ruas.' },
@@ -2274,7 +2304,7 @@ const QUESTIONS = {
         { q: 'O Concílio Vaticano II (1962-1965) trouxe mudanças como...', opts: ['Rejeição do cristianismo', 'Missa em língua vernácula e diálogo com outras religiões', 'Proibição do ecumenismo', 'Retorno ao latim obrigatório'], answer: 1, explain: 'O Vaticano II modernizou a liturgia católica, permitiu a missa em língua local e abriu diálogo ecumênico.' },
         { q: 'A "teologia da libertação" surgiu na...', opts: ['Europa medieval', 'América Latina no século XX', 'Grécia antiga', 'Reforma do século XVI'], answer: 1, explain: 'A teologia da libertação surgiu na América Latina nos anos 1960-70, enfatizando justiça social e os pobres.' },
         { q: 'Charles Spurgeon ficou conhecido como...', opts: ['O Papa protestante', 'O Príncipe dos Pregadores', 'O Pai da Reforma', 'O Apóstolo dos gentios'], answer: 1, explain: 'Charles Spurgeon (1834-1892) foi chamado de "Príncipe dos Pregadores" por seu ministério em Londres.' },
-        { q: 'O cristianismo hoje é mais numeroso em qual continente?', opts: ['Europa', 'América do Norte', 'África e América Latina', 'Ásia'], answer: 2, explain: 'O centro de gravidade do cristianismo mudou para o Sul Global, especialmente África e América Latina.' }
+        { q: 'Em qual continente vive hoje o maior número de cristãos?', opts: ['Europa', 'América do Norte', 'África', 'Ásia'], answer: 2, explain: 'A África passou a Europa e a América Latina na última década; o centro de gravidade do cristianismo mudou para o Sul Global.' }
       ],
       hard: [
         { q: 'A "Declaração de Lausanne" (1974) é significativa porque...', opts: ['Uniu católicos e protestantes', 'Renovou o compromisso evangélico com evangelização mundial e responsabilidade social', 'Rejeitou missões', 'Fundou uma nova denominação'], answer: 1, explain: 'A Declaração de Lausanne, liderada por Billy Graham e John Stott, reafirmou o compromisso evangélico global.' },

@@ -71,6 +71,9 @@ test('desempate: cada nível sobe uma dificuldade e para no Avançado', () => {
   assert.equal(helpers.getPvpTiebreakDifficulty('hard', 3), 'hard');
   assert.deepEqual(helpers.getPvpTiebreakDifficulties('easy'), ['medium', 'hard']);
   assert.deepEqual(helpers.getPvpTiebreakDifficulties('hard'), ['hard']);
+  assert.deepEqual(helpers.getPvpDifficultyLadder('easy'), ['easy', 'medium', 'hard']);
+  assert.deepEqual(helpers.getPvpDifficultyLadder('medium'), ['medium', 'hard']);
+  assert.deepEqual(helpers.getPvpDifficultyLadder('hard'), ['hard']);
 });
 
 test('desempate: perguntas reservadas ficam na área, na dificuldade certa e sem repetir a partida', () => {
@@ -93,27 +96,48 @@ test('desempate: perguntas reservadas ficam na área, na dificuldade certa e sem
   });
 });
 
-test('2x2: cada confronto extra do desempate sobe uma dificuldade com perguntas novas', () => {
+// Confrontos extras (depois dos normais) até a primeira pergunta repetida.
+function collectExtraBattles(match, firstBattleNo) {
+  const battles = [];
+  const seen = new Set();
+  for (let battleNo = firstBattleNo; battleNo < firstBattleNo + 1000; battleNo += 1) {
+    const key = keyOf(engine.getPvpGroupBattleQuestion(match, battleNo));
+    if (seen.has(key)) break;
+    seen.add(key);
+    battles.push({ battleNo, key, difficulty: engine.getPvpGroupBattleDifficulty(match, battleNo) });
+  }
+  return battles;
+}
+
+test('2x2: o desempate fica na dificuldade escolhida até acabar todas as perguntas dela', () => {
   const match = teamMatch();
   assert.equal(engine.getPvpGroupBattleDifficulty(match, 12), 'easy');
-  assert.equal(engine.getPvpGroupBattleDifficulty(match, 13), 'medium');
-  assert.equal(engine.getPvpGroupBattleDifficulty(match, 14), 'hard');
-  assert.equal(engine.getPvpGroupBattleDifficulty(match, 20), 'hard');
+  assert.equal(engine.getPvpGroupBattleDifficulty(match, 13), 'easy');
+  assert.equal(engine.getPvpGroupBattleTiebreakLevel(match, 13), 0);
+  assert.equal(keyOf(engine.getPvpGroupBattleQuestion(match, 13)), keyOf(match.tiebreak_question_sets.easy[0]));
 
   const baseKeys = new Set(match.question_set.map(keyOf));
-  const mediumKeys = questionKeysOfArea('general_knowledge', 'medium');
-  const hardKeys = questionKeysOfArea('general_knowledge', 'hard');
-  assert.ok(mediumKeys.has(keyOf(engine.getPvpGroupBattleQuestion(match, 13))));
-  const hardBattleKeys = [];
-  for (let battleNo = 14; battleNo <= 25; battleNo += 1) {
-    const question = engine.getPvpGroupBattleQuestion(match, battleNo);
-    assert.ok(hardKeys.has(keyOf(question)));
-    assert.ok(!baseKeys.has(keyOf(question)));
-    hardBattleKeys.push(keyOf(question));
-  }
-  assert.equal(new Set(hardBattleKeys).size, hardBattleKeys.length, 'desempate repetiu pergunta');
+  const keysByDifficulty = Object.fromEntries(['easy', 'medium', 'hard']
+    .map((difficulty) => [difficulty, questionKeysOfArea('general_knowledge', difficulty)]));
+  const extras = collectExtraBattles(match, 13);
+  extras.forEach(({ key, difficulty, battleNo }) => {
+    assert.ok(!baseKeys.has(key), `confronto ${battleNo} repete a partida normal`);
+    assert.ok(keysByDifficulty[difficulty].has(key), `confronto ${battleNo} fora de ${difficulty}`);
+  });
+  const order = extras.map(({ difficulty }) => difficulty);
+  assert.deepEqual(order, [...order].sort((a, b) => (
+    helpers.PVP_DIFFICULTY_STEPS.indexOf(a) - helpers.PVP_DIFFICULTY_STEPS.indexOf(b)
+  )), 'a dificuldade voltou a descer');
+  const countOf = (difficulty) => order.filter((current) => current === difficulty).length;
+  // Toda pergunta Iniciante da área sai antes da primeira Intermediária, e assim por diante.
+  assert.equal(countOf('easy'), keysByDifficulty.easy.size - baseKeys.size);
+  assert.equal(countOf('medium'), keysByDifficulty.medium.size);
+  assert.equal(countOf('hard'), keysByDifficulty.hard.size);
+  const firstMedium = extras.find(({ difficulty }) => difficulty === 'medium');
+  assert.equal(engine.getPvpGroupBattleTiebreakLevel(match, firstMedium.battleNo), 1);
+  assert.equal(engine.getPvpGroupBattleTiebreakLevel(match, firstMedium.battleNo - 1), 0);
 
-  // Empate no fim do 12º confronto: o confronto 13 já usa a pergunta Intermediária.
+  // Empate no fim do 12º confronto: o confronto 13 segue no Iniciante, com pergunta nova.
   const answers = engine.getPvpGroupBattlePairIds(match, 'team').map((userId) => ({
     user_id: userId,
     battle_no: 12,
@@ -125,20 +149,21 @@ test('2x2: cada confronto extra do desempate sobe uma dificuldade com perguntas 
   assert.equal(patch?.status, 'round_result');
   const next = { ...match, ...patch, ...engine.buildPvpTeamAdvancePatch({ ...match, ...patch }, NOW + 60_000) };
   assert.equal(next.battle_no, 13);
-  const plan = engine.getPvpGroupBotAnswerPlan(
-    { ...next, red_members: [{ user_id: 'bot_qa' }, ...next.red_members.slice(1)] },
-    'team',
-    'bot_qa'
-  );
-  assert.ok(!plan || mediumKeys.has(keyOf(engine.getPvpGroupBattleQuestion(next, 13))));
+  assert.equal(engine.getPvpGroupBattleDifficulty(next, 13), 'easy');
+  const question13 = engine.getPvpGroupBattleQuestion(next, 13);
+  assert.ok(keysByDifficulty.easy.has(keyOf(question13)));
+  assert.ok(!baseKeys.has(keyOf(question13)));
 });
 
-test('2x2: partida antiga sem perguntas reservadas continua usando a sequência', () => {
+test('2x2: partida sem perguntas reservadas também usa perguntas novas no desempate', () => {
   const match = teamMatch({ tiebreak_question_sets: undefined });
-  assert.equal(engine.getPvpGroupBattleQuestion(match, 13), match.question_set[0]);
+  const question = engine.getPvpGroupBattleQuestion(match, 13);
+  assert.equal(engine.getPvpGroupBattleDifficulty(match, 13), 'easy');
+  assert.ok(questionKeysOfArea('general_knowledge', 'easy').has(keyOf(question)));
+  assert.ok(!match.question_set.map(keyOf).includes(keyOf(question)));
 });
 
-test('um contra todos: ciclo empatado sobe a dificuldade a partir do próximo confronto', () => {
+test('um contra todos: ciclo empatado segue na dificuldade escolhida com as perguntas que faltam', () => {
   const activeIds = ['p1', 'p2', 'p3', 'p4'];
   const cycleRounds = helpers.buildPvpEliminationCycleRounds(activeIds, 'elim-tiebreak:1');
   const lastRound = cycleRounds[cycleRounds.length - 1];
@@ -189,21 +214,27 @@ test('um contra todos: ciclo empatado sobe a dificuldade a partir do próximo co
   // O resultado ainda mostra a pergunta do confronto 6.
   assert.equal(engine.getPvpGroupBattleQuestion(afterResult, 6), question6);
   assert.equal(engine.getPvpGroupBattleDifficulty(afterResult, 6), 'easy');
-  assert.equal(engine.getPvpGroupBattleDifficulty(afterResult, 7), 'medium');
+  assert.equal(engine.getPvpGroupBattleDifficulty(afterResult, 7), 'easy');
 
   const next = { ...afterResult, ...engine.buildPvpEliminationAdvancePatch(afterResult, NOW + 60_000) };
   assert.equal(next.status, 'active');
   assert.equal(next.battle_no, 7);
-  const mediumKeys = questionKeysOfArea('general_knowledge', 'medium');
-  assert.ok(mediumKeys.has(keyOf(engine.getPvpGroupBattleQuestion(next))));
+  assert.equal(engine.getPvpGroupBattleQuestion(next), questionSet[6]);
 
-  // Um segundo empate leva ao Avançado.
+  // Um segundo empate passa das perguntas normais: continua no Iniciante com as que
+  // ainda não saíram e só sobe quando todas as da área acabam.
   const twice = { ...next, tiebreak_start_battle_nos: [7, 13] };
-  assert.equal(engine.getPvpGroupBattleDifficulty(twice, 12), 'medium');
-  assert.equal(engine.getPvpGroupBattleDifficulty(twice, 13), 'hard');
+  const easyKeys = questionKeysOfArea('general_knowledge', 'easy');
+  const lastEasyBattleNo = easyKeys.size;
+  const question13 = engine.getPvpGroupBattleQuestion(twice, 13);
+  assert.ok(easyKeys.has(keyOf(question13)));
+  assert.ok(!questionSet.map(keyOf).includes(keyOf(question13)));
+  assert.equal(engine.getPvpGroupBattleDifficulty(twice, 13), 'easy');
+  assert.equal(engine.getPvpGroupBattleDifficulty(twice, lastEasyBattleNo), 'easy');
+  assert.equal(engine.getPvpGroupBattleDifficulty(twice, lastEasyBattleNo + 1), 'medium');
 });
 
-test('duelo: rodadas extras do desempate sobem a dificuldade sem trocar as já jogadas', () => {
+test('duelo: rodadas extras ficam na dificuldade escolhida até acabar todas as perguntas dela', () => {
   const questionSet = baseSet('easy', 5, 'duel-tiebreak');
   const match = {
     id: 'duel-tiebreak',
@@ -219,17 +250,34 @@ test('duelo: rodadas extras do desempate sobem a dificuldade sem trocar as já j
   const round6 = helpers.extendPvpQuestionSetIfNeeded(match, 6);
   assert.equal(round6.length, 6);
   assert.deepEqual(round6.slice(0, 5), questionSet);
-  assert.equal(round6[5].difficulty, 'medium');
-  assert.equal(round6[5].tiebreak_level, 1);
-  assert.ok(questionKeysOfArea('general_knowledge', 'medium').has(keyOf(round6[5])));
+  assert.equal(helpers.getPvpQuestionTiebreakLevel(round6[5]), 0);
+  assert.ok(questionKeysOfArea('general_knowledge', 'easy').has(keyOf(round6[5])));
+  assert.equal(helpers.getPvpDuelRoundDifficulty({ ...match, question_set: round6 }, 6), 'easy');
 
-  const round7 = helpers.extendPvpQuestionSetIfNeeded({ ...match, question_set: round6 }, 7);
-  assert.deepEqual(round7.slice(0, 6), round6);
-  assert.equal(round7[6].difficulty, 'hard');
-  assert.equal(round7[6].tiebreak_level, 2);
-  assert.ok(questionKeysOfArea('general_knowledge', 'hard').has(keyOf(round7[6])));
-  assert.equal(helpers.getPvpDuelRoundDifficulty(match, 5), 'easy');
-  assert.equal(helpers.getPvpDuelRoundDifficulty(match, 8), 'hard');
+  const easyCount = questionKeysOfArea('general_knowledge', 'easy').size;
+  const extended = helpers.extendPvpQuestionSetIfNeeded({ ...match, question_set: round6 }, easyCount + 2);
+  assert.equal(extended.length, easyCount + 2);
+  assert.deepEqual(extended.slice(0, 6), round6);
+  const firstMediumIndex = extended.findIndex((question) => question.difficulty === 'medium');
+  assert.ok(firstMediumIndex > 5);
+  const easyRounds = extended.slice(0, firstMediumIndex);
+  easyRounds.forEach((question) => assert.equal(helpers.getPvpQuestionTiebreakLevel(question), 0));
+  assert.equal(new Set(easyRounds.map(keyOf)).size, easyRounds.length, 'o desempate repetiu pergunta');
+  // Só sobe quando não sobra pergunta Iniciante da área.
+  assert.deepEqual(helpers.pickPvpRoundQuestionsByConfig(
+    QUESTIONS,
+    { difficulty: 'easy', area: 'general_knowledge', language: match.language, topic: match.topic },
+    1,
+    easyRounds
+  ), []);
+  assert.equal(extended[firstMediumIndex].tiebreak_level, 1);
+  assert.ok(questionKeysOfArea('general_knowledge', 'medium').has(keyOf(extended[firstMediumIndex])));
+  // Depois de subir, não volta a descer.
+  extended.slice(firstMediumIndex).forEach((question) => assert.equal(question.difficulty, 'medium'));
+  const extendedMatch = { ...match, question_set: extended };
+  assert.equal(helpers.getPvpDuelRoundDifficulty(extendedMatch, 5), 'easy');
+  assert.equal(helpers.getPvpDuelRoundDifficulty(extendedMatch, firstMediumIndex), 'easy');
+  assert.equal(helpers.getPvpDuelRoundDifficulty(extendedMatch, firstMediumIndex + 1), 'medium');
 });
 
 test('Assuntos Gerais: rodadas do PvE nunca recebem perguntas de programação', () => {
@@ -249,10 +297,9 @@ test('Assuntos Gerais: rodadas do PvE nunca recebem perguntas de programação',
   });
 });
 
-test('histórico: variação com prefixo conta como a mesma pergunta', () => {
+test('histórico: a chave da pergunta não depende da ordem das alternativas', () => {
   const base = { q: 'Qual é o maior oceano da Terra?', opts: ['Atlântico', 'Pacífico'], answer: 1 };
-  const variant = { q: 'Contexto prático: Qual é o maior oceano da Terra?', opts: ['Pacífico', 'Atlântico'], answer: 0 };
-  assert.equal(keyOf(variant), keyOf(base));
+  assert.equal(keyOf({ ...base, opts: ['Pacífico', 'Atlântico'], answer: 0 }), keyOf(base));
   assert.notEqual(keyOf({ ...base, q: 'Qual é o menor oceano da Terra?' }), keyOf(base));
 });
 

@@ -89,7 +89,7 @@ function normalizeQuestionShape(rawQuestion) {
 function getQuestionUniqKey(question) {
   const normalized = normalizeQuestionShape(question);
   const q = normalizeText(normalized.q);
-  const code = normalizeText(normalized.code);
+  const code = normalizeCode(normalized.code);
   if (q || code) return `${q}__${code}`;
   const opts = Array.isArray(normalized.opts)
     ? normalized.opts.map((opt) => normalizeText(opt)).join('|')
@@ -97,19 +97,10 @@ function getQuestionUniqKey(question) {
   return `${opts}__${String(normalized.answer ?? -1)}`;
 }
 
-// Variações que questions-data.js gera da mesma pergunta ("Contexto prático: ...").
-const QUESTION_VARIANT_PREFIX_PATTERN = /^(contexto pratico|situacao real|releitura guiada)\s*:\s*/i;
-
-// Chave curta da pergunta (não depende da ordem das alternativas nem do prefixo das
-// variações), usada para lembrar quais perguntas o jogador já viu.
+// Chave curta da pergunta (não depende da ordem das alternativas), usada para lembrar
+// quais perguntas o jogador já viu.
 export function getQuestionHistoryKey(question) {
-  const source = question && typeof question === 'object' ? question : {};
-  const q = String(source.q || '')
-    .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
-    .trim()
-    .replace(QUESTION_VARIANT_PREFIX_PATTERN, '');
-  const strictKey = getQuestionUniqKey({ ...source, q });
+  const strictKey = getQuestionUniqKey(question);
   if (!strictKey) return '';
   let hash = 2166136261;
   for (let index = 0; index < strictKey.length; index += 1) {
@@ -135,6 +126,11 @@ export function getQuestionRecencyRank(recencyRank, question) {
   return Number.isInteger(rank) ? rank : -1;
 }
 
+// No código os símbolos fazem diferença: "1 + 1" e "'1' + 1", "int x" e "int *x".
+function normalizeCode(value) {
+  return String(value || '').replace(/\s+/g, ' ').trim();
+}
+
 function normalizeText(value) {
   return String(value || '')
     .normalize('NFD')
@@ -144,15 +140,19 @@ function normalizeText(value) {
     .trim();
 }
 
-function tokenize(value) {
+// "and"/"or" não contam como palavras do enunciado, mas ao comparar perguntas distinguem
+// operadores lógicos ("verdadeiro AND falso" x "verdadeiro OR falso").
+const LOGICAL_OPERATOR_TOKENS = new Set(['and', 'or']);
+
+function tokenize(value, keepTokens = null) {
   return normalizeText(value)
     .split(/\s+/)
     .map((token) => token.trim())
-    .filter((token) => token && token.length > 1 && !SEMANTIC_STOPWORDS.has(token));
+    .filter((token) => token && token.length > 1 && (!SEMANTIC_STOPWORDS.has(token) || Boolean(keepTokens?.has(token))));
 }
 
 function createTokenSet(value) {
-  return new Set(tokenize(value));
+  return new Set(tokenize(value, LOGICAL_OPERATOR_TOKENS));
 }
 
 function jaccardSimilarity(setA, setB) {
@@ -186,6 +186,7 @@ function buildSemanticSignature(question) {
   return {
     raw: normalized,
     strictKey: getQuestionUniqKey(normalized),
+    codeKey: normalizeCode(normalized.code),
     normalizedQuestion,
     qTokens: createTokenSet(normalized.q),
     explainTokens: createTokenSet(normalized.explain),
@@ -197,6 +198,9 @@ function buildSemanticSignature(question) {
 function isNearDuplicateQuestion(signature, existingSignatures) {
   return existingSignatures.some((current) => {
     if (signature.strictKey && current.strictKey && signature.strictKey === current.strictKey) return true;
+    // Perguntas com código costumam repetir o enunciado ("Qual é o resultado?"); o que as
+    // distingue é o próprio código.
+    if (signature.codeKey || current.codeKey) return signature.codeKey === current.codeKey;
 
     const normalizedA = String(signature.normalizedQuestion || '').trim();
     const normalizedB = String(current.normalizedQuestion || '').trim();
@@ -205,12 +209,14 @@ function isNearDuplicateQuestion(signature, existingSignatures) {
     const sameOptions = signature.optionsKey && current.optionsKey && signature.optionsKey === current.optionsKey;
     const sameAnswer = signature.answerText && current.answerText && signature.answerText === current.answerText;
     if (sameOptions && sameAnswer) return true;
+    // Mesmas alternativas com respostas certas diferentes são perguntas diferentes
+    // (ex.: "espaço INTERNO" x "espaço EXTERNO").
+    if (sameOptions) return false;
 
     const qSimilarity = jaccardSimilarity(signature.qTokens, current.qTokens);
     const qOverlap = tokenOverlapRatio(signature.qTokens, current.qTokens);
     const explainSimilarity = jaccardSimilarity(signature.explainTokens, current.explainTokens);
     if (sameAnswer && qOverlap >= 0.72) return true;
-    if (sameOptions && qOverlap >= 0.58) return true;
     if (qSimilarity >= 0.74) return true;
     if (qSimilarity >= 0.62 && qOverlap >= 0.82) return true;
     if (qSimilarity >= 0.62 && explainSimilarity >= 0.45) return true;

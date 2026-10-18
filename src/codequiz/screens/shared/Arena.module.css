@@ -512,6 +512,18 @@
   }
 }
 
+/* Resultado do duelo em celular baixo: cartões dos jogadores mais baixos */
+@media (max-width: 767px) and (max-height: 580px) {
+  .resultVersus .playerVertical {
+    gap: 4px;
+    padding: var(--cq-space-3) var(--cq-space-2);
+  }
+
+  .resultVersus .playerVertical :global(.cq-avatar) {
+    --avatar-size: 48px;
+  }
+}
+
 /* Celular alto: o radar da fila ganha presença no espaço que sobra */
 @media (max-width: 767px) and (min-height: 700px) {
   .radar {

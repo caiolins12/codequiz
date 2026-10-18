@@ -9,7 +9,7 @@ import {
   XP_PER_CORRECT
 } from './constants';
 import { LANGUAGES, QUESTIONS } from '../data/questions-data';
-import { buildMatchId, getPvpPointsDeltaAdvanced, PVP_ROUNDS_PER_MATCH } from './pvp';
+import { applyPvpDurationBonus, buildMatchId, getPvpPointsDeltaAdvanced, PVP_ROUNDS_PER_MATCH } from './pvp';
 import { getRoundQuestionCapacity } from './quizEngine';
 import { getItemsByType } from './shop';
 import {
@@ -3150,10 +3150,11 @@ async function applyBotDuelStatsFromMatch(matchRow) {
       matchRow: row,
       userId: botBId
     });
-    const xpA = getPvpXpRewardByDifficulty(safeDifficulty, resultA);
-    const xpB = getPvpXpRewardByDifficulty(safeDifficulty, resultB);
-    const coinsA = getPvpCoinsRewardByDifficulty(safeDifficulty, resultA);
-    const coinsB = getPvpCoinsRewardByDifficulty(safeDifficulty, resultB);
+    // Mesmo bônus de duração dos jogadores (rodadas da partida).
+    const xpA = applyPvpDurationBonus(getPvpXpRewardByDifficulty(safeDifficulty, resultA), roundNo);
+    const xpB = applyPvpDurationBonus(getPvpXpRewardByDifficulty(safeDifficulty, resultB), roundNo);
+    const coinsA = applyPvpDurationBonus(getPvpCoinsRewardByDifficulty(safeDifficulty, resultA), roundNo);
+    const coinsB = applyPvpDurationBonus(getPvpCoinsRewardByDifficulty(safeDifficulty, resultB), roundNo);
 
     await Promise.all([
       applyPvpOutcomeToUserStats(botAId, {
@@ -3254,8 +3255,8 @@ async function applyBotUserMatchStatsFromMatch(matchRow) {
     matchRow: row,
     userId: botId
   });
-  const xp = getPvpXpRewardByDifficulty(safeDifficulty, result);
-  const coins = getPvpCoinsRewardByDifficulty(safeDifficulty, result);
+  const xp = applyPvpDurationBonus(getPvpXpRewardByDifficulty(safeDifficulty, result), roundNo);
+  const coins = applyPvpDurationBonus(getPvpCoinsRewardByDifficulty(safeDifficulty, result), roundNo);
 
   await applyPvpOutcomeToUserStats(botId, {
     result,

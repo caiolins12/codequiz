@@ -108,8 +108,10 @@
 }
 
 /* ---------------------------------------------------------------- */
-/* Card de item */
+/* Card de item: o conteúdo acompanha a largura do card (unidades cqi),
+   então miniatura, nome e botão ficam proporcionais em qualquer tela. */
 .item {
+  container-type: inline-size;
   display: grid;
   grid-template-rows: auto 1fr auto;
   gap: var(--cq-space-2);
@@ -158,6 +160,10 @@
   background: rgba(8, 5, 30, 0.45);
 }
 
+.thumb :global(.cq-avatar) {
+  --avatar-size: clamp(44px, 44cqi, 108px);
+}
+
 .tag {
   position: absolute;
   top: 6px;
@@ -202,25 +208,52 @@
 
 .itemName {
   display: -webkit-box;
+  align-self: center;
   overflow: hidden;
-  padding: 0 4px;
-  font-size: var(--cq-text-sm);
+  padding: 0 2px;
+  font-size: clamp(0.6875rem, 0.25rem + 5cqi, 0.9375rem);
   font-weight: 800;
-  line-height: 1.25;
+  line-height: 1.2;
   text-align: center;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
 }
 
-/* Telas estreitas: 3 colunas deixam o card apertado, então nome e botão encolhem */
-@media (max-width: 599px) {
-  .item .itemName {
-    font-size: var(--cq-text-xs);
+.itemAction {
+  display: grid;
+  min-width: 0;
+}
+
+.itemAction button {
+  --btn-height: clamp(30px, 16px + 11cqi, 42px);
+  --btn-pad: clamp(6px, 4cqi, 14px);
+  --btn-font: clamp(0.75rem, 0.35rem + 5cqi, 0.9375rem);
+  --btn-depth: 3px;
+  gap: clamp(3px, 3cqi, 8px);
+  border-radius: clamp(10px, 7cqi, 14px);
+}
+
+/* Cards estreitos (3 colunas no celular): o selo "Equipado" vira só o ícone */
+@container (max-width: 150px) {
+  .tag {
+    top: 4px;
+    right: 4px;
+    min-width: 20px;
+    height: 20px;
   }
 
-  .item button {
-    --btn-pad: 8px;
-    gap: 4px;
+  .tagEquipped {
+    justify-content: center;
+    padding: 0;
+  }
+
+  .tag svg {
+    width: 12px;
+    height: 12px;
+  }
+
+  .tagLabel {
+    display: none;
   }
 }
 

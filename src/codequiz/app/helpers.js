@@ -2,7 +2,7 @@
 import { LANGUAGES, QUESTIONS, TOPICS } from '../data/questions-data';
 import { DIFFICULTY_LABELS, PVE_QUESTIONS_PER_ROUND, PVP_COINS_REWARD, PVP_XP_REWARD, QUESTIONS_PER_ROUND, TIMER_SECONDS } from '../lib/constants';
 import { defaultProgress, normalizeProgress } from '../lib/progress';
-import { PVP_ROUNDS_PER_MATCH, getCategoryByPoints, isPvpAnswerCorrect } from '../lib/pvp';
+import { PVP_ROUNDS_PER_MATCH, applyPvpDurationBonus, getCategoryByPoints, getPvpDurationBonusPct, isPvpAnswerCorrect } from '../lib/pvp';
 import {
   areQuestionsSemanticallyEquivalent,
   buildQuestionRecencyRank,
@@ -888,11 +888,23 @@ export const PVP_DIFFICULTY_STEPS = Object.freeze(['easy', 'medium', 'hard']);
 export const PVP_TIEBREAK_QUESTIONS_PER_DIFFICULTY = 12;
 
 // Desempate do PvP: cada nível sobe uma dificuldade a partir da escolhida para a
-// partida (Iniciante -> Intermediário -> Avançado) e para no Avançado.
+// partida (Iniciante -> Intermediário -> Avançado) e para no Avançado. O nível só
+// sobe quando acabam as perguntas da dificuldade atual (ver buildPvpExtraQuestionPlan
+// e extendPvpQuestionSetIfNeeded).
 export function getPvpTiebreakDifficulty(baseDifficulty = 'easy', tiebreakLevel = 0) {
   const baseIndex = Math.max(0, PVP_DIFFICULTY_STEPS.indexOf(normalizeDifficulty(baseDifficulty)));
   const level = Math.max(0, Math.trunc(Number(tiebreakLevel || 0)));
   return PVP_DIFFICULTY_STEPS[Math.min(PVP_DIFFICULTY_STEPS.length - 1, baseIndex + level)];
+}
+
+// Dificuldades que o PvP pode usar, da escolhida para a partida até o Avançado.
+export function getPvpDifficultyLadder(baseDifficulty = 'easy') {
+  const baseIndex = Math.max(0, PVP_DIFFICULTY_STEPS.indexOf(normalizeDifficulty(baseDifficulty)));
+  return PVP_DIFFICULTY_STEPS.slice(baseIndex);
+}
+
+export function getPvpQuestionTiebreakLevel(question = null) {
+  return Math.max(0, Math.trunc(Number(question?.tiebreak_level || 0)));
 }
 
 export function getPvpTiebreakDifficulties(baseDifficulty = 'easy') {
@@ -904,7 +916,8 @@ export function getPvpTiebreakDifficulties(baseDifficulty = 'easy') {
   return difficulties;
 }
 
-// Perguntas reservadas para o desempate dos modos em grupo, por dificuldade. Ficam
+// Primeiras perguntas do desempate dos modos em grupo, por dificuldade (a escolhida e
+// as acima dela), priorizando as que quem cria a partida ainda não viu. Ficam
 // gravadas na partida, então todos os aparelhos usam as mesmas, e nenhuma repete
 // as perguntas da partida normal.
 export function buildPvpTiebreakQuestionSets(questionsMap, options = {}) {
@@ -913,7 +926,7 @@ export function buildPvpTiebreakQuestionSets(questionsMap, options = {}) {
   const used = Array.isArray(options?.excludeQuestions) ? [...options.excludeQuestions] : [];
   const seed = String(options?.sequenceSeed || '').trim() || 'pvp';
   const sets = {};
-  getPvpTiebreakDifficulties(baseDifficulty).forEach((difficulty) => {
+  getPvpDifficultyLadder(baseDifficulty).forEach((difficulty) => {
     const sequence = pickPvpQuestionSetBySequence(questionsMap, {
       difficulty,
       count: perDifficulty + used.length,
@@ -935,15 +948,109 @@ export function buildPvpTiebreakQuestionSets(questionsMap, options = {}) {
   return sets;
 }
 
-// Pergunta de desempate do confronto: anda pela lista da dificuldade pelo número do
-// confronto, então todos os aparelhos chegam à mesma pergunta.
-export function pickPvpTiebreakQuestion(tiebreakSets = null, difficulty = 'easy', battleNo = 1) {
-  const list = Array.isArray(tiebreakSets?.[normalizeDifficulty(difficulty)])
-    ? tiebreakSets[normalizeDifficulty(difficulty)]
-    : [];
-  if (!list.length) return null;
-  const index = Math.max(1, Math.floor(Number(battleNo || 1))) - 1;
-  return list[index % list.length] || null;
+const PVP_EXTRA_QUESTION_PLAN_CACHE_MAX = 8;
+const pvpExtraQuestionPlanCache = new Map();
+
+// Perguntas dos confrontos extras dos modos em grupo (os que passam das perguntas
+// normais da partida), em blocos por dificuldade a partir da escolhida. Cada bloco
+// começa pelas perguntas reservadas na partida e segue com todas as outras da área
+// numa ordem fixada pela partida, então todos os aparelhos chegam às mesmas
+// perguntas. Assim a dificuldade só sobe depois que todas as perguntas da anterior
+// foram usadas. Os blocos são montados só quando necessário: devolve os blocos até
+// somar minCount perguntas (ou todos, se a área tiver menos).
+export function buildPvpExtraQuestionPlan(questionsMap, match = null, minCount = Infinity) {
+  const matchId = String(match?.id || '').trim() || 'pvp';
+  const baseDifficulty = normalizeDifficulty(match?.difficulty || match?.category || 'easy');
+  const areaId = String(
+    match?.knowledge_area
+    || resolveKnowledgeAreaByLanguageId(match?.language || '')
+    || ''
+  ).trim();
+  const reserved = match?.tiebreak_question_sets && typeof match.tiebreak_question_sets === 'object'
+    ? match.tiebreak_question_sets
+    : {};
+  const reservedOf = (difficulty) => (Array.isArray(reserved[difficulty]) ? reserved[difficulty] : [])
+    .filter((question) => question && typeof question === 'object');
+  const baseQuestions = Array.isArray(match?.question_set) ? match.question_set : [];
+  const cacheKey = [
+    matchId,
+    baseDifficulty,
+    areaId,
+    baseQuestions.length,
+    ...PVP_DIFFICULTY_STEPS.map((difficulty) => reservedOf(difficulty).length)
+  ].join('|');
+  let state = pvpExtraQuestionPlanCache.get(cacheKey);
+  if (!state || state.questionsMap !== questionsMap) {
+    const usedKeys = new Set();
+    const markUsed = (question) => {
+      const key = getQuestionHistoryKey(question);
+      if (key) usedKeys.add(key);
+    };
+    baseQuestions.forEach(markUsed);
+    PVP_DIFFICULTY_STEPS.forEach((difficulty) => reservedOf(difficulty).forEach(markUsed));
+    state = {
+      questionsMap,
+      usedKeys,
+      ladder: getPvpDifficultyLadder(baseDifficulty),
+      nextLevel: 0,
+      total: 0,
+      plan: []
+    };
+    if (pvpExtraQuestionPlanCache.size >= PVP_EXTRA_QUESTION_PLAN_CACHE_MAX) {
+      pvpExtraQuestionPlanCache.delete(pvpExtraQuestionPlanCache.keys().next().value);
+    }
+    pvpExtraQuestionPlanCache.set(cacheKey, state);
+  }
+
+  while (state.total < minCount && state.nextLevel < state.ladder.length) {
+    const level = state.nextLevel;
+    const difficulty = state.ladder[level];
+    state.nextLevel += 1;
+    const catalog = buildPvpSequenceTopicCatalog(questionsMap, difficulty, {
+      areaId,
+      sequenceSeed: `${matchId}::extra::${difficulty}`
+    });
+    const rest = [];
+    // Uma pergunta de cada tópico por volta, para variar o assunto.
+    for (let index = 0; catalog.some((entry) => index < entry.questions.length); index += 1) {
+      catalog.forEach((entry) => {
+        const question = entry.questions[index];
+        const key = question ? getQuestionHistoryKey(question) : '';
+        if (!key || state.usedKeys.has(key)) return;
+        state.usedKeys.add(key);
+        rest.push(question);
+      });
+    }
+    const questions = [...reservedOf(difficulty), ...spreadPvpQuestionAnswers(rest)]
+      .map((question) => ({ ...question, difficulty }));
+    if (!questions.length) continue;
+    state.plan.push({ difficulty, level, questions });
+    state.total += questions.length;
+  }
+  return state.plan;
+}
+
+// Pergunta do confronto extra de índice extraIndex (0 = o primeiro) e o nível de
+// dificuldade dela. Se a partida usar todas as perguntas da área, repete as do
+// último bloco.
+export function pickPvpGroupExtraQuestion(match = null, extraIndex = 0) {
+  const safeExtraIndex = Math.max(0, Math.floor(Number(extraIndex || 0)));
+  const plan = buildPvpExtraQuestionPlan(QUESTIONS, match, safeExtraIndex + 1);
+  if (!plan.length) return null;
+  let index = safeExtraIndex;
+  for (let segmentIndex = 0; segmentIndex < plan.length; segmentIndex += 1) {
+    const segment = plan[segmentIndex];
+    if (index < segment.questions.length) {
+      return { question: segment.questions[index], difficulty: segment.difficulty, level: segment.level };
+    }
+    index -= segment.questions.length;
+  }
+  const last = plan[plan.length - 1];
+  return {
+    question: last.questions[index % last.questions.length],
+    difficulty: last.difficulty,
+    level: last.level
+  };
 }
 
 export function getPvpTiebreakDifficultyLabel(difficulty = 'easy') {
@@ -1951,15 +2058,33 @@ export function buildRewardParticleBurst({ xp = 0, coins = 0, origin = null }) {
   return particles;
 }
 
-export function getPvpRewardsByDifficulty(difficulty, resultKey) {
+// XP e moedas do PvP pelo resultado e pela dificuldade. Com roundsPlayed (rodadas ou
+// confrontos da partida), soma o bônus de duração; rewardScale reduz a recompensa
+// pela colocação no Um contra todos.
+export function getPvpRewardsByDifficulty(difficulty, resultKey, roundsPlayed = 0, rewardScale = 1) {
   const safeDifficulty = normalizeDifficulty(difficulty || 'easy');
   const safeResult = String(resultKey || '').trim().toLowerCase();
   const xpRow = PVP_XP_REWARD[safeDifficulty] || PVP_XP_REWARD.easy;
   const coinsRow = PVP_COINS_REWARD[safeDifficulty] || PVP_COINS_REWARD.easy;
+  const scale = Math.max(0, Number.isFinite(Number(rewardScale)) ? Number(rewardScale) : 1);
+  const baseXp = Math.max(0, Math.round(Number(xpRow[safeResult] || 0) * scale));
+  const baseCoins = Math.max(0, Math.round(Number(coinsRow[safeResult] || 0) * scale));
   return {
-    xp: Math.max(0, Number(xpRow[safeResult] || 0)),
-    coins: Math.max(0, Number(coinsRow[safeResult] || 0))
+    xp: applyPvpDurationBonus(baseXp, roundsPlayed),
+    coins: applyPvpDurationBonus(baseCoins, roundsPlayed),
+    baseXp,
+    baseCoins,
+    roundsPlayed: Math.max(0, Math.floor(Number(roundsPlayed || 0))),
+    durationBonusPct: getPvpDurationBonusPct(roundsPlayed)
   };
+}
+
+// Linha do bônus de duração na tela de recompensa (vazia sem bônus).
+export function formatPvpDurationBonusLabel(reward = null, unit = 'rodadas') {
+  const pct = Math.max(0, Math.floor(Number(reward?.durationBonusPct || 0)));
+  if (!pct) return '';
+  const rounds = Math.max(0, Math.floor(Number(reward?.roundsPlayed || 0)));
+  return `Bônus de duração +${pct}%${rounds ? ` (${rounds} ${unit})` : ''}`;
 }
 
 export function getMatchPlayerAcceptState(matchRow, userId) {
@@ -3245,22 +3370,25 @@ export function pickPvpRoundQuestionsByConfig(questionsMap, config, count, exclu
   return selected.slice(0, safeCount);
 }
 
-// Nível de desempate de uma rodada do duelo: 0 nas rodadas normais, 1 na primeira
-// rodada extra, 2 na segunda...
-export function getPvpDuelRoundTiebreakLevel(roundNo = 1) {
-  return Math.max(0, Math.floor(Number(roundNo || 1)) - PVP_ROUNDS_PER_MATCH);
+// Rodada extra do duelo (desempate depois das rodadas normais).
+export function isPvpDuelTiebreakRound(roundNo = 1) {
+  return Math.floor(Number(roundNo || 1)) > PVP_ROUNDS_PER_MATCH;
 }
 
+// Dificuldade da rodada do duelo: a pergunta gravada guarda o nível do desempate.
 export function getPvpDuelRoundDifficulty(matchRow = null, roundNo = 1) {
+  const questions = Array.isArray(matchRow?.question_set) ? matchRow.question_set : [];
+  const question = questions[Math.max(1, Math.floor(Number(roundNo || 1))) - 1] || null;
   return getPvpTiebreakDifficulty(
     matchRow?.difficulty || matchRow?.category || 'easy',
-    getPvpDuelRoundTiebreakLevel(roundNo)
+    getPvpQuestionTiebreakLevel(question)
   );
 }
 
 // Completa as perguntas do duelo até a rodada pedida sem trocar as já gravadas.
 // Rodadas normais que faltarem seguem a sequência da partida; no desempate (empate
-// depois das rodadas normais) cada rodada extra sobe uma dificuldade.
+// depois das rodadas normais) as rodadas extras continuam na dificuldade escolhida
+// e só sobem quando acabam as perguntas dela na área, sem voltar a descer.
 export function extendPvpQuestionSetIfNeeded(matchRow, nextRoundNo, options = {}) {
   const targetRoundNo = Math.max(1, Number(nextRoundNo || 1));
   const currentSet = Array.isArray(matchRow?.question_set)
@@ -3291,25 +3419,32 @@ export function extendPvpQuestionSetIfNeeded(matchRow, nextRoundNo, options = {}
     || ''
   ).trim();
 
+  const ladder = getPvpDifficultyLadder(difficulty);
   while (nextSet.length < targetRoundNo) {
     const roundNo = nextSet.length + 1;
-    const tiebreakLevel = getPvpDuelRoundTiebreakLevel(roundNo);
-    const roundDifficulty = getPvpTiebreakDifficulty(difficulty, tiebreakLevel);
-    const picked = pickPvpRoundQuestionsByConfig(
-      QUESTIONS,
-      {
-        language: safeConfig.language,
-        topic: safeConfig.topic,
-        difficulty: roundDifficulty,
-        area: safeArea
-      },
-      1,
-      nextSet,
-      options
-    );
+    const isTiebreakRound = isPvpDuelTiebreakRound(roundNo);
+    let tiebreakLevel = isTiebreakRound
+      ? Math.min(ladder.length - 1, getPvpQuestionTiebreakLevel(nextSet[nextSet.length - 1]))
+      : 0;
+    let picked = [];
+    for (; tiebreakLevel < ladder.length; tiebreakLevel += 1) {
+      picked = pickPvpRoundQuestionsByConfig(
+        QUESTIONS,
+        {
+          language: safeConfig.language,
+          topic: safeConfig.topic,
+          difficulty: ladder[tiebreakLevel],
+          area: safeArea
+        },
+        1,
+        nextSet,
+        options
+      );
+      if (picked.length || !isTiebreakRound) break;
+    }
     if (!picked.length) break;
     nextSet.push(tiebreakLevel > 0
-      ? { ...picked[0], difficulty: roundDifficulty, tiebreak_level: tiebreakLevel }
+      ? { ...picked[0], difficulty: ladder[tiebreakLevel], tiebreak_level: tiebreakLevel }
       : picked[0]);
   }
 

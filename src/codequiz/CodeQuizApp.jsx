@@ -128,7 +128,6 @@ import {
   PVP_GROUP_MODE_ELIMINATION,
   PVP_GROUP_MODE_TEAM,
   PVP_GROUP_PRESENCE_HEARTBEAT_MS,
-  PVP_GROUP_RESULT_BOT_EMOJI_WINDOW_MS,
   advancePvpGroupMatch,
   applyPvpGroupMatchBotRewards,
   finalizePvpGroupBattle,
@@ -150,7 +149,6 @@ import {
   pickPvpGroupBotEmojiReplies,
   planPvpGroupBotAmbientEmoji,
   planPvpGroupBotEliminationEmojis,
-  planPvpGroupBotFinalEmojis,
   planPvpGroupBotRoundEmojis,
   releasePvpGroupBots,
   removePvpGroupRoomMembers,
@@ -343,7 +341,6 @@ import {
   getPvpAnswerTargetRoundNo,
   getPvpDifficultyFromPoints,
   getPvpDuelRoundDifficulty,
-  getPvpDuelRoundTiebreakLevel,
   getPvpEliminationActiveMemberIds,
   getPvpEliminationActivePair,
   getPvpEliminationMemberById,
@@ -921,7 +918,6 @@ export default function CodeQuizApp() {
   const pvpGroupBotEmojiReplyAtRef = useRef(0);
   const pvpGroupBotEmojiChatAtRef = useRef(0);
   const pvpGroupBotEmojiLastAtRef = useRef(0);
-  const pvpGroupResultScreenModeRef = useRef('');
   const pvpGroupAmbientAnswersRef = useRef({ team: [], elimination: [] });
   const swRegRef = useRef(null);
   const waitingWorkerRef = useRef(null);
@@ -1350,7 +1346,7 @@ export default function CodeQuizApp() {
     });
   };
 
-  // Perguntas do desempate dos modos em grupo (uma dificuldade acima a cada nível).
+  // Primeiras perguntas do desempate dos modos em grupo, por dificuldade (a escolhida e as acima).
   const resolvePvpGroupTiebreakQuestionSets = ({
     areaId = '',
     difficulty = 'easy',
@@ -2079,18 +2075,13 @@ export default function CodeQuizApp() {
   }, [pvpEliminationMatch?.id, pvpEliminationMatch?.updated_at, pvpEliminationMatch?.status, pvpClockMs]);
 
   // Emojis nas partidas 2x2 e Um contra todos: canal aberto enquanto há confronto ou
-  // resultado na tela, inclusive na tela de resultado final da partida.
-  const pvpGroupResultScreenMode = screen === 'pvp-team-result'
-    ? PVP_GROUP_MODE_TEAM
-    : (screen === 'pvp-elimination-result' ? PVP_GROUP_MODE_ELIMINATION : '');
-  pvpGroupResultScreenModeRef.current = pvpGroupResultScreenMode;
+  // resultado de confronto na tela. Na tela final (coletar recompensas) ninguém manda
+  // emoji, nem os bots.
   pvpGroupAmbientAnswersRef.current = { team: pvpTeamAnswers, elimination: pvpEliminationAnswers };
   const pvpTeamMatchStatus = String(pvpTeamMatch?.status || '').trim().toLowerCase();
   const pvpEliminationMatchStatus = String(pvpEliminationMatch?.status || '').trim().toLowerCase();
-  const pvpTeamEmojiChannelOpen = ['active', 'round_result'].includes(pvpTeamMatchStatus)
-    || (pvpTeamMatchStatus === 'finished' && pvpGroupResultScreenMode === PVP_GROUP_MODE_TEAM);
-  const pvpEliminationEmojiChannelOpen = ['active', 'round_result', 'elimination_result'].includes(pvpEliminationMatchStatus)
-    || (pvpEliminationMatchStatus === 'finished' && pvpGroupResultScreenMode === PVP_GROUP_MODE_ELIMINATION);
+  const pvpTeamEmojiChannelOpen = ['active', 'round_result'].includes(pvpTeamMatchStatus);
+  const pvpEliminationEmojiChannelOpen = ['active', 'round_result', 'elimination_result'].includes(pvpEliminationMatchStatus);
 
   useEffect(() => {
     const matchId = String(pvpTeamMatch?.id || '').trim();
@@ -2136,24 +2127,6 @@ export default function CodeQuizApp() {
       : planPvpGroupBotRoundEmojis(match, PVP_GROUP_MODE_ELIMINATION);
     queuePvpGroupBotEmojiPlan(PVP_GROUP_MODE_ELIMINATION, match.id, plan);
   }, [pvpEliminationMatch?.id, pvpEliminationMatch?.status, pvpEliminationMatch?.result_battle_no, authUser?.uid]);
-
-  // Tela de resultado final: os bots comemoram ou cumprimentam assim que ela abre.
-  useEffect(() => {
-    const mode = pvpGroupResultScreenMode;
-    if (!mode) return;
-    const match = mode === PVP_GROUP_MODE_TEAM ? pvpTeamMatch : pvpEliminationMatch;
-    if (String(match?.status || '').trim().toLowerCase() !== 'finished' || !match?.id) return;
-    if (!isPvpGroupEmojiDriver(mode, match)) return;
-    if (!rememberPvpGroupBotEmojiKey(`${match.id}_final`)) return;
-    queuePvpGroupBotEmojiPlan(mode, match.id, planPvpGroupBotFinalEmojis(match, mode));
-  }, [
-    pvpGroupResultScreenMode,
-    pvpTeamMatch?.id,
-    pvpTeamMatch?.status,
-    pvpEliminationMatch?.id,
-    pvpEliminationMatch?.status,
-    authUser?.uid
-  ]);
 
   // Conversa de fundo dos bots enquanto o canal de emojis está aberto.
   useEffect(() => {
@@ -6688,12 +6661,12 @@ export default function CodeQuizApp() {
     if (mode === PVP_GROUP_MODE_TEAM || mode === PVP_GROUP_MODE_ELIMINATION) {
       const match = mode === PVP_GROUP_MODE_TEAM ? pvpTeamMatchRef.current : pvpEliminationMatchRef.current;
       const status = String(match?.status || '').trim().toLowerCase();
+      // Partida encerrada (tela de coletar recompensas): canal fechado, inclusive para os
+      // emojis de bot que já estavam agendados.
       const openStatuses = mode === PVP_GROUP_MODE_TEAM
         ? ['active', 'round_result']
         : ['active', 'round_result', 'elimination_result'];
-      // Na tela de resultado final o canal continua aberto para comemorar e cumprimentar.
-      const onResultScreen = status === 'finished' && pvpGroupResultScreenModeRef.current === mode;
-      return String(match?.id || '').trim() === safeMatchId && (openStatuses.includes(status) || onResultScreen);
+      return String(match?.id || '').trim() === safeMatchId && openStatuses.includes(status);
     }
     const current = pvpStateRef.current;
     const currentMatchId = String(current?.match?.id || current?.matchId || '').trim();
@@ -6983,17 +6956,13 @@ export default function CodeQuizApp() {
   }
 
   // Conversa de fundo dos bots: a cada tique, quem conduz os bots sorteia se algum deles
-  // manda um emoji agora (durante o confronto, no resultado e na tela final).
+  // manda um emoji agora (durante o confronto e no resultado de cada confronto).
   function tickPvpGroupBotAmbientEmoji(mode, answers = []) {
     const match = getPvpGroupEmojiMatch(mode);
     if (!match?.id || !isPvpEmojiChannelOpen(mode, match.id) || !isPvpGroupEmojiDriver(mode, match)) return;
     const nowMs = Date.now();
     if (nowMs - pvpGroupBotEmojiLastAtRef.current < 2500) return;
     const phase = String(match.status || '').trim().toLowerCase();
-    if (phase === 'finished') {
-      const endedAtMs = Math.max(0, Number(match.ended_at_ms || toMillis(match.ended_at) || 0));
-      if (endedAtMs && nowMs - endedAtMs > PVP_GROUP_RESULT_BOT_EMOJI_WINDOW_MS) return;
-    }
     const battleNo = Math.max(1, Number(match.battle_no || 1));
     const answeredIds = (Array.isArray(answers) ? answers : [])
       .filter((row) => Math.max(1, Number(row?.battle_no || battleNo)) === battleNo && Number(row?.answer_idx ?? -1) >= 0)
@@ -11020,7 +10989,9 @@ export default function CodeQuizApp() {
       matchId,
       points: pvpPointsGain,
       xp: totalRewardXp,
-      coins: totalRewardCoins
+      coins: totalRewardCoins,
+      roundsPlayed: outcome.roundsPlayed,
+      durationBonusPct: outcome.durationBonusPct
     });
 
   }
@@ -11110,6 +11081,8 @@ export default function CodeQuizApp() {
       points: pvpPointsGain,
       xp: totalRewardXp,
       coins: totalRewardCoins,
+      roundsPlayed: outcome.roundsPlayed,
+      durationBonusPct: outcome.durationBonusPct,
       placement,
       placementLabel
     });
@@ -11230,7 +11203,12 @@ export default function CodeQuizApp() {
       matchRow,
       userId: authUser.uid
     });
-    const rewards = getPvpRewardsByDifficulty(matchRow?.difficulty || pvpConfig?.difficulty || 'easy', result);
+    // Bônus de duração pelas rodadas jogadas (desempates deixam a partida mais longa).
+    const rewards = getPvpRewardsByDifficulty(
+      matchRow?.difficulty || pvpConfig?.difficulty || 'easy',
+      result,
+      decisiveRoundNo
+    );
 
     const postBattleProgress = normalizeProgress({
       ...progress,
@@ -11273,7 +11251,8 @@ export default function CodeQuizApp() {
       });
       const botRewards = getPvpRewardsByDifficulty(
         matchRow?.difficulty || pvpConfig?.difficulty || 'easy',
-        botResult
+        botResult,
+        decisiveRoundNo
       );
       await applyPvpOutcomeToUserStats(botUserId, {
         result: botResult,
@@ -11308,7 +11287,9 @@ export default function CodeQuizApp() {
         subtitle: 'Você recebeu compensação por abandono do adversário. Toque em coletar para sair da partida.',
         points: pvpPointsGain,
         xp: totalRewardXp,
-        coins: totalRewardCoins
+        coins: totalRewardCoins,
+        roundsPlayed: rewards.roundsPlayed,
+        durationBonusPct: rewards.durationBonusPct
       });
       return;
     }
@@ -11319,7 +11300,9 @@ export default function CodeQuizApp() {
       matchId,
       points: pvpPointsGain,
       xp: totalRewardXp,
-      coins: totalRewardCoins
+      coins: totalRewardCoins,
+      roundsPlayed: rewards.roundsPlayed,
+      durationBonusPct: rewards.durationBonusPct
     });
 
   }
@@ -13426,7 +13409,7 @@ export default function CodeQuizApp() {
     botAnswerRoundKeyRef.current = roundKey;
 
     const botStrength = getBotStrengthFromMatchRow(match, botUserId);
-    // No desempate o bot encara a mesma dificuldade maior que o jogador.
+    // No desempate o bot encara a mesma dificuldade da pergunta do jogador.
     const matchDifficulty = getPvpDuelRoundDifficulty(match, roundNo);
     const totalRounds = Math.max(1, Number(match.total_rounds || PVP_ROUNDS_PER_MATCH));
     const player1Id = String(match.player1_user_id || '').trim();
@@ -14392,7 +14375,7 @@ export default function CodeQuizApp() {
   const pvpRoundPhaseLabel = pvpIsEliminationRound
     ? 'Eliminatória'
     : (pvpIsFinalRound ? 'Rodada final' : '');
-  // Desempate: cada rodada extra vem uma dificuldade acima (a pergunta guarda o nível).
+  // Desempate: a dificuldade só sobe quando acabam as perguntas da atual (a pergunta guarda o nível).
   const getPvpDuelQuestionTiebreakLabel = (question) => (
     Number(question?.tiebreak_level || 0) > 0
       ? getPvpTiebreakDifficultyLabel(question?.difficulty)
@@ -14517,7 +14500,7 @@ export default function CodeQuizApp() {
   const pvpTeamIsActivePlayer = String(authUser?.uid || '').trim() === String(pvpTeamActivePair?.red?.user_id || '').trim()
     || String(authUser?.uid || '').trim() === String(pvpTeamActivePair?.blue?.user_id || '').trim();
   const pvpTeamCurrentBattleLabel = getPvpTeamBattleDisplayLabel(pvpTeamBattleEntry);
-  // Confrontos extras do desempate sobem uma dificuldade cada.
+  // Confrontos extras só sobem de dificuldade quando acabam as perguntas da atual.
   const getPvpGroupTiebreakLabel = (match, battleNo) => (
     match && getPvpGroupBattleTiebreakLevel(match, battleNo) > 0
       ? getPvpTiebreakDifficultyLabel(getPvpGroupBattleDifficulty(match, battleNo))
@@ -15204,21 +15187,6 @@ export default function CodeQuizApp() {
   const pvpEmojiCooldownLabel = pvpEmojiCooldownActive
     ? `${(pvpEmojiCooldownRemainingMs / 1000).toFixed(1)}s`
     : '';
-  // Tela de resultado final: todos veem as reações; só quem ainda está na partida manda.
-  const buildPvpGroupResultEmojis = (mode, match, channelOpen) => {
-    const myUserId = String(authUser?.uid || '').trim();
-    const canSend = channelOpen && !!myUserId
-      && getPvpGroupMatchMemberIds(match, mode).includes(myUserId)
-      && !getPvpGroupMatchGoneIds(match, mode).includes(myUserId);
-    return {
-      list: pvpBattleEmojis,
-      onSend: canSend ? (emoji) => sendPvpGroupEmoji(mode, emoji) : null,
-      cooldownActive: pvpEmojiCooldownActive,
-      cooldownPct: pvpEmojiCooldownFillPct,
-      cooldownLabel: pvpEmojiCooldownLabel,
-      fx: pvpGroupEmojiFx
-    };
-  };
   const pvpAreaSelectionLocked = (
     pvpState.status === 'queueing'
     || pvpState.status === 'pending_accept'
@@ -15960,7 +15928,6 @@ export default function CodeQuizApp() {
           <PvpEliminationResultScreen vm={{
             buildCosmeticSnapshot,
             collectPvpEliminationResultRewards,
-            emojis: buildPvpGroupResultEmojis(PVP_GROUP_MODE_ELIMINATION, pvpEliminationMatch, pvpEliminationEmojiChannelOpen),
             pvpEliminationMyUserId,
             pvpEliminationPlacementLabel,
             pvpEliminationResultKey,
@@ -15980,7 +15947,6 @@ export default function CodeQuizApp() {
           <PvpTeamResultScreen vm={{
             buildCosmeticSnapshot,
             collectPvpTeamResultRewards,
-            emojis: buildPvpGroupResultEmojis(PVP_GROUP_MODE_TEAM, pvpTeamMatch, pvpTeamEmojiChannelOpen),
             pvpTeamBlueMembers,
             pvpTeamMatch,
             pvpTeamMySide,

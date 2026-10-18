@@ -290,5 +290,16 @@ button.row:hover:not(:disabled) {
   width: 10px;
   height: 14px;
   border-radius: 2px;
-  animation: cq-confetti-fall var(--cq-confetti-duration, 2.6s) cubic-bezier(0.25, 0.6, 0.4, 1) forwards;
+  /* Escondido fora da animação: nunca fica parado no topo da tela */
+  opacity: 0;
+  /* "both": durante o atraso de cada pedaço ele já espera acima da tela */
+  animation: confettiFall var(--cq-confetti-duration, 2.6s) cubic-bezier(0.25, 0.6, 0.4, 1) both;
+}
+
+/* Keyframes no próprio módulo: o CSS Modules renomeia o nome usado em "animation",
+   então uma regra global com o mesmo nome não seria encontrada */
+@keyframes confettiFall {
+  0% { transform: translate3d(0, -20vh, 0) rotate(0deg); opacity: 1; }
+  88% { opacity: 0.9; }
+  100% { transform: translate3d(var(--cq-confetti-x, 0), 105vh, 0) rotate(var(--cq-confetti-r, 540deg)); opacity: 0; }
 }

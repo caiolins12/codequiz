@@ -11,6 +11,50 @@
   padding-bottom: var(--cq-space-2);
 }
 
+/* Celular: as três recompensas lado a lado (ícone ao lado do valor, rótulo embaixo),
+   para o modal de coletar caber sem rolagem */
+@media (max-width: 767px) {
+  .rewardGrid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .rewardGrid > div {
+    display: grid;
+    grid-template-columns: auto auto;
+    grid-template-areas: 'icon value' 'label label';
+    justify-content: center;
+    align-items: center;
+    gap: 2px 6px;
+    padding: var(--cq-space-2) 4px;
+    text-align: center;
+  }
+
+  .rewardGrid > div > span:first-child {
+    grid-area: icon;
+    width: 26px;
+    height: 26px;
+    border-radius: 8px;
+  }
+
+  .rewardGrid > div > span:first-child svg {
+    width: 16px;
+    height: 16px;
+  }
+
+  .rewardGrid > div > span:last-child {
+    display: contents;
+  }
+
+  .rewardGrid > div > span:last-child > span:first-child {
+    grid-area: value;
+  }
+
+  .rewardGrid > div > span:last-child > span:last-child {
+    grid-area: label;
+    letter-spacing: 0;
+  }
+}
+
 .text {
   color: var(--cq-text-2);
   font-weight: 600;
