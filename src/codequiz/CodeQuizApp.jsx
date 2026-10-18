@@ -909,6 +909,7 @@ export default function CodeQuizApp() {
   const audioContextRef = useRef(null);
   const masterGainRef = useRef(null);
   const musicGainRef = useRef(null);
+  const musicGainTargetRef = useRef(null);
   const sfxGainRef = useRef(null);
   const musicLoopTimerRef = useRef(null);
   const musicTransitionTimerRef = useRef(null);
@@ -4551,14 +4552,39 @@ export default function CodeQuizApp() {
     }) : null;
   }
 
-  function syncPvpMusic(force = false) {
+  function syncPvpMusic(force = false, updateVolume = false) {
     const playback = getPvpMusicPlayback();
     if (!playback || !audioSettingsRef.current.musicEnabled) return;
+    if (musicSkipBusyRef.current) return;
     if (force || !musicLoopTimerRef.current || musicModeRef.current !== 'battle'
       || musicPlaybackKeyRef.current !== playback.key) {
-      startMusicLoop('battle');
+      if (musicAutoSkipTimerRef.current) {
+        clearTimeout(musicAutoSkipTimerRef.current);
+        musicAutoSkipTimerRef.current = null;
+      }
+      if (musicTransitionTimerRef.current) {
+        clearTimeout(musicTransitionTimerRef.current);
+        musicTransitionTimerRef.current = null;
+      }
+      const switchTrack = () => {
+        musicSkipSwitchTimerRef.current = null;
+        musicSkipBusyRef.current = false;
+        if (!audioSettingsRef.current.musicEnabled || !getPvpMusicPlayback()) return;
+        // A posição é recalculada depois do fade, seguindo o relógio comum.
+        startMusicLoop('battle');
+        setMusicGain(getMusicVolumeLevel(), MUSIC_SKIP_FADE_IN_MS);
+      };
+      if (!musicLoopTimerRef.current) {
+        switchTrack();
+        return;
+      }
+      musicSkipBusyRef.current = true;
+      setMusicGain(0, MUSIC_SKIP_FADE_OUT_MS);
+      musicSkipSwitchTimerRef.current = window.setTimeout(switchTrack, MUSIC_SKIP_SWITCH_DELAY_MS);
+      return;
     }
-    setMusicGain(getMusicVolumeLevel(), 240);
+    // As checagens periódicas não interrompem a rampa de entrada da nova faixa.
+    if (updateVolume) setMusicGain(getMusicVolumeLevel(), 240);
   }
 
   function setMusicGain(target, durationMs = 450) {
@@ -4567,6 +4593,9 @@ export default function CodeQuizApp() {
     if (!ctx || !musicGain) return;
     const now = ctx.currentTime;
     const safeTarget = Math.max(0, Math.min(1, Number(target ?? 0)));
+    // Configurações de SFX e snapshots não devem encurtar um fade já em curso.
+    if (musicGainTargetRef.current === safeTarget) return;
+    musicGainTargetRef.current = safeTarget;
     const durationSec = Math.max(0.06, Number(durationMs || 0) / 1000);
     musicGain.gain.cancelScheduledValues(now);
     musicGain.gain.setValueAtTime(musicGain.gain.value, now);
@@ -4918,11 +4947,11 @@ export default function CodeQuizApp() {
     }
     musicSkipBusyRef.current = false;
     if (musicTransitionTimerRef.current) clearTimeout(musicTransitionTimerRef.current);
-    setMusicGain(0, 420);
+    setMusicGain(0, MUSIC_SKIP_FADE_OUT_MS);
     musicTransitionTimerRef.current = setTimeout(() => {
       startMusicLoop(safeMode);
-      setMusicGain(nextVolume, 650);
-    }, 430);
+      setMusicGain(getMusicVolumeLevel(), MUSIC_SKIP_FADE_IN_MS);
+    }, MUSIC_SKIP_SWITCH_DELAY_MS);
   }
 
   function playSfx(type = 'click', retryCount = 0) {
@@ -5229,7 +5258,7 @@ export default function CodeQuizApp() {
           }
         }
 
-        if (key === 'musicVolume') {
+        if (key === 'musicVolume' && !musicSkipBusyRef.current && !musicTransitionTimerRef.current) {
           const nextMusic = next.musicEnabled ? getMusicVolumeLevel(next.musicVolume) : 0;
           setMusicGain(nextMusic, 140);
         }
@@ -6444,6 +6473,7 @@ export default function CodeQuizApp() {
   }, [authUser?.uid, profile?.id, progressReady, shopReady, booting, screen]);
 
   useEffect(() => {
+    const previousPvpMusicSession = pvpMusicSessionRef.current;
     pvpMusicSessionRef.current = pvpMusicMatchId && pvpMusicStartedAtMs > 0
       ? { matchId: pvpMusicMatchId, startedAtMs: pvpMusicStartedAtMs }
       : null;
@@ -6468,11 +6498,11 @@ export default function CodeQuizApp() {
     }
 
     if (getPvpMusicPlayback()) {
-      syncPvpMusic();
+      syncPvpMusic(false, true);
       return;
     }
 
-    if (musicPlaybackKeyRef.current) {
+    if (musicPlaybackKeyRef.current || previousPvpMusicSession) {
       applyMusicMode(nextMode, true);
       return;
     }
@@ -6488,7 +6518,9 @@ export default function CodeQuizApp() {
       return;
     }
 
-    setMusicGain(getMusicVolumeLevel(audioSettings.musicVolume), 240);
+    if (!musicSkipBusyRef.current && !musicTransitionTimerRef.current) {
+      setMusicGain(getMusicVolumeLevel(audioSettings.musicVolume), 240);
+    }
   }, [
     audioSettings.musicEnabled,
     audioSettings.musicVolume,
