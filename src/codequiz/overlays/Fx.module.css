@@ -1,4 +1,4 @@
-/* Efeitos de recompensa: partículas e cartão do passe */
+/* Partículas de recompensa */
 .particles {
   position: fixed;
   inset: 0;
@@ -41,60 +41,6 @@
     opacity: 0;
     transform: translate3d(calc(var(--dx, 0px) + var(--drift, 0px)), var(--dy, -260px), 0) scale(1.02) rotate(calc(var(--rotation, 0deg) + 8deg));
   }
-}
-
-.claim {
-  position: fixed;
-  top: calc(var(--cq-safe-top) + 16px);
-  left: 50%;
-  z-index: var(--cq-z-toast);
-  display: grid;
-  justify-items: center;
-  gap: var(--cq-space-2);
-  width: min(calc(100% - 32px), 420px);
-  padding: var(--cq-space-4) var(--cq-space-5);
-  border-radius: var(--cq-radius-xl);
-  background:
-    radial-gradient(circle at 50% 0%, rgba(255, 210, 74, 0.35), transparent 60%),
-    var(--cq-bg-2);
-  box-shadow: var(--cq-shadow-pop), inset 0 0 0 2px rgba(255, 210, 74, 0.6);
-  text-align: center;
-  transform: translateX(-50%);
-  animation: fx-claim 0.5s var(--cq-ease-bounce) both;
-  pointer-events: none;
-}
-
-.claimKicker {
-  color: var(--cq-gold);
-  font-size: var(--cq-text-xs);
-  font-weight: 900;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-}
-
-.claimTitle {
-  display: flex;
-  align-items: center;
-  gap: var(--cq-space-2);
-  font-family: var(--cq-font-display);
-  font-size: var(--cq-text-xl);
-  font-weight: 700;
-}
-
-.claimIcon {
-  font-size: 26px;
-}
-
-.claimChips {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 6px;
-}
-
-@keyframes fx-claim {
-  0% { opacity: 0; transform: translate(-50%, -16px) scale(0.92); }
-  100% { opacity: 1; transform: translate(-50%, 0) scale(1); }
 }
 
 @media (prefers-reduced-motion: reduce) {

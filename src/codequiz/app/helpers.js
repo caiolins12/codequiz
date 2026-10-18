@@ -3236,7 +3236,6 @@ export const HOME_TOUR_STORAGE_PREFIX = 'codequiz_home_tour_seen_v1';
 export const LEAGUE_SNAPSHOT_STORAGE_PREFIX = 'codequiz_league_snapshot_v1';
 export const LEAGUE_TRANSITION_VISIBLE_MS = 4200;
 export const LEAGUE_ORDER = Object.freeze(['bronze', 'silver', 'gold', 'platinum', 'diamond']);
-export const PASS_CLAIM_FX_VISIBLE_MS = 2400;
 export const PASS_CLAIM_STAGE_FLASH_MS = 1700;
 export const THEME_INTRO_PVE_DURATION_MS = 3200;
 export const THEME_INTRO_PVP_DURATION_MS = 2800;

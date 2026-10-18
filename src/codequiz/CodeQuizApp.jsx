@@ -226,7 +226,6 @@ import {
   MUSIC_SKIP_FADE_OUT_MS,
   MUSIC_SKIP_SWITCH_DELAY_MS,
   NICKNAME_RULE_COPY,
-  PASS_CLAIM_FX_VISIBLE_MS,
   PASS_CLAIM_STAGE_FLASH_MS,
   PRELOAD_RUNTIME_CHALLENGE_INTERVAL_MS,
   PRELOAD_RUNTIME_MIN_INTERVAL_MS,
@@ -376,7 +375,6 @@ import {
   getPvpTeamRoomHostUserId,
   getPvpTeamRoomLaunchCheck,
   getPvpTeamRoomReadyMemberIds,
-  getPvpTeamSideColorLabel,
   getPvpTeamUserSide,
   getQueueDisconnectGraceMs,
   getTopicEmojiById,
@@ -477,7 +475,6 @@ import PvpEmojiPickerModal from './overlays/PvpEmojiPickerModal';
 import RewardCollectModal from './overlays/RewardCollectModal';
 import PvpOpponentLeftOverlay from './overlays/PvpOpponentLeftOverlay';
 import PvpCompensationModal from './overlays/PvpCompensationModal';
-import PassClaimFx from './overlays/PassClaimFx';
 import RewardParticles from './overlays/RewardParticles';
 
 export default function CodeQuizApp() {
@@ -609,15 +606,6 @@ export default function CodeQuizApp() {
   const [rewardFxParticles, setRewardFxParticles] = useState([]);
   const [rewardCollecting, setRewardCollecting] = useState(false);
   const [passClaimingStageId, setPassClaimingStageId] = useState('');
-  const [passClaimFx, setPassClaimFx] = useState({
-    visible: false,
-    stageId: '',
-    icon: '🏆',
-    title: '',
-    xp: 0,
-    coins: 0,
-    cosmetics: []
-  });
   const [passRecentClaimStageId, setPassRecentClaimStageId] = useState('');
   const [passFocusedStageId, setPassFocusedStageId] = useState('');
 
@@ -899,7 +887,6 @@ export default function CodeQuizApp() {
   const audioUnlockedRef = useRef(false);
   const rewardFxTimeoutRef = useRef(null);
   const rewardSfxTimersRef = useRef([]);
-  const passClaimFxTimerRef = useRef(null);
   const passClaimStageFlashTimerRef = useRef(null);
   const pvpAreaPreferenceLoadedRef = useRef('');
   const botAnswerTimerRef = useRef(null);
@@ -3164,7 +3151,6 @@ export default function CodeQuizApp() {
               googleSignInRef.current = false;
               setGoogleSignInBusy(false);
               setAuthTransition({ visible: false, title: '', subtitle: '' });
-              showToast('Login realizado com sucesso.');
               playSfx('success');
             };
 
@@ -5183,48 +5169,17 @@ export default function CodeQuizApp() {
     }
   }
 
-  function clearPassClaimFxTimers() {
-    if (passClaimFxTimerRef.current && typeof window !== 'undefined') {
-      window.clearTimeout(passClaimFxTimerRef.current);
-    }
-    passClaimFxTimerRef.current = null;
+  function highlightClaimedPassStage(stageId = '') {
     if (passClaimStageFlashTimerRef.current && typeof window !== 'undefined') {
       window.clearTimeout(passClaimStageFlashTimerRef.current);
     }
     passClaimStageFlashTimerRef.current = null;
-  }
-
-  function triggerPassClaimFeedback({
-    stageId = '',
-    icon = '🏆',
-    title = 'Recompensa do passe coletada',
-    xp = 0,
-    coins = 0,
-    cosmetics = []
-  }) {
     const safeStageId = String(stageId || '').trim();
-    const safeCosmetics = Array.isArray(cosmetics)
-      ? cosmetics.map((value) => String(value || '').trim()).filter(Boolean)
-      : [];
-    setPassClaimFx({
-      visible: true,
-      stageId: safeStageId,
-      icon: String(icon || '').trim() || '🏆',
-      title: String(title || '').trim() || 'Recompensa do passe coletada',
-      xp: Math.max(0, Number(xp || 0)),
-      coins: Math.max(0, Number(coins || 0)),
-      cosmetics: safeCosmetics
-    });
     if (safeStageId) {
       setPassRecentClaimStageId(safeStageId);
     }
 
-    clearPassClaimFxTimers();
     if (typeof window !== 'undefined') {
-      passClaimFxTimerRef.current = window.setTimeout(() => {
-        setPassClaimFx((prev) => ({ ...prev, visible: false }));
-        passClaimFxTimerRef.current = null;
-      }, PASS_CLAIM_FX_VISIBLE_MS);
       passClaimStageFlashTimerRef.current = window.setTimeout(() => {
         setPassRecentClaimStageId('');
         passClaimStageFlashTimerRef.current = null;
@@ -5266,7 +5221,6 @@ export default function CodeQuizApp() {
         setPvpCompensation(null);
         resetPvpState();
         setScreen('home');
-        showToast('Recompensas PvP coletadas.');
         playSfx('success');
       }
     });
@@ -5286,7 +5240,6 @@ export default function CodeQuizApp() {
         setPvpRewardCollecting(false);
         resetPvpState();
         setScreen('home');
-        showToast('Compensação coletada.');
         playSfx('success');
       }
     });
@@ -5313,7 +5266,6 @@ export default function CodeQuizApp() {
           // Os bots já foram liberados ao aplicar o resultado da partida.
           removePvpGroupRoomMembers(PVP_GROUP_MODE_TEAM, roomId, [userId], { releaseBots: false }).catch(() => null);
         }
-        showToast('Recompensas da equipe coletadas.');
         playSfx('success');
       }
     });
@@ -5358,7 +5310,6 @@ export default function CodeQuizApp() {
         if (roomId && userId) {
           removePvpGroupRoomMembers(PVP_GROUP_MODE_ELIMINATION, roomId, [userId], { releaseBots: false }).catch(() => null);
         }
-        showToast('Recompensas da eliminatória coletadas.');
         playSfx('success');
       }
     });
@@ -5525,11 +5476,6 @@ export default function CodeQuizApp() {
       if (updated && typeof updated === 'object') {
         setBotArenaDaemonControlState(updated);
       }
-      if (safeMode === 'quiz') {
-        showToast(safeEnabled ? 'Automação de quiz dos bots ativada.' : 'Automação de quiz dos bots desativada.');
-      } else {
-        showToast(safeEnabled ? 'Automação de batalhas PvP dos bots ativada.' : 'Automação de batalhas PvP dos bots desativada.');
-      }
       playSfx('success');
     } catch (error) {
       console.error('set bot arena control failed:', error);
@@ -5552,7 +5498,6 @@ export default function CodeQuizApp() {
         actorUserId: String(authUser?.uid || '').trim()
       }).catch(() => null);
       await refreshAdminMetrics();
-      showToast('Operação admin concluída.');
       playSfx('success');
     } catch (error) {
       console.error('admin cleanup failed:', error);
@@ -5615,12 +5560,10 @@ export default function CodeQuizApp() {
     }
 
     if (safeChoice === 'accepted') {
-      showToast('Cookies habilitados para melhorar a experiência.');
       playSfx('success');
       return;
     }
 
-    showToast('Somente cookies essenciais foram mantidos.');
     playSfx('notify');
   }
 
@@ -6223,7 +6166,6 @@ export default function CodeQuizApp() {
       if (status === 'active' || status === 'round_result') {
         if (!options.duelStillOpen) return;
         await attachToMatch(matchId);
-        showToast('Você voltou para a partida em andamento.');
         return;
       }
       if (status !== 'finished' || isPvpMatchWithoutResultScreen(row)) return;
@@ -6263,7 +6205,6 @@ export default function CodeQuizApp() {
         setPvpTeamMatchId(matchId);
         setPvpTeamMatch(row);
         setScreen('pvp-team');
-        showToast('Você voltou para a batalha em andamento.');
         return;
       }
       if (status !== 'finished' || (processed && !savedReward)) return;
@@ -6297,7 +6238,6 @@ export default function CodeQuizApp() {
           message: ''
         });
         setScreen('pvp-elimination');
-        showToast('Você voltou para a eliminatória em andamento.');
         return;
       }
       if (status !== 'finished' || (processed && !savedReward)) return;
@@ -6374,10 +6314,6 @@ export default function CodeQuizApp() {
       clearBotReactionTimers();
       clearMusicLoop();
       clearRewardSfxTimers();
-      if (passClaimFxTimerRef.current && typeof window !== 'undefined') {
-        window.clearTimeout(passClaimFxTimerRef.current);
-        passClaimFxTimerRef.current = null;
-      }
       if (passClaimStageFlashTimerRef.current && typeof window !== 'undefined') {
         window.clearTimeout(passClaimStageFlashTimerRef.current);
         passClaimStageFlashTimerRef.current = null;
@@ -6550,7 +6486,6 @@ export default function CodeQuizApp() {
     setPvpBattleEmojis(next);
     setPvpEmojiPickerOpen(false);
     setPvpEmojiDraftWarning('');
-    showToast('Emojis da partida atualizados.');
     playSfx('success');
   }
 
@@ -7556,7 +7491,6 @@ export default function CodeQuizApp() {
       setPvpEliminationRooms([]);
       setPvpEliminationRoomsLoading(false);
       if (!silent) {
-        showToast('Você saiu da fila.');
         playSfx('notify');
       }
     } finally {
@@ -7691,7 +7625,6 @@ export default function CodeQuizApp() {
       await removePvpGroupRoomMembers(PVP_GROUP_MODE_ELIMINATION, roomId, [userId], {
         reason: 'match_refused'
       }).catch(() => null);
-      showToast('Partida recusada. Retornando para a fila...');
       playSfx('notify');
     } catch (error) {
       console.error('reject elimination invite failed:', error);
@@ -8436,7 +8369,6 @@ export default function CodeQuizApp() {
       }
       enterPvpTeamRoom(joined, passwordHash);
       setPvpTeamRoom(joined);
-      showToast(`Você entrou automaticamente no time ${getPvpTeamSideColorLabel(nextSide)}.`);
       playSfx('success');
     } catch (error) {
       console.error('confirm team room entry failed:', error);
@@ -8466,7 +8398,6 @@ export default function CodeQuizApp() {
         throw new Error('team_room_ready_update_failed');
       }
       setPvpTeamRoom(updated);
-      showToast(nextReady ? 'Você marcou que está pronto.' : 'Você removeu seu pronto.');
       playSfx(nextReady ? 'success' : 'click');
     } catch (error) {
       console.error('toggle team ready failed:', error);
@@ -8558,7 +8489,6 @@ export default function CodeQuizApp() {
       setPvpTeamCreateRoomOpen(false);
       setPvpTeamRoomId(String(created.id));
       setPvpTeamRoom(created);
-      showToast('Sala de equipe criada.');
       playSfx('success');
     } catch (error) {
       console.error('create team room failed:', error);
@@ -8592,7 +8522,6 @@ export default function CodeQuizApp() {
         throw new Error('team_room_join_side_failed');
       }
       setPvpTeamRoom(joined);
-      showToast(`Entrou no time ${getPvpTeamSideColorLabel(side)}.`);
       playSfx('success');
     } catch (error) {
       console.error('join team room side failed:', error);
@@ -8628,7 +8557,6 @@ export default function CodeQuizApp() {
       setPvpTeamRoomId('');
       setPvpTeamRoom(null);
       delete pvpTeamRoomAccessHashRef.current[roomId];
-      showToast('Você saiu da sala.');
       playSfx('notify');
     } finally {
       setPvpTeamActionBusy(false);
@@ -8716,7 +8644,6 @@ export default function CodeQuizApp() {
       pvpTeamAutoStartRoomIdRef.current = String(room.id);
       pvpTeamBotFillRef.current = { ...pvpTeamBotFillRef.current, roomId: '', membershipKey: '' };
       setPvpTeamAutoStartPending(true);
-      showToast('Procurando jogadores para completar a sala...');
       playSfx('click');
       return;
     }
@@ -8786,7 +8713,6 @@ export default function CodeQuizApp() {
       setPvpTeamSubmitted(false);
       setPvpTeamSelectedIndex(null);
       setScreen('pvp-team');
-      showToast('Batalha de equipes iniciada.');
       playSfx('success');
     } catch (error) {
       console.error('start team battle failed:', error);
@@ -8906,7 +8832,6 @@ export default function CodeQuizApp() {
       setPvpEliminationSelectedIndex(null);
       setPvpEliminationExitPrompt(null);
       setScreen('pvp-elimination');
-      showToast('Eliminatória iniciada.');
       playSfx('success');
     } catch (error) {
       console.error('start elimination battle failed:', error);
@@ -9045,7 +8970,6 @@ export default function CodeQuizApp() {
     }
     if (screen === 'pvp-team-result') {
       if (!pvpTeamResultReward && !pvpTeamRewardCollecting && !pvpTeamResultProcessed) {
-        showToast('Preparando recompensas da equipe...');
         return true;
       }
       if (pvpTeamResultReward || pvpTeamRewardCollecting) {
@@ -9059,7 +8983,6 @@ export default function CodeQuizApp() {
     }
     if (screen === 'pvp-elimination-result') {
       if (!pvpEliminationResultReward && !pvpEliminationRewardCollecting && !pvpEliminationResultProcessed) {
-        showToast('Preparando recompensas da eliminatória...');
         return true;
       }
       if (pvpEliminationResultReward || pvpEliminationRewardCollecting) {
@@ -9476,13 +9399,11 @@ export default function CodeQuizApp() {
 
   function skipHomeTour() {
     finishHomeTour(true);
-    showToast('Tour pulado.');
   }
 
   function advanceHomeTour() {
     if (isHomeTourLastStep) {
       finishHomeTour(true);
-      showToast('Tour concluído.');
       return;
     }
     setHomeTourStepIndex((prev) => Math.min(homeTourSteps.length - 1, prev + 1));
@@ -9542,14 +9463,14 @@ export default function CodeQuizApp() {
         showToast('Toque em "Continuar com Google" para escolher a conta.');
         return;
       }
-      if (userClosedPopup) {
-        showToast('Seleção de conta cancelada.');
-      } else if (code.includes('popup-blocked')) {
-        showToast('Não foi possível abrir a seleção da conta Google. Permita popups para continuar.');
-      } else if (code === 'app/timeout' && label === 'signinwithpopup') {
-        showToast('A seleção da conta Google demorou mais do que o esperado.');
-      } else {
-        showToast('Não foi possível entrar com Google.');
+      if (!userClosedPopup) {
+        if (code.includes('popup-blocked')) {
+          showToast('Não foi possível abrir a seleção da conta Google. Permita popups para continuar.');
+        } else if (code === 'app/timeout' && label === 'signinwithpopup') {
+          showToast('A seleção da conta Google demorou mais do que o esperado.');
+        } else {
+          showToast('Não foi possível entrar com Google.');
+        }
       }
       playSfx('error');
     } finally {
@@ -9586,7 +9507,6 @@ export default function CodeQuizApp() {
         });
       }
       await resetGoogleSessionState();
-      showToast('Sessão encerrada.');
       playSfx('notify');
     } catch (error) {
       console.error('sign out error:', error);
@@ -9642,9 +9562,6 @@ export default function CodeQuizApp() {
       if (completedOnboarding) {
         setOnboardingRequired(false);
         setScreen('home');
-        showToast('Perfil criado com sucesso.');
-      } else {
-        showToast('Perfil atualizado.');
       }
       playSfx('success');
     } catch (error) {
@@ -9706,9 +9623,6 @@ export default function CodeQuizApp() {
           .map((itemId) => String(itemId || '').trim())
           .filter(Boolean)
       )];
-      const rewardShopNames = rewardShopItems
-        .map((itemId) => getShopItem(itemId)?.name || '')
-        .filter(Boolean);
       const rewardOrigin = getRewardEffectOrigin(triggerEvent);
 
       setProgress(nextProgress);
@@ -9737,27 +9651,13 @@ export default function CodeQuizApp() {
         await upsertStatsFromProgress(authUser.uid, nextProgress).catch(() => null);
       }
 
-      const levelSuffix = claimResult.leveledUp
-        ? ` · Nível ${Math.max(1, Number(claimResult.newLevel || nextProgress.level || 1))}`
-        : '';
-      const cosmeticSuffix = rewardShopNames.length > 0
-        ? ` · ${rewardShopNames.join(' · ')}`
-        : '';
-      showToast(`Recompensa coletada: +${rewardXp} XP · +${rewardCoins} moedas${cosmeticSuffix}${levelSuffix}`);
       playSfx('pass_claim');
       runRewardParticleSequence({
         xp: rewardXp,
         coins: rewardCoins,
         origin: rewardOrigin
       });
-      triggerPassClaimFeedback({
-        stageId: safeStageId,
-        icon: stage.icon || claimedStage.icon || '🏆',
-        title: stage.name || claimedStage.name || 'Recompensa do passe coletada',
-        xp: rewardXp,
-        coins: rewardCoins,
-        cosmetics: rewardShopNames
-      });
+      highlightClaimedPassStage(safeStageId);
     } catch (error) {
       console.error('claim evolution pass stage failed:', error);
       showToast('Falha ao coletar recompensa.');
@@ -9846,24 +9746,17 @@ export default function CodeQuizApp() {
       }
       upsertStatsFromProgress(activeAuthUser.uid, nextProgress).catch(() => null);
     }
-    showToast(`Item comprado: ${check.item.name}`);
     playSfx('success');
   }
 
-  async function handleEquipShopItem(itemId, options = {}) {
+  async function handleEquipShopItem(itemId) {
     const item = getShopItem(itemId);
     if (!item) return;
-    const mode = String(options?.mode || 'equip').trim().toLowerCase() === 'unequip' ? 'unequip' : 'equip';
-    const sourceItemName = String(options?.sourceItemName || '').trim();
 
     const nextShop = equipItem(shopData, itemId);
     setShopData(nextShop);
 
     if (!activeAuthUser?.uid) {
-      const offlineMessage = mode === 'unequip'
-        ? `Item desequipado${sourceItemName ? `: ${sourceItemName}` : '.'}`
-        : `Item equipado: ${item.name}`;
-      showToast(offlineMessage);
       playSfx('notify');
       return;
     }
@@ -9877,10 +9770,6 @@ export default function CodeQuizApp() {
       setProfile(updatedProfile);
       saveShopData(activeAuthUser.uid, nextShop);
       saveUserShop(activeAuthUser.uid, nextShop).catch(() => null);
-      const syncMessage = mode === 'unequip'
-        ? `Item desequipado${sourceItemName ? `: ${sourceItemName}` : '.'}`
-        : `Item equipado: ${item.name}`;
-      showToast(syncMessage);
       playSfx('success');
     } catch (error) {
       console.error('equip sync failed:', error);
@@ -9902,10 +9791,10 @@ export default function CodeQuizApp() {
     if (isEquipped && safeItem.isDefault) return;
     if (isEquipped) {
       const fallbackId = defaultByType[safeItem.type] || safeItem.id;
-      handleEquipShopItem(fallbackId, { mode: 'unequip', sourceItemName: safeItem.name });
+      handleEquipShopItem(fallbackId);
       return;
     }
-    handleEquipShopItem(safeItem.id, { mode: 'equip' });
+    handleEquipShopItem(safeItem.id);
   }
 
   function openShopItemPreview(item) {
@@ -10286,7 +10175,6 @@ export default function CodeQuizApp() {
         botMatchAtMs: confirmedBotMatchAtMs
       });
       prepareBotForQueue(forcedDifficulty, 'join_queue').catch(() => null);
-      showToast('Entrou na fila PvP.');
       playSfx('success');
       setQueueActionHint('');
     } catch (error) {
@@ -10368,7 +10256,7 @@ export default function CodeQuizApp() {
           'cancel_leave_queue'
         ).catch(() => null);
       }
-      showToast(autoCancelledByConnection ? 'Fila encerrada.' : 'Fila cancelada.');
+      if (autoCancelledByConnection) showToast('Fila encerrada por perda de conexão.');
       playSfx(autoCancelledByConnection ? 'error' : 'notify');
       queueFlowLog('cancel_queue:done', {
         userId: authUser?.uid || '',
@@ -11042,12 +10930,6 @@ export default function CodeQuizApp() {
     });
     const pvpPointsGain = outcome.points;
     const rewards = { xp: outcome.xp, coins: outcome.coins };
-    const passStateBefore = applyEvolutionPassRewards(progress, []);
-    const passClaimableBeforeSet = new Set(
-      (Array.isArray(passStateBefore?.unlockedAchievements) ? passStateBefore.unlockedAchievements : [])
-        .map((item) => String(item?.id || '').trim())
-        .filter(Boolean)
-    );
 
     const postBattleProgress = normalizeProgress({
       ...progress,
@@ -11067,10 +10949,6 @@ export default function CodeQuizApp() {
     const nextProgress = passResult.progress;
     const totalRewardXp = Math.max(0, Number(rewards.xp || 0));
     const totalRewardCoins = Math.max(0, Number(rewards.coins || 0));
-    const leveledUp = Math.max(1, Number(nextProgress.level || 1)) > Math.max(1, Number(progress.level || 1));
-    const passUnlockedCount = (Array.isArray(passResult?.unlockedAchievements) ? passResult.unlockedAchievements : [])
-      .filter((item) => !passClaimableBeforeSet.has(String(item?.id || '').trim()))
-      .length;
 
     setProgress(nextProgress);
 
@@ -11087,13 +10965,6 @@ export default function CodeQuizApp() {
       coins: totalRewardCoins
     });
 
-    if (resultKey === 'win') {
-      showToast(`Vitória em equipe! ${formatSignedPoints(pvpPointsGain)} PvP · +${totalRewardXp} XP · +${totalRewardCoins} moedas${leveledUp ? ' · Subiu de nível!' : ''}${passUnlockedCount > 0 ? ` - Passe pronto: ${passUnlockedCount}` : ''}`);
-    } else if (resultKey === 'draw') {
-      showToast(`Empate em equipe. ${formatSignedPoints(pvpPointsGain)} PvP · +${totalRewardXp} XP · +${totalRewardCoins} moedas${passUnlockedCount > 0 ? ` - Passe pronto: ${passUnlockedCount}` : ''}`);
-    } else {
-      showToast(`Derrota em equipe. ${formatSignedPoints(pvpPointsGain)} PvP · +${totalRewardXp} XP · +${totalRewardCoins} moedas${passUnlockedCount > 0 ? ` - Passe pronto: ${passUnlockedCount}` : ''}`);
-    }
   }
 
   async function handlePvpEliminationMatchFinished(matchRow, options = {}) {
@@ -11147,12 +11018,6 @@ export default function CodeQuizApp() {
     });
     const pvpPointsGain = outcome.points;
     const scaledRewards = { xp: outcome.xp, coins: outcome.coins };
-    const passStateBefore = applyEvolutionPassRewards(progress, []);
-    const passClaimableBeforeSet = new Set(
-      (Array.isArray(passStateBefore?.unlockedAchievements) ? passStateBefore.unlockedAchievements : [])
-        .map((item) => String(item?.id || '').trim())
-        .filter(Boolean)
-    );
 
     const postBattleProgress = normalizeProgress({
       ...progress,
@@ -11172,10 +11037,6 @@ export default function CodeQuizApp() {
     const nextProgress = passResult.progress;
     const totalRewardXp = Math.max(0, Number(scaledRewards.xp || 0));
     const totalRewardCoins = Math.max(0, Number(scaledRewards.coins || 0));
-    const leveledUp = Math.max(1, Number(nextProgress.level || 1)) > Math.max(1, Number(progress.level || 1));
-    const passUnlockedCount = (Array.isArray(passResult?.unlockedAchievements) ? passResult.unlockedAchievements : [])
-      .filter((item) => !passClaimableBeforeSet.has(String(item?.id || '').trim()))
-      .length;
     const placementLabel = getPvpEliminationPlacementLabel(placement);
 
     setProgress(nextProgress);
@@ -11195,13 +11056,6 @@ export default function CodeQuizApp() {
       placementLabel
     });
 
-    if (placement === 1) {
-      showToast(`Campeão da eliminatória! ${formatSignedPoints(pvpPointsGain)} PvP · +${totalRewardXp} XP · +${totalRewardCoins} moedas${leveledUp ? ' · Subiu de nível!' : ''}${passUnlockedCount > 0 ? ` - Passe pronto: ${passUnlockedCount}` : ''}`);
-    } else if (allowEarly) {
-      showToast(`Você saiu em ${placementLabel}. ${formatSignedPoints(pvpPointsGain)} PvP · +${totalRewardXp} XP · +${totalRewardCoins} moedas${passUnlockedCount > 0 ? ` - Passe pronto: ${passUnlockedCount}` : ''}`);
-    } else {
-      showToast(`Fim da eliminatória · ${placementLabel}. ${formatSignedPoints(pvpPointsGain)} PvP · +${totalRewardXp} XP · +${totalRewardCoins} moedas${passUnlockedCount > 0 ? ` - Passe pronto: ${passUnlockedCount}` : ''}`);
-    }
   }
 
   async function handlePvpMatchFinished(matchRow) {
@@ -11319,12 +11173,6 @@ export default function CodeQuizApp() {
       userId: authUser.uid
     });
     const rewards = getPvpRewardsByDifficulty(matchRow?.difficulty || pvpConfig?.difficulty || 'easy', result);
-    const passStateBefore = applyEvolutionPassRewards(progress, []);
-    const passClaimableBeforeSet = new Set(
-      (Array.isArray(passStateBefore?.unlockedAchievements) ? passStateBefore.unlockedAchievements : [])
-        .map((item) => String(item?.id || '').trim())
-        .filter(Boolean)
-    );
 
     const postBattleProgress = normalizeProgress({
       ...progress,
@@ -11344,10 +11192,6 @@ export default function CodeQuizApp() {
     const nextProgress = passResult.progress;
     const totalRewardXp = Math.max(0, Number(rewards.xp || 0));
     const totalRewardCoins = Math.max(0, Number(rewards.coins || 0));
-    const leveledUp = Math.max(1, Number(nextProgress.level || 1)) > Math.max(1, Number(progress.level || 1));
-    const passUnlockedCount = (Array.isArray(passResult?.unlockedAchievements) ? passResult.unlockedAchievements : [])
-      .filter((item) => !passClaimableBeforeSet.has(String(item?.id || '').trim()))
-      .length;
 
     setProgress(nextProgress);
 
@@ -11420,13 +11264,6 @@ export default function CodeQuizApp() {
       coins: totalRewardCoins
     });
 
-    if (result === 'win') {
-      showToast(`Vitória PvP! ${formatSignedPoints(pvpPointsGain)} PvP · +${totalRewardXp} XP · +${totalRewardCoins} moedas${leveledUp ? ' · Subiu de nível!' : ''}${passUnlockedCount > 0 ? ` · Passe pronto: ${passUnlockedCount}` : ''}`);
-    } else if (result === 'draw') {
-      showToast(`Empate PvP. ${formatSignedPoints(pvpPointsGain)} PvP · +${totalRewardXp} XP · +${totalRewardCoins} moedas${passUnlockedCount > 0 ? ` · Passe pronto: ${passUnlockedCount}` : ''}`);
-    } else {
-      showToast(`Derrota PvP. ${formatSignedPoints(pvpPointsGain)} PvP · +${totalRewardXp} XP · +${totalRewardCoins} moedas${passUnlockedCount > 0 ? ` · Passe pronto: ${passUnlockedCount}` : ''}`);
-    }
   }
 
   // Abandono no meio de uma partida em grupo: -2 PvP (W.O.), sem XP/moedas, uma vez só.
@@ -16232,12 +16069,6 @@ export default function CodeQuizApp() {
           collectPvpCompensation,
           pvpCompensation,
           pvpRewardCollecting
-        }} />
-      ) : null}
-
-      {passClaimFx.visible ? (
-        <PassClaimFx vm={{
-          passClaimFx
         }} />
       ) : null}
 
